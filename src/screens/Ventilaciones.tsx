@@ -74,6 +74,7 @@ export function Ventilaciones() {
       key: 'status',
       header: 'Estado',
       width: '120px',
+      truncate: false,
       render: (v) => <StatusBadge status={v.Estado_VE} />,
     },
     {

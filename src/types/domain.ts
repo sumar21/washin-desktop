@@ -201,7 +201,7 @@ export interface Incidente {
     | 'Reportado Por Tecnico'
     | 'Baja de Maquina'
     | 'Transferencia';
-  Status_IN: 'A Revisar' | 'Asignado' | 'En Aprobacion' | 'Resuelto' | 'Anulado';
+  Status_IN: 'A Revisar' | 'Asignado' | 'Pendiente' | 'En Aprobacion' | 'Resuelto' | 'Anulado';
   Resuelto_IN: 'SI' | 'NO';
   NombreEdificio_IN: string;
   IDMaquina_IN?: string;

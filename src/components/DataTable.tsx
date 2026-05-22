@@ -56,7 +56,7 @@ export function DataTable<T>({
             onClick={() => onRowClick?.(row)}
             className={cn(
               'grid items-center border-b border-wash-divider/60 px-4 text-sm text-wash-text-strong transition-colors',
-              dense ? 'py-2' : 'py-3',
+              dense ? 'py-2' : 'py-4',
               onRowClick && 'cursor-pointer hover:bg-wash-canvas'
             )}
             style={{ gridTemplateColumns: columns.map((c) => c.width ?? 'minmax(0,1fr)').join(' ') }}

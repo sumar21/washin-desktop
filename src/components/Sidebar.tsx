@@ -12,6 +12,8 @@ import {
   Settings,
   LogOut,
   RotateCw,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -39,6 +41,7 @@ export function Sidebar() {
   const setCerrarSesion = useAppStore((s) => s.setCerrarSesion);
   const VarUsuario = useAppStore((s) => s.VarUsuario);
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
 
   const ordered = [...Collect_LPP].sort((a, b) => a.Orden_LPP - b.Orden_LPP);
 
@@ -60,6 +63,26 @@ export function Sidebar() {
         >
           {collapsed ? <LogoMark size={36} /> : <Logo size={30} sub="DESKTOP" />}
         </div>
+
+        {/* Collapse handle — subtle bar under the logo */}
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={collapsed ? 'Expandir menú' : 'Colapsar menú'}
+          className={cn(
+            'group flex items-center border-b border-white/10 text-[10px] font-semibold uppercase tracking-widest text-white/30 transition-colors hover:bg-white/5 hover:text-white/70',
+            collapsed ? 'justify-center py-2' : 'justify-end gap-1.5 px-4 py-1.5'
+          )}
+        >
+          {collapsed ? (
+            <ChevronsRight size={14} />
+          ) : (
+            <>
+              <span>Contraer</span>
+              <ChevronsLeft size={14} />
+            </>
+          )}
+        </button>
 
         {/* Modules */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3">

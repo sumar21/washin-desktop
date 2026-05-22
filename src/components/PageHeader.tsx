@@ -40,7 +40,7 @@ export function PageHeader({
               value={search.value}
               onChange={(e) => search.onChange(e.target.value)}
               placeholder={search.placeholder ?? 'Buscar...'}
-              className="w-[240px] rounded-full bg-wash-canvas px-9 py-2 text-sm text-wash-text-strong outline-none ring-1 ring-wash-border focus:ring-wash-primary"
+              className="w-[280px] rounded-full bg-wash-canvas px-9 py-2 text-sm text-wash-text-strong outline-none ring-1 ring-wash-border focus:ring-wash-primary"
             />
           </div>
         )}

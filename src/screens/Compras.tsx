@@ -138,6 +138,7 @@ export function Compras() {
       key: 'status',
       header: 'Estado',
       width: '160px',
+      truncate: false,
       render: (r) => <StatusBadge status={r.Status_PC} />,
     },
     {
@@ -255,7 +256,7 @@ export function Compras() {
                     )}
                     {d.Item_DC}
                   </span>
-                  <span className="text-center font-bold text-wash-brand">{d.Cantidad_DC}</span>
+                  <span className="text-center font-bold text-wash-text-strong">{d.Cantidad_DC}</span>
                   <span className="text-right">
                     <StatusBadge status={d.Status_DC} />
                   </span>
@@ -502,10 +503,10 @@ function NuevaCompraModal({ open, onClose, catalog, onSubmit }: NuevaCompraModal
         <div className="grid grid-cols-[1fr_1.6fr_90px_auto] items-end gap-3">
           <div>
             <Label>Segmento</Label>
-            <select
-              value={segment}
-              onChange={(e) => {
-                const s = e.target.value as TipoStock | '';
+            <Select
+              value={segment || undefined}
+              onValueChange={(value) => {
+                const s = value as TipoStock;
                 setSegment(s);
                 setSelectedCatalogId('');
                 if (s !== segment) {
@@ -513,35 +514,58 @@ function NuevaCompraModal({ open, onClose, catalog, onSubmit }: NuevaCompraModal
                   setEditingIdx(null);
                 }
               }}
-              className="mt-1.5 w-full rounded-lg border border-wash-border bg-wash-surface px-3 py-2 text-sm text-wash-text-strong outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
             >
-              <option value="">Buscar elementos</option>
-              {SEGMENTS.map((s) => (
-                <option key={s} value={s}>
-                  {tipoLabel(s)}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="mt-1.5 h-10 w-full">
+                <SelectValue placeholder="Seleccionar segmento…" />
+              </SelectTrigger>
+              <SelectContent>
+                {SEGMENTS.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {tipoLabel(s)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div>
             <Label>Item</Label>
-            <select
-              value={selectedCatalogId}
-              onChange={(e) =>
-                setSelectedCatalogId(e.target.value ? Number(e.target.value) : '')
+            <Select
+              value={selectedCatalogId ? String(selectedCatalogId) : undefined}
+              onValueChange={(value) =>
+                setSelectedCatalogId(value ? Number(value) : '')
               }
               disabled={!segment}
-              className="mt-1.5 w-full rounded-lg border border-wash-border bg-wash-surface px-3 py-2 text-sm text-wash-text-strong outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15 disabled:bg-wash-surface-2 disabled:text-wash-text-muted"
             >
-              <option value="">Buscar elementos</option>
-              {itemsForSegment.map((c) => (
-                <option key={c.ID} value={c.ID}>
-                  {c.Codigo ? `${c.Codigo} - ${c.Item}` : c.Item}
-                  {c.Marca ? ` (${c.Marca})` : ''}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="mt-1.5 h-10 w-full">
+                <SelectValue
+                  placeholder={
+                    segment ? 'Seleccionar item…' : 'Elegí un segmento primero'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {itemsForSegment.map((c) => (
+                  <SelectItem key={c.ID} value={String(c.ID)}>
+                    <span className="flex w-full items-center gap-2">
+                      {c.Codigo && (
+                        <span className="rounded bg-wash-surface-2 px-1.5 py-0.5 text-[10.5px] font-semibold text-wash-text">
+                          {c.Codigo}
+                        </span>
+                      )}
+                      <span className="font-medium text-wash-text-strong">
+                        {c.Item}
+                      </span>
+                      {c.Marca && (
+                        <span className="ml-auto text-xs text-wash-text-muted">
+                          {c.Marca}
+                        </span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div>
