@@ -624,7 +624,7 @@ export function DetalleMaquina() {
                   setMotivo('');
                   setMotivoDetalle('');
                 }}
-                className="rounded-lg bg-wash-brand px-5 py-2 font-medium text-white hover:bg-wash-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg bg-wash-action px-5 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Transferir
               </button>
@@ -824,7 +824,7 @@ function SelectorModal({
           type="button"
           disabled={!valueEdificio}
           onClick={onApply}
-          className="rounded-lg bg-wash-brand px-5 py-2 font-medium text-white hover:bg-wash-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-wash-action px-5 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           Aplicar
         </button>

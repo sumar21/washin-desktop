@@ -281,6 +281,8 @@ export interface EdificioVisitar {
   TecnicoAsignado_EV: string;
   MesAno_EV: string;
   Status_EV: 'Pendiente' | 'Visitado';
+  /** Building code like "C-2263". */
+  Codigo_EV?: string;
 }
 
 // 19.Ventilaciones

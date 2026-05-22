@@ -226,35 +226,222 @@ export const mockRepuestosIncidentes: RepuestoIncidente[] = [
   { ID: 6004, IDIncidente_RI: 'IN-5012', Repuesto_RI: 'Resistencia Calefactora', Cantidad_RI: 1 },
 ];
 
-export const mockMesesPlanificacion: MesPlanificacion[] = [
-  { ID: 7001, MesAnoPlanificado_MP: currentMonth(), MesPlanificado_MP: 'mayo', RutasTotales_MP: 3, TecnicosTotales_MP: 3, Status_MP: 'Activo' },
-  { ID: 7002, MesAnoPlanificado_MP: '06/2026', MesPlanificado_MP: 'junio', RutasTotales_MP: 4, TecnicosTotales_MP: 3, Status_MP: 'Activo' },
+// --- Planificación: generated to cover several months with realistic data ---
+
+const TECNICOS_PLANIF: string[] = [
+  'Burgueño, Mauro',
+  'Corimayo, Axel',
+  'Limongi, Gabriel',
+  'Llanos, Gonzalo',
+  'Martinez, Luis',
+  'Rojas, Jose',
+  'Romer, Jorman',
+  'Sosa, Misael',
 ];
 
-export const mockResumenPlanif: ResumenPlanificacion[] = [
-  { ID: 8001, MesAnoPlanificado_RP: currentMonth(), Tecnico_RP: 'Mauro Fernández', NroRuta_RP: '1', IDUnivocoRuta_RP: 'R1-mfernandez-202605201430', Status_RP: 'En Proceso' },
-  { ID: 8002, MesAnoPlanificado_RP: currentMonth(), Tecnico_RP: 'Julián Ruiz', NroRuta_RP: '2', IDUnivocoRuta_RP: 'R2-jruiz-202605201431', Status_RP: 'Pendiente' },
-  { ID: 8003, MesAnoPlanificado_RP: currentMonth(), Tecnico_RP: 'Leandro Leyes', NroRuta_RP: '3', IDUnivocoRuta_RP: 'R3-lleyes-202605201432', Status_RP: 'Cerrada' },
+// Pool of buildings with codes (sample of the PowerApp catalog)
+const EDIFICIOS_PLANIF: Array<{ codigo: string; nombre: string; direccion: string }> = [
+  { codigo: 'C-2263', nombre: 'Residencias Pilar Golf', direccion: 'Pilar 1200' },
+  { codigo: 'C-0006', nombre: 'Las Mercedes', direccion: 'Av. Las Heras 2400' },
+  { codigo: 'C-2308', nombre: 'Denver Farma', direccion: 'Acassuso 350' },
+  { codigo: 'C-2285', nombre: 'Palmas De Buenavista', direccion: 'Pilar 1450' },
+  { codigo: 'C-2190', nombre: 'Quartier Lomas La Horqueta', direccion: 'Pilar 2100' },
+  { codigo: 'C-2477', nombre: 'Berrazo Beach', direccion: 'San Isidro 100' },
+  { codigo: 'C-2222', nombre: 'Las Liebres 1', direccion: 'Pilar 3300' },
+  { codigo: 'C-2294', nombre: 'Las Liebres 3', direccion: 'Pilar 3320' },
+  { codigo: 'C-2277', nombre: 'Las Liebres 4', direccion: 'Pilar 3340' },
+  { codigo: 'C-1934', nombre: 'Civis Tortugas', direccion: 'Tortugas 100' },
+  { codigo: 'C-1546', nombre: 'Tortugas Garden', direccion: 'Tortugas 200' },
+  { codigo: 'C-2305', nombre: 'Club Bamboo', direccion: 'Tigre 1500' },
+  { codigo: 'C-1392', nombre: 'Alto Del Molino', direccion: 'Pilar 5500' },
+  { codigo: 'C-1884', nombre: 'Bosque Alto', direccion: 'Nordelta 200' },
+  { codigo: 'C-1423', nombre: 'Las Tinajas', direccion: 'Pilar 6700' },
+  { codigo: 'C-2447', nombre: 'Jardines de Savari', direccion: 'Tigre 2100' },
+  { codigo: 'C-1537', nombre: 'Los Naranjos', direccion: 'Tigre 3300' },
+  { codigo: 'C-1920', nombre: 'Palmas De La Bahia', direccion: 'Tigre 4400' },
+  { codigo: 'C-0290', nombre: 'Torres De Tigre', direccion: 'Tigre 5500' },
+  { codigo: 'C-2283', nombre: 'Venice Balandras', direccion: 'Tigre 6600' },
+  { codigo: 'C-2282', nombre: 'Venice Balandras 2', direccion: 'Tigre 6620' },
+  { codigo: 'C-2286', nombre: 'Venice Crucero', direccion: 'Tigre 6700' },
+  { codigo: 'C-0512', nombre: 'Solares De Belgrano', direccion: 'Belgrano 900' },
+  { codigo: 'C-1101', nombre: 'Plaza Houssay', direccion: 'Recoleta 110' },
+  { codigo: 'C-1212', nombre: 'Le Parc Figueroa Alcorta', direccion: 'Palermo 1500' },
+  { codigo: 'C-1313', nombre: 'Madero Plaza', direccion: 'Madero 1200' },
+  { codigo: 'C-1414', nombre: 'Torre Catalinas', direccion: 'Retiro 500' },
+  { codigo: 'C-1515', nombre: 'Mirabilia 1', direccion: 'Palermo 2100' },
+  { codigo: 'C-1616', nombre: 'Renoir 1', direccion: 'Belgrano 1200' },
+  { codigo: 'C-1717', nombre: 'Humboldt 2457', direccion: 'Palermo 2457' },
+  { codigo: 'C-1818', nombre: 'Palermo View', direccion: 'Palermo 3000' },
+  { codigo: 'C-1919', nombre: 'Torre Huergo', direccion: 'Madero 800' },
+  { codigo: 'C-2020', nombre: 'Marquis', direccion: 'Recoleta 200' },
+  { codigo: 'C-2121', nombre: 'Cabello 3373', direccion: 'Palermo 3373' },
+  { codigo: 'C-2222b', nombre: 'Corrientes 3841', direccion: 'Almagro 3841' },
+  { codigo: 'C-2323', nombre: 'Baez 644', direccion: 'Las Cañitas 644' },
+  { codigo: 'C-2424', nombre: 'Cabello 3181', direccion: 'Palermo 3181' },
+  { codigo: 'C-2525', nombre: 'Quartier Dorrego', direccion: 'Palermo 1200' },
+  { codigo: 'C-2626', nombre: 'Quartier San Telmo', direccion: 'San Telmo 100' },
+  { codigo: 'C-2727', nombre: 'Vista Belgrano', direccion: 'Belgrano R 500' },
+  { codigo: 'C-2828', nombre: 'Ayacucho 1435', direccion: 'Recoleta 1435' },
+  { codigo: 'C-2929', nombre: 'Torre Deco Godoy Cruz', direccion: 'Palermo 2300' },
+  { codigo: 'C-3030', nombre: 'Prima Caballito 2', direccion: 'Caballito 1500' },
+  { codigo: 'C-3131', nombre: 'Ciudad De La Paz 1972', direccion: 'Belgrano 1972' },
+  { codigo: 'C-3232', nombre: 'Puerto Pampa', direccion: 'Madero 2400' },
+  { codigo: 'C-3333', nombre: 'Olazabal 4774', direccion: 'Belgrano 4774' },
+  { codigo: 'C-3434', nombre: 'Blanco Encalada 1715', direccion: 'Belgrano 1715' },
+  { codigo: 'C-3535', nombre: 'Libertador 5740', direccion: 'Belgrano 5740' },
+  { codigo: 'C-3636', nombre: 'Regatas De Olivos', direccion: 'Olivos 100' },
 ];
 
-export const mockDetallePlanif: DetallePlanificacion[] = [
-  { ID: 9001, IDUnivoco_DP: 'R1-mfernandez-202605201430', IDUnivocoCircuito_DP: '1A', Tecnico_DP: 'Mauro Fernández', NroCircuito_DP: '1A', MesAno_DP: currentMonth(), Status_DP: 'En Proceso' },
-  { ID: 9002, IDUnivoco_DP: 'R1-mfernandez-202605201430', IDUnivocoCircuito_DP: '1B', Tecnico_DP: 'Mauro Fernández', NroCircuito_DP: '1B', MesAno_DP: currentMonth(), Status_DP: 'Pendiente' },
-  { ID: 9003, IDUnivoco_DP: 'R2-jruiz-202605201431', IDUnivocoCircuito_DP: '2C', Tecnico_DP: 'Julián Ruiz', NroCircuito_DP: '2C', MesAno_DP: currentMonth(), Status_DP: 'Pendiente' },
+const MES_NOMBRES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
 ];
 
-export const mockEdificiosVisitar: EdificioVisitar[] = [
-  { ID: 10001, IDUnivocoCircuito_EV: '1A', NombreEdificio_EV: 'Torre Madero I', Direccion_EV: 'Av. Madero 1280', NroCircuito_EV: '1A', TecnicoAsignado_EV: 'Mauro Fernández', MesAno_EV: currentMonth(), Status_EV: 'Visitado' },
-  { ID: 10002, IDUnivocoCircuito_EV: '1A', NombreEdificio_EV: 'Torre Madero II', Direccion_EV: 'Av. Madero 1320', NroCircuito_EV: '1A', TecnicoAsignado_EV: 'Mauro Fernández', MesAno_EV: currentMonth(), Status_EV: 'Pendiente' },
-  { ID: 10003, IDUnivocoCircuito_EV: '1B', NombreEdificio_EV: 'Belgrano R', Direccion_EV: 'Av. Cabildo 2800', NroCircuito_EV: '1B', TecnicoAsignado_EV: 'Mauro Fernández', MesAno_EV: currentMonth(), Status_EV: 'Pendiente' },
-  { ID: 10004, IDUnivocoCircuito_EV: '2C', NombreEdificio_EV: 'Edificio Palermo Soho', Direccion_EV: 'Honduras 4500', NroCircuito_EV: '2C', TecnicoAsignado_EV: 'Julián Ruiz', MesAno_EV: currentMonth(), Status_EV: 'Pendiente' },
-];
+// Generate planning data for last 12 months ending in current month
+function generatePlanif(): {
+  meses: MesPlanificacion[];
+  resumen: ResumenPlanificacion[];
+  detalles: DetallePlanificacion[];
+  edificios: EdificioVisitar[];
+} {
+  const meses: MesPlanificacion[] = [];
+  const resumen: ResumenPlanificacion[] = [];
+  const detalles: DetallePlanificacion[] = [];
+  const edificios: EdificioVisitar[] = [];
+
+  let mesId = 7000;
+  let resId = 8000;
+  let detId = 9000;
+  let edifId = 10000;
+
+  const now = new Date();
+  // 12 months including current, oldest first
+  for (let offset = 11; offset >= 0; offset--) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    const mesAno = `${mm}/${yyyy}`;
+    const mesNombre = MES_NOMBRES[date.getMonth()];
+
+    // Number of rutas this month (4–8)
+    const rutaCount = 4 + ((offset + date.getMonth()) % 5); // 4–8
+    const tecnicosUsed = new Set<string>();
+
+    for (let r = 0; r < rutaCount; r++) {
+      const nroRuta = String(r + 1 + ((offset % 3) * 10) + (r < 3 ? 0 : 0));
+      const tec = TECNICOS_PLANIF[(r + offset) % TECNICOS_PLANIF.length];
+      tecnicosUsed.add(tec);
+      const idUniv = `R${nroRuta}-${tec.replace(/[\s,]+/g, '').toLowerCase()}-${yyyy}${mm}`;
+
+      // Status logic
+      let status: ResumenPlanificacion['Status_RP'] = 'En Proceso';
+      if (offset > 2) status = 'Cerrada';
+      else if (offset === 0 && r > rutaCount - 2) status = 'Pendiente';
+
+      // Circuitos for this ruta (3–5)
+      const circuitoCount = 3 + ((r + offset) % 3);
+      let edifTotal = 0;
+      for (let c = 0; c < circuitoCount; c++) {
+        const nroCirc = String(100 + c * 2 + (r % 3));
+        const idCircUniv = `${idUniv}-C${nroCirc}`;
+        let detStatus: DetallePlanificacion['Status_DP'] = 'En Proceso';
+        if (status === 'Cerrada') detStatus = 'Cerrada';
+        else if (status === 'Pendiente') detStatus = 'Pendiente';
+        else if (c > circuitoCount - 2) detStatus = 'Pendiente';
+        detalles.push({
+          ID: ++detId,
+          IDUnivoco_DP: idUniv,
+          IDUnivocoCircuito_DP: idCircUniv,
+          Tecnico_DP: tec,
+          NroCircuito_DP: nroCirc,
+          MesAno_DP: mesAno,
+          Status_DP: detStatus,
+        });
+
+        // Edificios for this circuito (5–8)
+        const edifCount = 5 + ((c + r + offset) % 4);
+        for (let e = 0; e < edifCount; e++) {
+          const ed =
+            EDIFICIOS_PLANIF[(e + c * 3 + r * 7 + offset * 5) % EDIFICIOS_PLANIF.length];
+          edificios.push({
+            ID: ++edifId,
+            IDUnivocoCircuito_EV: idCircUniv,
+            NombreEdificio_EV: ed.nombre,
+            Direccion_EV: ed.direccion,
+            NroCircuito_EV: nroCirc,
+            TecnicoAsignado_EV: tec,
+            MesAno_EV: mesAno,
+            Status_EV: status === 'Cerrada' ? 'Visitado' : e < 2 ? 'Visitado' : 'Pendiente',
+            Codigo_EV: ed.codigo,
+          });
+          edifTotal++;
+        }
+      }
+
+      resumen.push({
+        ID: ++resId,
+        MesAnoPlanificado_RP: mesAno,
+        Tecnico_RP: tec,
+        NroRuta_RP: nroRuta,
+        IDUnivocoRuta_RP: idUniv,
+        Status_RP: status,
+        Cantidad_RP: edifTotal,
+      });
+    }
+
+    meses.push({
+      ID: ++mesId,
+      MesAnoPlanificado_MP: mesAno,
+      MesPlanificado_MP: mesNombre,
+      RutasTotales_MP: rutaCount,
+      TecnicosTotales_MP: tecnicosUsed.size,
+      Status_MP: 'Activo',
+    });
+  }
+
+  // Reverse so newest first
+  return {
+    meses: meses.reverse(),
+    resumen,
+    detalles,
+    edificios,
+  };
+}
+
+const _planif = generatePlanif();
+
+export const mockMesesPlanificacion: MesPlanificacion[] = _planif.meses;
+export const mockResumenPlanif: ResumenPlanificacion[] = _planif.resumen;
+export const mockDetallePlanif: DetallePlanificacion[] = _planif.detalles;
+export const mockEdificiosVisitar: EdificioVisitar[] = _planif.edificios;
 
 export const mockVentilaciones: Ventilacion[] = [
-  { ID: 11001, Edificio_VE: 'Torre Madero I', Grupo_VE: 'Conducto principal', Frecuencia_VE: 'Mensual', Estado_VE: 'Asignada', Asignado_VE: 'Mauro Fernández', FechaUltima_VE: '15/04/2026', ProximaLimpieza_VE: '15/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'NO', Orden_VE: 1 },
-  { ID: 11002, Edificio_VE: 'Edificio Palermo Soho', Grupo_VE: 'Sector A', Frecuencia_VE: 'Bimestral', Estado_VE: 'Pendiente', ProximaLimpieza_VE: '20/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 2 },
-  { ID: 11003, Edificio_VE: 'Belgrano R', Grupo_VE: 'Conducto principal', Frecuencia_VE: 'Trimestral', Estado_VE: 'Programada', Asignado_VE: 'Julián Ruiz', FechaProgramada_VE: '28/05/2026', ProximaLimpieza_VE: '28/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'NO', Orden_VE: 3 },
-  { ID: 11004, Edificio_VE: 'Recoleta Premium', Grupo_VE: 'Cocina/Sopa', Frecuencia_VE: 'Mensual', Estado_VE: 'Realizada', Asignado_VE: 'Leandro Leyes', FechaUltima_VE: '20/05/2026', ProximaLimpieza_VE: '20/06/2026', FechaMesAnoProxima_VE: '06/2026', ObservacionResuelto_VE: 'Conductos en buen estado. Filtro reemplazado.', EsIncidente_VE: 'NO', Orden_VE: 4 },
+  { ID: 11001, Edificio_VE: 'Puerto Pampa', Grupo_VE: '29', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '01/10/2024', ProximaLimpieza_VE: '12/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 1 },
+  { ID: 11002, Edificio_VE: 'Olazabal 4774', Grupo_VE: '2', Frecuencia_VE: '120', Estado_VE: 'Pendiente', FechaUltima_VE: '25/06/2024', ProximaLimpieza_VE: '13/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 2 },
+  { ID: 11003, Edificio_VE: 'Blanco Encalada 1715', Grupo_VE: '79', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '26/11/2024', ProximaLimpieza_VE: '14/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 3 },
+  { ID: 11004, Edificio_VE: 'Libertador 5740', Grupo_VE: '82', Frecuencia_VE: '90', Estado_VE: 'Pendiente', FechaUltima_VE: '03/04/2025', ProximaLimpieza_VE: '19/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 4 },
+  { ID: 11005, Edificio_VE: 'Regatas De Olivos', Grupo_VE: '64', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '11/02/2025', ProximaLimpieza_VE: '19/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 5 },
+  { ID: 11006, Edificio_VE: 'Vista Belgrano', Grupo_VE: '15', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '15/11/2024', ProximaLimpieza_VE: '19/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 6 },
+  { ID: 11007, Edificio_VE: 'Ayacucho 1435', Grupo_VE: '53', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '16/10/2024', ProximaLimpieza_VE: '21/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 7 },
+  { ID: 11008, Edificio_VE: 'Torre Deco Godoy Cruz', Grupo_VE: '92', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '25/09/2025', ProximaLimpieza_VE: '21/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 8 },
+  { ID: 11009, Edificio_VE: 'Prima Caballito 2', Grupo_VE: '128', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '08/10/2025', ProximaLimpieza_VE: '05/06/2026', FechaMesAnoProxima_VE: '06/2026', EsIncidente_VE: 'NO', Orden_VE: 9 },
+  { ID: 11010, Edificio_VE: 'Quartier Dorrego', Grupo_VE: '96', Frecuencia_VE: '120', Estado_VE: 'Pendiente', FechaUltima_VE: '07/05/2026', ProximaLimpieza_VE: '05/08/2026', FechaMesAnoProxima_VE: '08/2026', EsIncidente_VE: 'NO', Orden_VE: 10 },
+  { ID: 11011, Edificio_VE: 'Ciudad De La Paz 1972', Grupo_VE: '15', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '13/10/2025', ProximaLimpieza_VE: '09/08/2026', FechaMesAnoProxima_VE: '08/2026', EsIncidente_VE: 'NO', Orden_VE: 11 },
+  { ID: 11012, Edificio_VE: 'Quartier San Telmo', Grupo_VE: '31', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '11/02/2026', ProximaLimpieza_VE: '10/08/2026', FechaMesAnoProxima_VE: '08/2026', EsIncidente_VE: 'NO', Orden_VE: 12 },
+  // Assigned + Programada + Realizada examples
+  { ID: 11013, Edificio_VE: 'Torre Madero I', Grupo_VE: '42', Frecuencia_VE: '90', Estado_VE: 'Asignada', Asignado_VE: 'Mauro Fernández', FechaUltima_VE: '15/04/2026', ProximaLimpieza_VE: '15/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'NO', Orden_VE: 13 },
+  { ID: 11014, Edificio_VE: 'Belgrano R', Grupo_VE: '8', Frecuencia_VE: '120', Estado_VE: 'Programada', Asignado_VE: 'Julián Ruiz', FechaProgramada_VE: '28/05/2026', FechaUltima_VE: '28/02/2026', ProximaLimpieza_VE: '28/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'NO', Orden_VE: 14 },
+  { ID: 11015, Edificio_VE: 'Recoleta Premium', Grupo_VE: '17', Frecuencia_VE: '90', Estado_VE: 'Realizada', Asignado_VE: 'Leandro Leyes', FechaUltima_VE: '20/05/2026', ProximaLimpieza_VE: '20/06/2026', FechaMesAnoProxima_VE: '06/2026', ObservacionResuelto_VE: 'Conductos en buen estado. Filtro reemplazado.', EsIncidente_VE: 'NO', Orden_VE: 15 },
 ];
 
 export const mockItemsCompra: ItemCompra[] = [
@@ -291,11 +478,16 @@ export const mockDetalleCircuitos: DetalleCircuito[] = [
 ];
 
 export const mockFrecuencias: Frecuencia[] = [
-  { ID: 16001, Frecuencia_FE: 'Semanal', Status_FE: 'Activo' },
-  { ID: 16002, Frecuencia_FE: 'Quincenal', Status_FE: 'Activo' },
-  { ID: 16003, Frecuencia_FE: 'Mensual', Status_FE: 'Activo' },
-  { ID: 16004, Frecuencia_FE: 'Bimestral', Status_FE: 'Activo' },
-  { ID: 16005, Frecuencia_FE: 'Trimestral', Status_FE: 'Activo' },
+  { ID: 16001, Frecuencia_FE: '90', Status_FE: 'Activo' },
+  { ID: 16002, Frecuencia_FE: '120', Status_FE: 'Activo' },
+  { ID: 16003, Frecuencia_FE: '180', Status_FE: 'Activo' },
+  { ID: 16004, Frecuencia_FE: '182', Status_FE: 'Activo' },
+  { ID: 16005, Frecuencia_FE: '230', Status_FE: 'Activo' },
+  { ID: 16006, Frecuencia_FE: '240', Status_FE: 'Activo' },
+  { ID: 16007, Frecuencia_FE: '300', Status_FE: 'Activo' },
+  { ID: 16008, Frecuencia_FE: '365', Status_FE: 'Activo' },
+  { ID: 16009, Frecuencia_FE: '400', Status_FE: 'Activo' },
+  { ID: 16010, Frecuencia_FE: '430', Status_FE: 'Activo' },
 ];
 
 export const mockGruposVent: GrupoVentilacion[] = [

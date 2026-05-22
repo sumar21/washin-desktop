@@ -1,21 +1,71 @@
-import { useMemo, useState } from 'react';
-import { HardHat, ArrowLeftRight, Pencil } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowLeftRight,
+  Pencil,
+  UserCog,
+  Plus,
+  Minus,
+  Wrench,
+  UserCircle2,
+} from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
+import { Modal, ModalActions } from '@/components/Modal';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
+import { cn } from '@/lib/utils';
 import type { RepuestoTecnico } from '@/types/domain';
 
 export function StockTecnicos() {
   const stockT = useAppStore((s) => s.CollectStockTecnicos);
+  const usuarios = useAppStore((s) => s.CollectUser);
+  const patchStockTecnico = useAppStore((s) => s.patchStockTecnico);
+  const reingressStockTecnico = useAppStore((s) => s.reingressStockTecnico);
+  const assignStockTecnico = useAppStore((s) => s.assignStockTecnico);
   const VarTipoUser = useAppStore((s) => s.VarTipoUser);
+
   const [query, setQuery] = useState('');
+  const [filterTecnico, setFilterTecnico] = useState<string>('Todos');
+  const [filterRepuesto, setFilterRepuesto] = useState<string>('Todos');
+
+  // Modals
+  const [assigning, setAssigning] = useState<RepuestoTecnico | null>(null);
+  const [reingressing, setReingressing] = useState<RepuestoTecnico | null>(null);
+  const [editing, setEditing] = useState<RepuestoTecnico | null>(null);
 
   const canEdit = VarTipoUser === 'Admin' || VarTipoUser === 'Jefe Taller';
+
+  const tecnicos = useMemo(
+    () =>
+      usuarios.filter(
+        (u) => u.Status === 'ALTA' && (u.Rol === 'Tecnico' || u.Rol === 'Jefe Taller')
+      ),
+    [usuarios]
+  );
+
+  // Distinct lists for filter
+  const tecnicosInStock = useMemo(
+    () => Array.from(new Set(stockT.map((r) => r.Tecnico_RT))).sort(),
+    [stockT]
+  );
+  const repuestosInStock = useMemo(
+    () => Array.from(new Set(stockT.map((r) => r.Concat_RT))).sort(),
+    [stockT]
+  );
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return stockT
       .filter((r) => r.Cantidad_RT > 0)
+      .filter((r) => (filterTecnico === 'Todos' ? true : r.Tecnico_RT === filterTecnico))
+      .filter((r) => (filterRepuesto === 'Todos' ? true : r.Concat_RT === filterRepuesto))
       .filter(
         (r) =>
           r.Tecnico_RT.toLowerCase().includes(q) ||
@@ -23,82 +73,138 @@ export function StockTecnicos() {
           r.Codigo_RT.toLowerCase().includes(q)
       )
       .sort((a, b) => a.Tecnico_RT.localeCompare(b.Tecnico_RT));
-  }, [stockT, query]);
+  }, [stockT, query, filterTecnico, filterRepuesto]);
 
   const columns: Column<RepuestoTecnico>[] = [
     {
       key: 'tecnico',
       header: 'Técnico',
-      width: '220px',
+      width: '260px',
       render: (r) => (
-        <div className="flex items-center gap-2">
-          <div className="rounded-lg bg-wash-primary/10 p-1.5 text-wash-primary">
-            <HardHat size={14} />
-          </div>
-          <span className="font-semibold text-wash-text-strong">{r.Tecnico_RT}</span>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
+            {initials(r.Tecnico_RT)}
+          </span>
+          <span className="truncate text-[13px] font-semibold text-wash-text-strong">
+            {r.Tecnico_RT}
+          </span>
         </div>
       ),
     },
     {
       key: 'repuesto',
       header: 'Repuesto',
-      render: (r) => <div className="font-display font-bold text-wash-accent">{r.Concat_RT}</div>,
-    },
-    {
-      key: 'codigo',
-      header: 'Código',
-      width: '140px',
-      render: (r) => <span className="font-mono text-xs">{r.Codigo_RT}</span>,
+      width: 'minmax(280px, 1fr)',
+      render: (r) => (
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="rounded-md bg-wash-surface-2 px-1.5 py-0.5 text-[11px] font-semibold text-wash-text">
+            {r.Codigo_RT}
+          </span>
+          <span className="truncate text-[13px] font-semibold text-wash-accent">
+            {r.Concat_RT}
+          </span>
+        </div>
+      ),
     },
     {
       key: 'cantidad',
-      header: 'Cant.',
-      width: '90px',
+      header: 'Cantidad',
+      width: '120px',
       align: 'center',
+      truncate: false,
       render: (r) => (
-        <span className="inline-flex min-w-[40px] items-center justify-center rounded-full bg-wash-primary/10 px-2 py-0.5 text-sm font-bold text-wash-primary">
+        <span className="inline-flex min-w-[40px] items-center justify-center rounded-md bg-wash-action/10 px-2 py-0.5 text-sm font-bold text-wash-action ring-1 ring-wash-action/20">
           {r.Cantidad_RT}
         </span>
       ),
     },
     {
       key: 'actions',
-      header: '',
-      width: '120px',
+      header: 'Acciones',
+      width: '140px',
       align: 'right',
       truncate: false,
-      render: () => (
-        <div className="flex items-center justify-end gap-1">
-          {canEdit && (
-            <>
-              <button
-                type="button"
-                className="rounded-md p-1.5 text-wash-text-muted hover:bg-wash-canvas hover:text-wash-primary"
-                title="Editar cantidad"
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                type="button"
-                className="rounded-md p-1.5 text-wash-text-muted hover:bg-wash-canvas hover:text-wash-primary"
-                title="Reingresar a depósito"
-              >
-                <ArrowLeftRight size={14} />
-              </button>
-            </>
-          )}
-        </div>
-      ),
+      render: (r) =>
+        canEdit ? (
+          <div className="flex items-center justify-end gap-1.5">
+            <ActionButton
+              icon={UserCog}
+              tone="brand"
+              title="Asignar a otro técnico"
+              onClick={(e) => {
+                e.stopPropagation();
+                setAssigning(r);
+              }}
+            />
+            <ActionButton
+              icon={ArrowLeftRight}
+              tone="neutral"
+              title="Reingresar a stock"
+              onClick={(e) => {
+                e.stopPropagation();
+                setReingressing(r);
+              }}
+            />
+            <ActionButton
+              icon={Pencil}
+              tone="neutral"
+              title="Editar cantidad"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditing(r);
+              }}
+            />
+          </div>
+        ) : null,
     },
   ];
 
   return (
     <div className="flex h-full w-full flex-col">
       <PageHeader
-        title="Stock Técnicos"
+        title="Stock técnicos"
         subtitle="Repuestos asignados al equipo de campo"
         search={{ value: query, onChange: setQuery, placeholder: 'Buscar técnico o repuesto' }}
+        filterPopover={
+          <FilterContent
+            tecnico={filterTecnico}
+            repuesto={filterRepuesto}
+            tecnicos={tecnicosInStock}
+            repuestos={repuestosInStock}
+            onApply={(t, r) => {
+              setFilterTecnico(t);
+              setFilterRepuesto(r);
+            }}
+          />
+        }
       />
+
+      {(filterTecnico !== 'Todos' || filterRepuesto !== 'Todos') && (
+        <div className="flex items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
+          <span className="font-semibold uppercase tracking-wider">Filtros:</span>
+          {filterTecnico !== 'Todos' && (
+            <span className="rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand">
+              {filterTecnico}
+            </span>
+          )}
+          {filterRepuesto !== 'Todos' && (
+            <span className="rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand">
+              {filterRepuesto}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setFilterTecnico('Todos');
+              setFilterRepuesto('Todos');
+            }}
+            className="ml-auto text-wash-text-muted hover:text-wash-text-strong"
+          >
+            Limpiar
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-hidden p-6">
         <DataTable
           rows={filtered}
@@ -106,6 +212,594 @@ export function StockTecnicos() {
           columns={columns}
           empty="Sin repuestos asignados"
         />
+      </div>
+
+      {/* Asignar a técnico */}
+      <AssignModal
+        item={assigning}
+        onClose={() => setAssigning(null)}
+        tecnicos={tecnicos.map((t) => t.Concat_Nombre_Apellido)}
+        onApply={(toTecnico, qty) => {
+          if (assigning) assignStockTecnico(assigning.ID, toTecnico, qty);
+          setAssigning(null);
+        }}
+      />
+
+      {/* Reingresar Stock */}
+      <ReingressModal
+        item={reingressing}
+        onClose={() => setReingressing(null)}
+        onApply={(qty) => {
+          if (reingressing) reingressStockTecnico(reingressing.ID, qty);
+          setReingressing(null);
+        }}
+      />
+
+      {/* Editar cantidad */}
+      <EditQtyModal
+        item={editing}
+        onClose={() => setEditing(null)}
+        onApply={(qty) => {
+          if (editing) patchStockTecnico(editing.ID, { Cantidad_RT: qty });
+          setEditing(null);
+        }}
+      />
+    </div>
+  );
+}
+
+// ----- helpers / subcomponents -----
+
+function initials(name: string) {
+  return name
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+}
+
+function ActionButton({
+  icon: Icon,
+  tone,
+  title,
+  onClick,
+}: {
+  icon: typeof Pencil;
+  tone: 'neutral' | 'brand';
+  title: string;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const cls = {
+    neutral:
+      'text-wash-text-muted ring-wash-border hover:bg-wash-surface-2 hover:text-wash-text-strong hover:ring-wash-text-muted/40',
+    brand:
+      'text-wash-brand ring-wash-brand/30 hover:bg-wash-brand/10 hover:ring-wash-brand',
+  }[tone];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={cn(
+        'flex h-8 w-8 items-center justify-center rounded-lg ring-1 transition',
+        cls
+      )}
+    >
+      <Icon size={15} />
+    </button>
+  );
+}
+
+// ----- Asignar a técnico modal -----
+
+function AssignModal({
+  item,
+  onClose,
+  tecnicos,
+  onApply,
+}: {
+  item: RepuestoTecnico | null;
+  onClose: () => void;
+  tecnicos: string[];
+  onApply: (toTecnico: string, qty: number) => void;
+}) {
+  const [tecnico, setTecnico] = useState('');
+  const [qty, setQty] = useState('1');
+
+  if (!item) return null;
+  const ready = !!tecnico && Number(qty) > 0 && Number(qty) <= item.Cantidad_RT;
+
+  return (
+    <Modal
+      open={!!item}
+      onClose={() => {
+        setTecnico('');
+        setQty('1');
+        onClose();
+      }}
+      title="Asignar stock a técnico"
+      width={580}
+    >
+      {/* Repuesto header card */}
+      <div className="rounded-xl bg-wash-surface-2/50 p-4 ring-1 ring-wash-border">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+            <Wrench size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-[15px] font-black text-wash-accent">
+              {item.Concat_RT}
+            </p>
+            <div className="mt-1 flex items-center gap-2 text-xs text-wash-text-muted">
+              <span className="rounded-md bg-wash-surface px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-wash-text">
+                {item.Codigo_RT}
+              </span>
+              <span className="text-wash-text-faint">·</span>
+              <span>Disponible para mover</span>
+            </div>
+          </div>
+          <span className="flex flex-col items-center rounded-lg bg-wash-action/10 px-3 py-1.5 text-center text-wash-action ring-1 ring-wash-action/20">
+            <span className="text-lg font-black leading-none tabular-nums">
+              {item.Cantidad_RT}
+            </span>
+            <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider">
+              en stock
+            </span>
+          </span>
+        </div>
+      </div>
+
+      {/* Origen → Destino preview */}
+      <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div className="rounded-xl bg-wash-surface-2/60 p-3 ring-1 ring-wash-border">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            Desde
+          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">
+              {initials(item.Tecnico_RT)}
+            </span>
+            <span className="truncate text-[12.5px] font-semibold text-wash-text-strong">
+              {item.Tecnico_RT}
+            </span>
+          </div>
+        </div>
+
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-wash-action/15 text-wash-action">
+          <ArrowLeftRight size={14} />
+        </span>
+
+        <div
+          className={cn(
+            'rounded-xl p-3 ring-1 transition',
+            tecnico
+              ? 'bg-wash-action/5 ring-wash-action/40'
+              : 'bg-wash-surface-2/60 ring-wash-border'
+          )}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            Hacia
+          </p>
+          <div className="mt-1 flex items-center gap-2">
+            {tecnico ? (
+              <>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-wash-action/15 text-[9px] font-semibold text-wash-action">
+                  {initials(tecnico)}
+                </span>
+                <span className="truncate text-[12.5px] font-semibold text-wash-action-dark">
+                  {tecnico}
+                </span>
+              </>
+            ) : (
+              <>
+                <UserCircle2 size={14} className="text-wash-text-faint" />
+                <span className="text-[12px] italic text-wash-text-faint">
+                  Sin elegir
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Inputs */}
+      <div className="mt-5 grid grid-cols-[1fr_140px] gap-3">
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            Técnico destino
+          </label>
+          <div className="mt-1.5">
+            <Select value={tecnico || undefined} onValueChange={setTecnico}>
+              <SelectTrigger className="h-10 w-full">
+                <SelectValue placeholder="Buscar técnico…" />
+              </SelectTrigger>
+              <SelectContent>
+                {tecnicos
+                  .filter((t) => t !== item.Tecnico_RT)
+                  .map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            Cantidad
+          </label>
+          <QtyStepper value={qty} onChange={setQty} max={item.Cantidad_RT} />
+        </div>
+      </div>
+
+      <ModalActions>
+        <button
+          type="button"
+          onClick={() => {
+            setTecnico('');
+            setQty('1');
+            onClose();
+          }}
+          className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          disabled={!ready}
+          onClick={() => {
+            onApply(tecnico, Number(qty));
+            setTecnico('');
+            setQty('1');
+          }}
+          className="flex items-center gap-2 rounded-lg bg-wash-action px-6 py-3 text-[14px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <UserCog size={16} />
+          Asignar
+        </button>
+      </ModalActions>
+    </Modal>
+  );
+}
+
+// ----- Reingresar Stock modal -----
+
+function ReingressModal({
+  item,
+  onClose,
+  onApply,
+}: {
+  item: RepuestoTecnico | null;
+  onClose: () => void;
+  onApply: (qty: number) => void;
+}) {
+  const [qty, setQty] = useState('1');
+
+  if (!item) return null;
+  const ready = Number(qty) > 0 && Number(qty) <= item.Cantidad_RT;
+
+  return (
+    <Modal
+      open={!!item}
+      onClose={() => {
+        setQty('1');
+        onClose();
+      }}
+      title="Reingresar stock"
+      width={500}
+    >
+      {/* Repuesto header card */}
+      <div className="rounded-xl bg-wash-surface-2/50 p-4 ring-1 ring-wash-border">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+            <Wrench size={18} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-[15px] font-black text-wash-accent">
+              {item.Concat_RT}
+            </p>
+            <div className="mt-1 flex items-center gap-2 text-xs text-wash-text-muted">
+              <span className="rounded-md bg-wash-surface px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-wash-text">
+                {item.Codigo_RT}
+              </span>
+              <span className="text-wash-text-faint">·</span>
+              <span className="flex items-center gap-1">
+                <UserCircle2 size={11} />
+                {item.Tecnico_RT}
+              </span>
+            </div>
+          </div>
+          <span className="flex flex-col items-center rounded-lg bg-wash-action/10 px-3 py-1.5 text-center text-wash-action ring-1 ring-wash-action/20">
+            <span className="text-lg font-black leading-none tabular-nums">
+              {item.Cantidad_RT}
+            </span>
+            <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider">
+              en stock
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+          Cantidad a reingresar
+        </label>
+        <QtyStepper value={qty} onChange={setQty} max={item.Cantidad_RT} />
+        <p className="mt-1.5 text-[11px] text-wash-text-muted">
+          Se devuelve esta cantidad al depósito principal.
+        </p>
+      </div>
+
+      <ModalActions>
+        <button
+          type="button"
+          onClick={() => {
+            setQty('1');
+            onClose();
+          }}
+          className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          disabled={!ready}
+          onClick={() => {
+            onApply(Number(qty));
+            setQty('1');
+          }}
+          className="flex items-center gap-2 rounded-lg bg-wash-action px-6 py-3 text-[14px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ArrowLeftRight size={16} />
+          Aceptar
+        </button>
+      </ModalActions>
+    </Modal>
+  );
+}
+
+// ----- Editar cantidad modal -----
+
+function EditQtyModal({
+  item,
+  onClose,
+  onApply,
+}: {
+  item: RepuestoTecnico | null;
+  onClose: () => void;
+  onApply: (qty: number) => void;
+}) {
+  const [qty, setQty] = useState('1');
+
+  useEffect(() => {
+    if (item) setQty(String(item.Cantidad_RT));
+  }, [item]);
+
+  if (!item) return null;
+  const ready = Number(qty) >= 0 && Number(qty) !== item.Cantidad_RT;
+
+  return (
+    <Modal
+      open={!!item}
+      onClose={onClose}
+      title="Editar cantidad"
+      width={440}
+    >
+      <div className="rounded-xl bg-wash-surface-2/50 p-3 ring-1 ring-wash-border">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+            <Wrench size={14} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-display text-[13px] font-bold text-wash-accent">
+              {item.Concat_RT}
+            </p>
+            <div className="mt-0.5 flex items-center gap-2 text-[11px] text-wash-text-muted">
+              <span className="rounded bg-wash-surface px-1.5 py-0.5 font-mono text-[10px] font-semibold text-wash-text">
+                {item.Codigo_RT}
+              </span>
+              <span className="text-wash-text-faint">·</span>
+              <span>{item.Tecnico_RT}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5">
+        <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+          Cantidad
+        </label>
+        <QtyStepper value={qty} onChange={setQty} size="lg" />
+      </div>
+      <ModalActions>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          disabled={!ready}
+          onClick={() => onApply(Number(qty))}
+          className="flex items-center gap-2 rounded-lg bg-wash-action px-6 py-3 text-[14px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Pencil size={15} />
+          Guardar
+        </button>
+      </ModalActions>
+    </Modal>
+  );
+}
+
+// ----- Qty stepper (reusable -/+) -----
+
+function QtyStepper({
+  value,
+  onChange,
+  max,
+  size = 'md',
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  max?: number;
+  /** 'md' default (h-10) or 'lg' for primary inputs (h-12). */
+  size?: 'md' | 'lg';
+}) {
+  const heightCls = size === 'lg' ? 'h-12' : 'h-10';
+  const buttonWidthCls = size === 'lg' ? 'w-11' : 'w-9';
+  const iconSize = size === 'lg' ? 16 : 14;
+  const textCls = size === 'lg' ? 'text-base' : 'text-sm';
+
+  return (
+    <div
+      className={cn(
+        'mt-1.5 flex items-stretch overflow-hidden rounded-lg border border-wash-border focus-within:border-wash-action focus-within:ring-2 focus-within:ring-wash-action/15',
+        heightCls
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => onChange(String(Math.max(0, (Number(value) || 0) - 1)))}
+        className={cn(
+          'flex shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-action',
+          buttonWidthCls
+        )}
+      >
+        <Minus size={iconSize} />
+      </button>
+      <input
+        type="number"
+        min={0}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          'w-full min-w-0 flex-1 bg-wash-surface px-1 text-center font-bold tabular-nums outline-none',
+          textCls
+        )}
+      />
+      <button
+        type="button"
+        onClick={() => {
+          const next = (Number(value) || 0) + 1;
+          onChange(String(max !== undefined ? Math.min(max, next) : next));
+        }}
+        className={cn(
+          'flex shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-action',
+          buttonWidthCls
+        )}
+      >
+        <Plus size={iconSize} />
+      </button>
+    </div>
+  );
+}
+
+// ----- Filter popover -----
+
+function FilterContent({
+  tecnico,
+  repuesto,
+  tecnicos,
+  repuestos,
+  onApply,
+}: {
+  tecnico: string;
+  repuesto: string;
+  tecnicos: string[];
+  repuestos: string[];
+  onApply: (tecnico: string, repuesto: string) => void;
+}) {
+  const [pendingTecnico, setPendingTecnico] = useState(tecnico);
+  const [pendingRepuesto, setPendingRepuesto] = useState(repuesto);
+
+  const dirty = pendingTecnico !== tecnico || pendingRepuesto !== repuesto;
+  const hasFilters = pendingTecnico !== 'Todos' || pendingRepuesto !== 'Todos';
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between border-b border-wash-border pb-2.5">
+        <h3 className="text-sm font-bold text-wash-text-strong">Filtrar</h3>
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={() => {
+              setPendingTecnico('Todos');
+              setPendingRepuesto('Todos');
+            }}
+            className="text-[11px] font-semibold text-wash-text-muted hover:text-wash-text-strong"
+          >
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            Técnico
+          </label>
+          <div className="mt-1.5">
+            <Select value={pendingTecnico} onValueChange={setPendingTecnico}>
+              <SelectTrigger className="h-9 w-full text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Todos">Todos</SelectItem>
+                {tecnicos.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            Repuesto
+          </label>
+          <div className="mt-1.5">
+            <Select value={pendingRepuesto} onValueChange={setPendingRepuesto}>
+              <SelectTrigger className="h-9 w-full text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Todos">Todos</SelectItem>
+                {repuestos.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex justify-end gap-2 border-t border-wash-border pt-3">
+        <PopoverClose asChild>
+          <button
+            type="button"
+            className="rounded-lg border border-wash-border px-4 py-2 text-[12.5px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          >
+            Cancelar
+          </button>
+        </PopoverClose>
+        <PopoverClose asChild>
+          <button
+            type="button"
+            disabled={!dirty}
+            onClick={() => onApply(pendingTecnico, pendingRepuesto)}
+            className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Aplicar
+          </button>
+        </PopoverClose>
       </div>
     </div>
   );

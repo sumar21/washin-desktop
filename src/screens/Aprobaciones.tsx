@@ -329,7 +329,7 @@ export function Aprobaciones() {
           <button
             type="button"
             onClick={() => setFilterOpen(false)}
-            className="rounded-lg bg-wash-brand px-4 py-2 font-medium text-white hover:bg-wash-brand-dark"
+            className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark"
           >
             Aplicar
           </button>

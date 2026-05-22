@@ -61,6 +61,8 @@ function SelectContent({
   position = "popper",
   align = "start",
   sideOffset = 6,
+  side = "bottom",
+  avoidCollisions = false,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -70,6 +72,8 @@ function SelectContent({
         position={position}
         align={align}
         sideOffset={sideOffset}
+        side={side}
+        avoidCollisions={avoidCollisions}
         className={cn(
           "relative z-[70] max-h-[300px] min-w-[var(--radix-select-trigger-width)] overflow-x-hidden overflow-y-auto rounded-lg border border-wash-border bg-wash-surface p-1 text-wash-text-strong shadow-lg ring-1 ring-black/[0.03] data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className

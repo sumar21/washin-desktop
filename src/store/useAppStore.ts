@@ -133,6 +133,21 @@ interface AppState {
     extras?: { NroSerie?: string; IDMaquina?: string }
   ) => void;
   removeRegistro: (id: number) => void;
+
+  // Stock técnicos
+  patchStockTecnico: (id: number, changes: Partial<RepuestoTecnico>) => void;
+  /** Transfer some qty from a technician back to the main warehouse stock. */
+  reingressStockTecnico: (id: number, qty: number) => void;
+  /** Assign repuesto from one technician to another (creates or sums). */
+  assignStockTecnico: (
+    fromId: number,
+    toTecnico: string,
+    qty: number
+  ) => void;
+
+  // Ventilaciones
+  addVentilacion: (v: Omit<Ventilacion, 'ID'>) => void;
+  removeVentilacion: (id: number) => void;
 }
 
 const SIDEBAR_STORAGE_KEY = 'washin-sidebar-collapsed';
@@ -163,6 +178,11 @@ const initialState: Omit<
   | 'addIncidente'
   | 'addStock'
   | 'removeRegistro'
+  | 'patchStockTecnico'
+  | 'reingressStockTecnico'
+  | 'assignStockTecnico'
+  | 'addVentilacion'
+  | 'removeVentilacion'
 > = {
   sidebarCollapsed: readStoredCollapsed(),
   VarUsuario: null,
@@ -324,6 +344,107 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       CollectResumen: s.CollectResumen.filter((r) => r.ID !== id),
     })),
+
+  patchStockTecnico: (id, changes) =>
+    set((s) => ({
+      CollectStockTecnicos: s.CollectStockTecnicos.map((it) =>
+        it.ID === id ? { ...it, ...changes } : it
+      ),
+    })),
+
+  reingressStockTecnico: (id, qty) =>
+    set((s) => {
+      const source = s.CollectStockTecnicos.find((it) => it.ID === id);
+      if (!source) return s;
+      const taken = Math.min(qty, source.Cantidad_RT);
+      // Reduce from técnico
+      const newTecStock = s.CollectStockTecnicos.map((it) =>
+        it.ID === id ? { ...it, Cantidad_RT: it.Cantidad_RT - taken } : it
+      );
+      // Add back to main warehouse stock (match by Codigo if possible, else by name)
+      const existingMain = s.CollectStock.find(
+        (st) =>
+          st.Status_ST === 'Activo' &&
+          (st.Nro_ST === source.Codigo_RT ||
+            st.Item_ST.toLowerCase() === source.Concat_RT.toLowerCase())
+      );
+      let newMain: typeof s.CollectStock;
+      if (existingMain) {
+        newMain = s.CollectStock.map((st) =>
+          st.ID === existingMain.ID
+            ? { ...st, Cantidad_ST: st.Cantidad_ST + taken }
+            : st
+        );
+      } else {
+        const newId =
+          s.CollectStock.reduce((max, it) => Math.max(max, it.ID), 0) + 1;
+        newMain = [
+          ...s.CollectStock,
+          {
+            ID: newId,
+            Item_ST: source.Concat_RT,
+            Tipo_ST: 'REPUESTO',
+            Nro_ST: source.Codigo_RT,
+            Cantidad_ST: taken,
+            Status_ST: 'Activo',
+          },
+        ];
+      }
+      return { CollectStockTecnicos: newTecStock, CollectStock: newMain };
+    }),
+
+  addVentilacion: (v) =>
+    set((s) => {
+      const id = nextId(s.CollectVentilaciones);
+      return {
+        CollectVentilaciones: [...s.CollectVentilaciones, { ...v, ID: id }],
+      };
+    }),
+
+  removeVentilacion: (id) =>
+    set((s) => ({
+      CollectVentilaciones: s.CollectVentilaciones.filter((v) => v.ID !== id),
+    })),
+
+  assignStockTecnico: (fromId, toTecnico, qty) =>
+    set((s) => {
+      const source = s.CollectStockTecnicos.find((it) => it.ID === fromId);
+      if (!source || !toTecnico || source.Tecnico_RT === toTecnico) return s;
+      const taken = Math.min(qty, source.Cantidad_RT);
+      // Reduce from source técnico
+      const reduced = s.CollectStockTecnicos.map((it) =>
+        it.ID === fromId ? { ...it, Cantidad_RT: it.Cantidad_RT - taken } : it
+      );
+      // Add to destination técnico — sum if exists, otherwise new entry
+      const existingDest = reduced.find(
+        (it) =>
+          it.Tecnico_RT === toTecnico &&
+          it.Codigo_RT === source.Codigo_RT
+      );
+      let result: typeof s.CollectStockTecnicos;
+      if (existingDest) {
+        result = reduced.map((it) =>
+          it.ID === existingDest.ID
+            ? { ...it, Cantidad_RT: it.Cantidad_RT + taken }
+            : it
+        );
+      } else {
+        const newId =
+          reduced.reduce((max, it) => Math.max(max, it.ID), 0) + 1;
+        result = [
+          ...reduced,
+          {
+            ID: newId,
+            Tecnico_RT: toTecnico,
+            Concat_RT: source.Concat_RT,
+            Codigo_RT: source.Codigo_RT,
+            Cantidad_RT: taken,
+            Status_RT: 'Activo',
+          },
+        ];
+      }
+      return { CollectStockTecnicos: result };
+    }),
 
   addStock: (catalogItem, cantidad, extras) =>
     set((s) => {

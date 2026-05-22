@@ -408,7 +408,7 @@ function EditCompraForm({
         <button
           type="button"
           onClick={() => onSave(obs)}
-          className="rounded-lg bg-wash-brand px-4 py-2 font-medium text-white hover:bg-wash-brand-dark"
+          className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark"
         >
           Guardar
         </button>
@@ -588,7 +588,7 @@ function NuevaCompraModal({ open, onClose, catalog, onSubmit }: NuevaCompraModal
               'mt-[22px] flex h-[42px] w-[42px] items-center justify-center rounded-lg text-white shadow-sm transition',
               editingIdx !== null
                 ? 'bg-amber-500 hover:bg-amber-600'
-                : 'bg-wash-brand hover:bg-wash-brand-dark',
+                : 'bg-wash-action hover:bg-wash-action-dark',
               !canAdd && 'cursor-not-allowed opacity-50'
             )}
           >
@@ -624,7 +624,7 @@ function NuevaCompraModal({ open, onClose, catalog, onSubmit }: NuevaCompraModal
                       editingIdx === idx && 'ring-2 ring-amber-400'
                     )}
                   >
-                    <span className="flex h-8 min-w-[34px] items-center justify-center rounded-md bg-wash-brand px-2 text-sm font-bold text-white shadow-sm tabular-nums">
+                    <span className="flex h-8 min-w-[34px] items-center justify-center rounded-md bg-wash-action px-2 text-sm font-bold text-white shadow-sm tabular-nums">
                       {l.qty}
                     </span>
                     <div className="min-w-0 flex-1 truncate font-display text-[12.5px] font-bold uppercase tracking-wide text-wash-accent">
@@ -673,7 +673,7 @@ function NuevaCompraModal({ open, onClose, catalog, onSubmit }: NuevaCompraModal
               reset();
             }
           }}
-          className="rounded-lg bg-wash-brand px-5 py-2.5 font-medium text-white hover:bg-wash-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           Guardar
         </button>

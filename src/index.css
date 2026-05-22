@@ -17,6 +17,10 @@
   --color-wash-brand-light: rgb(60 200 240);
   --color-wash-brand-dark: rgb(0 145 195);
 
+  /* Softer cyan used for buttons (less neon than the pure brand). */
+  --color-wash-action: rgb(20 130 175);
+  --color-wash-action-dark: rgb(15 105 140);
+
   --color-wash-text: rgb(15 23 42);
   --color-wash-text-strong: rgb(2 6 23);
   --color-wash-text-muted: rgb(100 116 139);

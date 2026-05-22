@@ -286,7 +286,7 @@ export function Stock() {
               if (editing) patchStock(editing.ID, { Cantidad_ST: Number(editQty) || 0 });
               setEditing(null);
             }}
-            className="rounded-lg bg-wash-brand px-4 py-2 font-medium text-white hover:bg-wash-brand-dark"
+            className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark"
           >
             Guardar
           </button>
@@ -332,7 +332,7 @@ export function Stock() {
           <button
             type="button"
             onClick={() => setFilterOpen(false)}
-            className="rounded-lg bg-wash-brand px-4 py-2 font-medium text-white hover:bg-wash-brand-dark"
+            className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark"
           >
             Aplicar
           </button>
@@ -682,7 +682,7 @@ function AddStockModal({ open, onClose, catalog, onAdd }: AddStockModalProps) {
               reset();
             }
           }}
-          className="rounded-lg bg-wash-brand px-4 py-2 font-medium text-white hover:bg-wash-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           Agregar
         </button>

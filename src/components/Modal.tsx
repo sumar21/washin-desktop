@@ -23,15 +23,18 @@ export function Modal({ open, onClose, title, children, width = 580, className }
 
   if (!open) return null;
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm">
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm">
       <div
-        className={cn('relative rounded-2xl bg-wash-surface shadow-2xl', className)}
+        className={cn(
+          'relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-2xl',
+          className
+        )}
         style={{ width }}
         role="dialog"
         aria-modal="true"
       >
         {title && (
-          <div className="flex items-center justify-between border-b border-wash-border px-6 py-4">
+          <div className="flex shrink-0 items-center justify-between border-b border-wash-border px-6 py-4">
             <h2 className="font-display text-lg font-bold text-wash-accent">{title}</h2>
             <button
               type="button"
@@ -42,7 +45,7 @@ export function Modal({ open, onClose, title, children, width = 580, className }
             </button>
           </div>
         )}
-        <div className="p-6">{children}</div>
+        <div className="flex-1 overflow-y-auto p-6">{children}</div>
       </div>
     </div>
   );

@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
 import { cn, proper, formatToday, currentMonthYear, currentMonthName } from '@/lib/utils';
 import type { Incidente } from '@/types/domain';
@@ -40,7 +41,7 @@ export function Incidentes() {
   const VarUsuario = useAppStore((s) => s.VarUsuario) ?? '';
 
   const [query, setQuery] = useState('');
-  const [filterOpen, setFilterOpen] = useState(false);
+  // Applied filters (used to filter the table)
   const [filterTipo, setFilterTipo] = useState<string>('Todos');
   const [filterEstado, setFilterEstado] = useState<string>('Todos');
 
@@ -129,7 +130,7 @@ export function Incidentes() {
     const name = userName(user);
     return (
       <div className="flex min-w-0 items-center gap-2">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-wash-brand/10 text-[9px] font-bold text-wash-brand ring-1 ring-wash-brand/25">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9.5px] font-semibold text-slate-600">
           {initials(name) || '?'}
         </span>
         <span className="truncate text-[12.5px] text-wash-text-strong">{name}</span>
@@ -183,10 +184,13 @@ export function Incidentes() {
     {
       key: 'maquina',
       header: 'Máquina',
-      width: 'minmax(220px, 1fr)',
+      width: 'minmax(340px, 1.6fr)',
       render: (i) =>
         i.ConcatMaquina_IN ? (
-          <span className="truncate text-[13px] font-semibold text-wash-text-strong">
+          <span
+            title={proper(i.ConcatMaquina_IN)}
+            className="truncate text-[13px] font-semibold text-wash-text-strong"
+          >
             {proper(i.ConcatMaquina_IN)}
           </span>
         ) : (
@@ -215,18 +219,19 @@ export function Incidentes() {
     {
       key: 'asignador',
       header: 'Asignador',
-      width: '170px',
+      width: '180px',
+      truncate: false,
       render: (i) => <PersonCell user={i.User_IN} />,
     },
     {
       key: 'tecnico',
       header: 'Técnico',
-      width: '170px',
+      width: '180px',
       truncate: false,
       render: (i) => {
         if (!i.TecnicoAsignado_IN)
           return (
-            <span className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-amber-700">
+            <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-amber-700">
               <UserCircle2 size={13} className="opacity-80" />
               Sin asignar
             </span>
@@ -372,7 +377,16 @@ export function Incidentes() {
           onChange: setQuery,
           placeholder: 'Edificio, máquina, estado…',
         }}
-        onFilter={() => setFilterOpen(true)}
+        filterPopover={
+          <FilterContent
+            tipo={filterTipo}
+            estado={filterEstado}
+            onApply={(t, e) => {
+              setFilterTipo(t);
+              setFilterEstado(e);
+            }}
+          />
+        }
         onAdd={() => setNewOpen(true)}
         addLabel="Nuevo incidente"
       />
@@ -417,49 +431,135 @@ export function Incidentes() {
       <Modal
         open={!!observingDetail}
         onClose={() => setObservingDetail(null)}
-        title="Observación Incidente"
-        width={560}
+        title="Observación del incidente"
+        width={580}
       >
         {observingDetail && (
           <>
-            <label className="text-sm font-medium text-wash-text-strong">
-              Observación
-            </label>
-            <div className="mt-1.5 min-h-[160px] rounded-lg border border-wash-border bg-wash-surface-2/50 px-3 py-2.5 text-sm text-wash-text-strong">
-              {observingDetail.DescripcionIncidente_IN ??
-                observingDetail.DescripcionCarga_IN ??
-                'Sin observación registrada.'}
+            {/* Header card with machine info */}
+            <div className="rounded-xl bg-wash-surface-2/50 p-4 ring-1 ring-wash-border">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+                  <Wrench size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  {observingDetail.ConcatMaquina_IN ? (
+                    <p className="font-display text-[15px] font-black text-wash-accent">
+                      {proper(observingDetail.ConcatMaquina_IN)}
+                    </p>
+                  ) : (
+                    <p className="font-display text-[15px] italic text-wash-text-muted">
+                      Máquina no asignada
+                    </p>
+                  )}
+                  <div className="mt-1 flex items-center gap-2 text-xs text-wash-text-muted">
+                    <Building2 size={11} />
+                    <span>{observingDetail.NombreEdificio_IN}</span>
+                    {observingDetail.IDMaquina_IN && (
+                      <>
+                        <span className="text-wash-text-faint">·</span>
+                        <span className="rounded-md bg-wash-surface px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-wash-text">
+                          #{observingDetail.IDMaquina_IN}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <StatusBadge status={observingDetail.Status_IN} />
+              </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-              <Field label="Edificio" value={observingDetail.NombreEdificio_IN} />
-              <Field label="Estado" value={<StatusBadge status={observingDetail.Status_IN} />} />
-              <Field
-                label="Máquina"
+            {/* Observation as styled quote */}
+            <div className="mt-4">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+                Observación
+              </p>
+              <div className="relative overflow-hidden rounded-xl border border-wash-border bg-wash-surface px-5 py-4">
+                <span className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-wash-brand-light to-wash-brand-dark" />
+                <p className="text-sm leading-relaxed text-wash-text-strong">
+                  {observingDetail.DescripcionIncidente_IN ??
+                    observingDetail.DescripcionCarga_IN ?? (
+                      <span className="italic text-wash-text-muted">
+                        Sin observación registrada.
+                      </span>
+                    )}
+                </p>
+              </div>
+            </div>
+
+            {/* Metadata grid */}
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              <MetaItem
+                icon={Calendar}
+                label="Fecha"
+                value={observingDetail.Fecha_IN}
+              />
+              <MetaItem
+                icon={Calendar}
+                label="Resuelto"
                 value={
-                  observingDetail.ConcatMaquina_IN
-                    ? proper(observingDetail.ConcatMaquina_IN)
-                    : 'No asignada'
+                  observingDetail.FechaResuelto_IN ?? (
+                    <span className="text-wash-text-faint">—</span>
+                  )
                 }
               />
-              <Field
-                label="Técnico"
-                value={userName(observingDetail.TecnicoAsignado_IN)}
+              <MetaItem
+                icon={Wrench}
+                label="Tipo"
+                value={observingDetail.NoResuelto_IN}
               />
+              <MetaItem
+                icon={UserCircle2}
+                label="Asignador"
+                value={
+                  <PersonChip
+                    name={userName(observingDetail.User_IN)}
+                    tone="slate"
+                  />
+                }
+              />
+              <MetaItem
+                icon={UserCog}
+                label="Técnico"
+                value={
+                  observingDetail.TecnicoAsignado_IN ? (
+                    <PersonChip
+                      name={userName(observingDetail.TecnicoAsignado_IN)}
+                      tone="brand"
+                    />
+                  ) : (
+                    <span className="text-[12px] font-semibold text-amber-700">
+                      Sin asignar
+                    </span>
+                  )
+                }
+              />
+              {observingDetail.CantidadRepuestos_IN > 0 && (
+                <MetaItem
+                  icon={ExternalLink}
+                  label="Repuestos"
+                  value={
+                    <span className="text-[12.5px] font-semibold text-wash-text-strong">
+                      {observingDetail.CantidadRepuestos_IN} solicitado
+                      {observingDetail.CantidadRepuestos_IN === 1 ? '' : 's'}
+                    </span>
+                  }
+                />
+              )}
             </div>
 
             <ModalActions>
               <button
                 type="button"
                 onClick={() => setObservingDetail(null)}
-                className="rounded-lg border border-wash-border px-5 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+                className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
               >
                 Cerrar
               </button>
               <button
                 type="button"
                 onClick={() => setObservingDetail(null)}
-                className="rounded-lg bg-wash-brand px-5 py-2 font-medium text-white hover:bg-wash-brand-dark"
+                className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark"
               >
                 Aceptar
               </button>
@@ -472,25 +572,49 @@ export function Incidentes() {
       <Modal
         open={!!assigning}
         onClose={() => setAssigning(null)}
-        title="Asignar a técnico"
-        width={480}
+        title="Asignar técnico"
+        width={520}
       >
         {assigning && (
           <>
-            <div className="rounded-lg bg-wash-surface-2/50 px-3 py-2 text-xs">
-              <span className="font-semibold text-wash-text-strong">
-                {assigning.NombreEdificio_IN}
-              </span>
-              <span className="text-wash-text-muted">
-                {' '}
-                · {assigning.ConcatMaquina_IN ?? 'Maquina No Asignada'}
-              </span>
+            {/* Header card */}
+            <div className="rounded-xl bg-wash-surface-2/50 p-4 ring-1 ring-wash-border">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+                  <UserCog size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  {assigning.ConcatMaquina_IN ? (
+                    <p className="font-display text-[15px] font-black text-wash-accent">
+                      {proper(assigning.ConcatMaquina_IN)}
+                    </p>
+                  ) : (
+                    <p className="font-display text-[15px] italic text-wash-text-muted">
+                      Máquina no asignada
+                    </p>
+                  )}
+                  <div className="mt-1 flex items-center gap-2 text-xs text-wash-text-muted">
+                    <Building2 size={11} />
+                    <span>{assigning.NombreEdificio_IN}</span>
+                    {assigning.IDMaquina_IN && (
+                      <>
+                        <span className="text-wash-text-faint">·</span>
+                        <span className="rounded-md bg-wash-surface px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-wash-text">
+                          #{assigning.IDMaquina_IN}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="mt-4">
-              <label className="text-xs font-semibold uppercase tracking-wider text-wash-text-muted">
+
+            {/* Select técnico */}
+            <div className="mt-5">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
                 Técnico
               </label>
-              <div className="mt-1.5">
+              <div className="mt-2">
                 <Select value={newTecnico || undefined} onValueChange={setNewTecnico}>
                   <SelectTrigger className="h-10 w-full">
                     <SelectValue placeholder="Elegir técnico…" />
@@ -504,12 +628,16 @@ export function Incidentes() {
                   </SelectContent>
                 </Select>
               </div>
+              <p className="mt-1.5 text-[11px] text-wash-text-muted">
+                Al asignar, el incidente pasa a estado <strong>Asignado</strong>.
+              </p>
             </div>
+
             <ModalActions>
               <button
                 type="button"
                 onClick={() => setAssigning(null)}
-                className="rounded-lg border border-wash-border px-5 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+                className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
               >
                 Cancelar
               </button>
@@ -523,8 +651,9 @@ export function Incidentes() {
                   });
                   setAssigning(null);
                 }}
-                className="rounded-lg bg-wash-brand px-5 py-2 font-medium text-white hover:bg-wash-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
               >
+                <UserCog size={15} />
                 Asignar
               </button>
             </ModalActions>
@@ -587,7 +716,7 @@ export function Incidentes() {
                   setOutOfStock(null);
                   navigate('/compras');
                 }}
-                className="rounded-lg bg-wash-brand px-5 py-2 font-medium text-white hover:bg-wash-brand-dark"
+                className="rounded-lg bg-wash-action px-5 py-2 font-medium text-white hover:bg-wash-action-dark"
               >
                 Realizar pedido
               </button>
@@ -601,52 +730,92 @@ export function Incidentes() {
         open={!!verRepuestos}
         onClose={() => setVerRepuestos(null)}
         title="Repuestos del incidente"
-        width={520}
+        width={560}
       >
         {verRepuestos && (
           <>
-            <div className="rounded-lg bg-wash-surface-2/50 p-3 text-xs">
-              <span className="font-semibold text-wash-text-strong">
-                {verRepuestos.NombreEdificio_IN}
-              </span>
-              <span className="text-wash-text-muted">
-                {' '}
-                ·{' '}
-                {verRepuestos.ConcatMaquina_IN
-                  ? proper(verRepuestos.ConcatMaquina_IN)
-                  : 'Maquina No Asignada'}
-              </span>
-            </div>
-            <div className="mt-3 overflow-hidden rounded-xl border border-wash-border">
-              <div className="grid grid-cols-[1fr_80px] bg-wash-surface-2/60 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-wash-text-muted">
-                <span>Repuesto</span>
-                <span className="text-center">Cant.</span>
-              </div>
-              {repuestosDe(verRepuestos.IDIncidente).length === 0 ? (
-                <p className="px-3 py-4 text-center text-xs text-wash-text-muted">
-                  Sin repuestos cargados.
-                </p>
-              ) : (
-                repuestosDe(verRepuestos.IDIncidente).map((r) => (
-                  <div
-                    key={r.ID}
-                    className="grid grid-cols-[1fr_80px] items-center border-t border-wash-divider/60 px-3 py-2 text-sm"
-                  >
-                    <span className="font-medium text-wash-text-strong">
-                      {r.Repuesto_RI}
-                    </span>
-                    <span className="text-center font-bold text-wash-text-strong">
-                      {r.Cantidad_RI}
-                    </span>
+            {/* Header card */}
+            <div className="rounded-xl bg-wash-surface-2/50 p-4 ring-1 ring-wash-border">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+                  <Wrench size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  {verRepuestos.ConcatMaquina_IN ? (
+                    <p className="font-display text-[15px] font-black text-wash-accent">
+                      {proper(verRepuestos.ConcatMaquina_IN)}
+                    </p>
+                  ) : (
+                    <p className="font-display text-[15px] italic text-wash-text-muted">
+                      Máquina no asignada
+                    </p>
+                  )}
+                  <div className="mt-1 flex items-center gap-2 text-xs text-wash-text-muted">
+                    <Building2 size={11} />
+                    <span>{verRepuestos.NombreEdificio_IN}</span>
+                    {verRepuestos.IDMaquina_IN && (
+                      <>
+                        <span className="text-wash-text-faint">·</span>
+                        <span className="rounded-md bg-wash-surface px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-wash-text">
+                          #{verRepuestos.IDMaquina_IN}
+                        </span>
+                      </>
+                    )}
                   </div>
-                ))
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-full bg-wash-brand/10 px-2.5 py-1 text-[11px] font-bold text-wash-brand">
+                  {verRepuestos.CantidadRepuestos_IN}{' '}
+                  {verRepuestos.CantidadRepuestos_IN === 1 ? 'item' : 'items'}
+                </span>
+              </div>
+            </div>
+
+            {/* Repuestos list */}
+            <div className="mt-5">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+                Repuestos solicitados
+              </p>
+              {repuestosDe(verRepuestos.IDIncidente).length === 0 ? (
+                <div className="rounded-xl border border-dashed border-wash-border py-8 text-center">
+                  <Wrench
+                    size={28}
+                    className="mx-auto mb-2 text-wash-text-faint"
+                    strokeWidth={1.5}
+                  />
+                  <p className="text-sm font-semibold text-wash-text-strong">
+                    Sin repuestos cargados
+                  </p>
+                  <p className="mt-1 text-xs text-wash-text-muted">
+                    Este incidente no tiene repuestos solicitados.
+                  </p>
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {repuestosDe(verRepuestos.IDIncidente).map((r) => (
+                    <li
+                      key={r.ID}
+                      className="flex items-center gap-3 rounded-xl bg-wash-surface px-4 py-3 ring-1 ring-wash-border"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand">
+                        <Wrench size={14} />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate font-medium text-wash-text-strong">
+                        {r.Repuesto_RI}
+                      </span>
+                      <span className="flex h-7 min-w-[36px] items-center justify-center rounded-md bg-wash-action/10 px-2 text-sm font-bold text-wash-action ring-1 ring-wash-action/20">
+                        {r.Cantidad_RI}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
+
             <ModalActions>
               <button
                 type="button"
                 onClick={() => setVerRepuestos(null)}
-                className="rounded-lg bg-wash-brand px-5 py-2 font-medium text-white hover:bg-wash-brand-dark"
+                className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark"
               >
                 Cerrar
               </button>
@@ -655,125 +824,80 @@ export function Incidentes() {
         )}
       </Modal>
 
-      {/* Filter modal */}
-      <Modal
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        title="Filtrar incidentes"
-        width={460}
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-wash-text-muted">
-              Tipo
-            </label>
-            <div className="mt-1.5">
-              <Select value={filterTipo} onValueChange={setFilterTipo}>
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Todos">Todos</SelectItem>
-                  <SelectItem value="Requiere Repuesto">Requiere Repuesto</SelectItem>
-                  <SelectItem value="Cambio Maquina">Cambio Maquina</SelectItem>
-                  <SelectItem value="Reportado Por Tecnico">Reportado Por Tecnico</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-wash-text-muted">
-              Estado
-            </label>
-            <div className="mt-1.5">
-              <Select value={filterEstado} onValueChange={setFilterEstado}>
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Todos">Todos</SelectItem>
-                  <SelectItem value="A Revisar">A Revisar</SelectItem>
-                  <SelectItem value="Asignado">Asignado</SelectItem>
-                  <SelectItem value="En Aprobacion">En Aprobacion</SelectItem>
-                  <SelectItem value="Pendiente">Pendiente</SelectItem>
-                  <SelectItem value="Resuelto">Resuelto</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-        <ModalActions>
-          <button
-            type="button"
-            onClick={() => {
-              setFilterTipo('Todos');
-              setFilterEstado('Todos');
-              setFilterOpen(false);
-            }}
-            className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
-          >
-            Limpiar
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterOpen(false)}
-            className="rounded-lg bg-wash-brand px-4 py-2 font-medium text-white hover:bg-wash-brand-dark"
-          >
-            Aplicar
-          </button>
-        </ModalActions>
-      </Modal>
 
       {/* New incidente */}
       <Modal
         open={newOpen}
         onClose={() => setNewOpen(false)}
         title="Nuevo incidente"
-        width={560}
+        width={600}
       >
-        <div className="space-y-3">
-          <div>
-            <Label>Edificio</Label>
-            <div className="mt-1.5">
-              <Select value={newEdificio || undefined} onValueChange={setNewEdificio}>
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder="Seleccionar edificio…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {edificios.map((e) => (
-                    <SelectItem key={e.ID} value={e.Edificio}>
-                      {e.Edificio}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <p className="text-sm text-wash-text-muted">
+          Cargá los datos del reporte. Completá al menos edificio y descripción.
+        </p>
+
+        <div className="mt-5 space-y-4">
+          {/* Sección Ubicación */}
+          <Section icon={Building2} title="Ubicación">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <LabelReq required>Edificio</LabelReq>
+                <div className="mt-1.5">
+                  <Select
+                    value={newEdificio || undefined}
+                    onValueChange={(v) => {
+                      setNewEdificio(v);
+                      setNewMaquina('');
+                    }}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="Elegir edificio…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {edificios.map((e) => (
+                        <SelectItem key={e.ID} value={e.Edificio}>
+                          {e.Edificio}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <LabelReq>Máquina</LabelReq>
+                <div className="mt-1.5">
+                  <Select
+                    value={newMaquina || undefined}
+                    onValueChange={setNewMaquina}
+                    disabled={!newEdificio}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue
+                        placeholder={newEdificio ? 'Sin asignar' : 'Elegí edificio primero'}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {maquinas
+                        .filter((m) => !newEdificio || m.Edificio_DM === newEdificio)
+                        .map((m) => (
+                          <SelectItem key={m.ID} value={m.IDMaquina_DM}>
+                            {m.IDMaquina_DM} — {m.ConcatMaquina_DM}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
-          </div>
-          <div>
-            <Label>Máquina (opcional)</Label>
-            <div className="mt-1.5">
-              <Select value={newMaquina || undefined} onValueChange={setNewMaquina}>
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder="Sin asignar" />
-                </SelectTrigger>
-                <SelectContent>
-                  {maquinas
-                    .filter((m) => !newEdificio || m.Edificio_DM === newEdificio)
-                    .map((m) => (
-                      <SelectItem key={m.ID} value={m.IDMaquina_DM}>
-                        {m.IDMaquina_DM} — {m.ConcatMaquina_DM}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div>
-            <Label>Asignar a (opcional)</Label>
+          </Section>
+
+          {/* Sección Asignación */}
+          <Section icon={UserCog} title="Asignación">
+            <LabelReq>Asignar a técnico</LabelReq>
             <div className="mt-1.5">
               <Select value={newAssign || undefined} onValueChange={setNewAssign}>
                 <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder="Sin asignar" />
+                  <SelectValue placeholder="Dejar sin asignar" />
                 </SelectTrigger>
                 <SelectContent>
                   {tecnicos.map((t) => (
@@ -784,35 +908,143 @@ export function Incidentes() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          <div>
-            <Label>Descripción</Label>
+          </Section>
+
+          {/* Sección Descripción */}
+          <Section icon={Wrench} title="Descripción">
+            <LabelReq required>¿Qué pasó?</LabelReq>
             <textarea
-              rows={3}
+              rows={4}
               value={newDesc}
               onChange={(e) => setNewDesc(e.target.value)}
-              placeholder="Qué pasó, qué reporta el cliente…"
-              className="mt-1.5 w-full rounded-lg border border-wash-border bg-wash-surface px-3 py-2 outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+              placeholder="Detallá el problema: qué reporta el cliente, qué falla, contexto adicional…"
+              className="mt-1.5 w-full rounded-lg border border-wash-border bg-wash-surface px-3 py-2 text-sm outline-none focus:border-wash-action focus:ring-2 focus:ring-wash-action/15"
             />
-          </div>
+          </Section>
         </div>
+
         <ModalActions>
           <button
             type="button"
             onClick={() => setNewOpen(false)}
-            className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+            className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
           >
             Cancelar
           </button>
           <button
             type="button"
             onClick={submitNew}
-            className="flex items-center gap-2 rounded-lg bg-wash-brand px-4 py-2 font-medium text-white hover:bg-wash-brand-dark"
+            disabled={!newEdificio || !newDesc.trim()}
+            className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Plus size={14} /> Crear
+            <Plus size={15} /> Crear incidente
           </button>
         </ModalActions>
       </Modal>
+    </div>
+  );
+}
+
+// ----- filter popover -----
+
+function FilterContent({
+  tipo,
+  estado,
+  onApply,
+}: {
+  tipo: string;
+  estado: string;
+  onApply: (tipo: string, estado: string) => void;
+}) {
+  // Initialize with current applied values — this component remounts each time
+  // the popover opens (Radix Portal), so state resets to applied values automatically.
+  const [pendingTipo, setPendingTipo] = useState(tipo);
+  const [pendingEstado, setPendingEstado] = useState(estado);
+
+  const dirty = pendingTipo !== tipo || pendingEstado !== estado;
+  const hasFilters = pendingTipo !== 'Todos' || pendingEstado !== 'Todos';
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between border-b border-wash-border pb-2.5">
+        <h3 className="text-sm font-bold text-wash-text-strong">Filtrar</h3>
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={() => {
+              setPendingTipo('Todos');
+              setPendingEstado('Todos');
+            }}
+            className="text-[11px] font-semibold text-wash-text-muted hover:text-wash-text-strong"
+          >
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            Tipo
+          </label>
+          <div className="mt-1.5">
+            <Select value={pendingTipo} onValueChange={setPendingTipo}>
+              <SelectTrigger className="h-9 w-full text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Todos">Todos</SelectItem>
+                <SelectItem value="Requiere Repuesto">Requiere Repuesto</SelectItem>
+                <SelectItem value="Cambio Maquina">Cambio Maquina</SelectItem>
+                <SelectItem value="Reportado Por Tecnico">
+                  Reportado Por Tecnico
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            Estado
+          </label>
+          <div className="mt-1.5">
+            <Select value={pendingEstado} onValueChange={setPendingEstado}>
+              <SelectTrigger className="h-9 w-full text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Todos">Todos</SelectItem>
+                <SelectItem value="A Revisar">A Revisar</SelectItem>
+                <SelectItem value="Asignado">Asignado</SelectItem>
+                <SelectItem value="En Aprobacion">En Aprobacion</SelectItem>
+                <SelectItem value="Pendiente">Pendiente</SelectItem>
+                <SelectItem value="Resuelto">Resuelto</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex justify-end gap-2 border-t border-wash-border pt-3">
+        <PopoverClose asChild>
+          <button
+            type="button"
+            className="rounded-lg border border-wash-border px-4 py-2 text-[12.5px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          >
+            Cancelar
+          </button>
+        </PopoverClose>
+        <PopoverClose asChild>
+          <button
+            type="button"
+            disabled={!dirty}
+            onClick={() => onApply(pendingTipo, pendingEstado)}
+            className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Aplicar
+          </button>
+        </PopoverClose>
+      </div>
     </div>
   );
 }
@@ -853,21 +1085,90 @@ function ActionButton({
   );
 }
 
-function Label({ children }: { children: React.ReactNode }) {
+function LabelReq({
+  children,
+  required,
+}: {
+  children: React.ReactNode;
+  required?: boolean;
+}) {
   return (
-    <label className="text-xs font-semibold uppercase tracking-wider text-wash-text-muted">
+    <label className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
       {children}
+      {required && <span className="text-rose-500">*</span>}
     </label>
   );
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+function Section({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: typeof Eye;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div>
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
+    <div className="rounded-xl border border-wash-border bg-wash-surface-2/30 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+          <Icon size={13} />
+        </span>
+        <h3 className="text-[12px] font-bold uppercase tracking-wider text-wash-text-strong">
+          {title}
+        </h3>
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function MetaItem({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Eye;
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg bg-wash-surface-2/40 px-3 py-2 ring-1 ring-wash-border">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
+        <Icon size={11} className="opacity-70" />
         {label}
       </div>
-      <div className="mt-0.5 text-sm font-medium text-wash-text-strong">{value}</div>
+      <div className="mt-1 text-[12.5px] font-semibold text-wash-text-strong">
+        {value}
+      </div>
     </div>
+  );
+}
+
+function PersonChip({
+  name,
+  tone: _tone,
+}: {
+  name: string;
+  tone?: 'slate' | 'brand';
+}) {
+  const initials = name
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9px] font-semibold text-slate-600">
+        {initials || '?'}
+      </span>
+      <span className="truncate text-[12.5px] font-semibold text-wash-text-strong">
+        {name}
+      </span>
+    </span>
   );
 }
