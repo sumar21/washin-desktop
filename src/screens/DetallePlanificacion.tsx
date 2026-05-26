@@ -805,14 +805,25 @@ function AgregarRutaModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Agregar Ruta" width={720}>
-      <p className="text-sm text-wash-text-muted">
-        Sumá rutas a la planificación de este mes. Podés agregar varias antes de guardar.
-      </p>
+    <Modal open={open} onClose={onClose} title="Agregar Ruta" width={760}>
+      {/* Intro card */}
+      <div className="flex items-start gap-3 rounded-xl bg-wash-brand/[0.06] p-3.5 ring-1 ring-wash-brand/15">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-wash-brand/15 text-wash-brand ring-1 ring-wash-brand/25">
+          <MapPin size={14} />
+        </span>
+        <div className="min-w-0">
+          <p className="font-display text-[13px] font-bold text-wash-accent">
+            Nuevas rutas para {mes ?? '—'}
+          </p>
+          <p className="mt-0.5 text-[11.5px] leading-relaxed text-wash-text-muted">
+            Seleccioná el técnico y la ruta. Podés sumar varias antes de guardar.
+          </p>
+        </div>
+      </div>
 
       {/* Form section */}
-      <div className="mt-5 rounded-xl border border-wash-border bg-wash-surface-2/40 p-4">
-        <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-3">
+      <div className="mt-4 rounded-xl border border-wash-border bg-wash-surface-2/40 p-4">
+        <div className="grid grid-cols-[1.3fr_1fr_auto_auto] items-end gap-3">
           <div>
             <Label>Técnico</Label>
             <div className="mt-1.5">
@@ -850,7 +861,11 @@ function AgregarRutaModal({
           <div>
             <Label>Mes</Label>
             <div className="mt-1.5">
-              <div className="flex h-10 w-full items-center rounded-md border border-wash-border bg-wash-surface-2/60 px-3 font-mono text-[13px] font-semibold text-wash-text-strong tabular-nums">
+              <div className="flex h-10 items-center gap-1.5 rounded-md border border-wash-border bg-wash-surface-2/80 px-3 font-mono text-[13px] font-semibold text-wash-text-strong tabular-nums">
+                <CalendarDays
+                  size={13}
+                  className="text-wash-text-muted"
+                />
                 {mes ?? '—'}
               </div>
             </div>
@@ -860,9 +875,10 @@ function AgregarRutaModal({
             onClick={addLine}
             disabled={!canAddLine}
             title="Agregar a la planificación"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-wash-action text-white shadow-sm shadow-wash-action/30 transition hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:bg-wash-surface-2 disabled:text-wash-text-faint disabled:shadow-none"
+            className="flex h-10 items-center gap-1.5 rounded-lg bg-wash-action px-3.5 text-[12.5px] font-semibold text-white shadow-sm shadow-wash-action/30 transition hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:bg-wash-surface-2 disabled:text-wash-text-faint disabled:shadow-none"
           >
-            <Plus size={18} />
+            <Plus size={15} />
+            Agregar
           </button>
         </div>
       </div>
@@ -881,9 +897,9 @@ function AgregarRutaModal({
         </div>
         <div
           className={cn(
-            'min-h-[240px] rounded-xl border transition-colors',
+            'rounded-xl border transition-colors',
             lines.length === 0
-              ? 'border-dashed border-wash-border bg-wash-surface-2/30'
+              ? 'min-h-[240px] border-dashed border-wash-border bg-wash-surface-2/30'
               : 'border-wash-border bg-wash-surface'
           )}
         >
@@ -892,24 +908,30 @@ function AgregarRutaModal({
           ) : (
             <ul className="divide-y divide-wash-divider/60">
               {lines.map((l, i) => (
-                <li key={i} className="group flex items-center gap-3 px-4 py-2.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
-                    <MapPin size={14} />
+                <li
+                  key={i}
+                  className="group flex items-center gap-3 px-3.5 py-2.5 transition hover:bg-wash-surface-2/40"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-wash-surface-2 text-[10.5px] font-bold text-wash-text-muted tabular-nums ring-1 ring-wash-border">
+                    {String(i + 1).padStart(2, '0')}
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-display text-[13px] font-bold text-wash-accent">
-                      Ruta {l.ruta}
-                    </p>
-                    <p className="mt-0.5 truncate text-[11px] text-wash-text-muted">
-                      <span className="font-semibold text-wash-text">{l.tecnico}</span>
-                      <span className="mx-1.5 text-wash-text-faint">·</span>
-                      <span className="font-mono">{mes}</span>
-                    </p>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-wash-brand/10 px-2 py-1 font-display text-[12px] font-black text-wash-brand tabular-nums ring-1 ring-wash-brand/20">
+                    <MapPin size={11} />
+                    Ruta {l.ruta}
+                  </span>
+                  <div className="flex min-w-0 flex-1 items-center">
+                    <span className="truncate text-[12.5px] font-semibold text-wash-text-strong">
+                      {l.tecnico}
+                    </span>
                   </div>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-wash-surface-2 px-2 py-1 font-mono text-[11px] font-semibold text-wash-text-muted tabular-nums">
+                    <CalendarDays size={11} />
+                    {mes}
+                  </span>
                   <button
                     type="button"
                     onClick={() => removeLine(i)}
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-rose-600 ring-1 ring-rose-500/30 transition hover:bg-rose-500/10 hover:ring-rose-500"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-rose-600 ring-1 ring-rose-500/30 transition hover:bg-rose-500/10 hover:ring-rose-500"
                     title="Quitar"
                   >
                     <X size={13} />
