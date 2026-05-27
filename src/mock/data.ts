@@ -136,7 +136,9 @@ export const mockPermisos: PermisoModulo[] = (
   Rol_LPP: 'Admin',
 }));
 
-export const mockEdificios: Edificio[] = [
+// Legacy hand-picked edificios (kept for back-compat with seed records that
+// reference them by name in registros / incidentes / planificación detail).
+const _legacyEdificios: Edificio[] = [
   { ID: 1, Edificio: 'Torre Madero I', Codigo: 'TM1', Direccion: 'Av. Madero 1280', Status: 'ALTA', GrupoVentilacion_ED: 'Norte', FrecuenciaVent_ED: 'Mensual' },
   { ID: 2, Edificio: 'Torre Madero II', Codigo: 'TM2', Direccion: 'Av. Madero 1320', Status: 'ALTA', GrupoVentilacion_ED: 'Norte', FrecuenciaVent_ED: 'Mensual' },
   { ID: 3, Edificio: 'Edificio Palermo Soho', Codigo: 'PSH', Direccion: 'Honduras 4500', Status: 'ALTA', GrupoVentilacion_ED: 'Centro', FrecuenciaVent_ED: 'Bimestral' },
@@ -144,6 +146,11 @@ export const mockEdificios: Edificio[] = [
   { ID: 5, Edificio: 'Recoleta Premium', Codigo: 'RCP', Direccion: 'Posadas 1500', Status: 'ALTA', GrupoVentilacion_ED: 'Centro', FrecuenciaVent_ED: 'Mensual' },
   { ID: 6, Edificio: 'Wash Inn (Depósito)', Codigo: 'WI', Direccion: 'Olivos 1010', Status: 'ALTA' },
 ];
+
+// Final canonical edificios = legacy seeds + generator catalog (see below).
+// `mockEdificiosCatalogo` is assigned later in this file; we merge via getter
+// at module load time, after the generator runs.
+export let mockEdificios: Edificio[] = _legacyEdificios;
 
 export const mockRegistros: Registro[] = [
   { ID: 1, Edificio: 'Torre Madero I', NroRuta_R: '1', NroCircuito_R: '1A', Estado: 'Finalizado', Usuario: 'mfernandez', MesAño: currentMonth(), HoraInicio: '09:30', HoraFinal: '11:45', Progreso: 100 },
@@ -455,27 +462,147 @@ export const mockItemsCompra: ItemCompra[] = [
   { ID: 12008, Item_IC: 'Resistencia Calefactora', Tipo_IC: 'REPUESTO', Status_IC: 'Activo' },
 ];
 
-export const mockRutas: RutaCatalogo[] = [
-  { ID: 13001, NroRuta_RT: '1', Status_RT: 'Activo' },
-  { ID: 13002, NroRuta_RT: '2', Status_RT: 'Activo' },
-  { ID: 13003, NroRuta_RT: '3', Status_RT: 'Activo' },
-  { ID: 13004, NroRuta_RT: '4', Status_RT: 'Activo' },
+// ---------------------------------------------------------------------------
+// Configuración: rich generator for Rutas / Circuitos / Edificios catalog.
+// Produces ~9 routes, ~45 circuits, ~280 building assignments and ~110 unique
+// edificios so the Configuración module looks populated for testing.
+// ---------------------------------------------------------------------------
+
+const _STREETS: string[] = [
+  'Costa Rica', 'Humboldt', 'El Salvador', 'Nicaragua', 'Soler', 'Cabello',
+  'Corrientes', 'Baez', 'Vista Belgrano', 'Cullen', 'Diaz Colodrero', 'Pacheco',
+  'Olazabal', 'Galvan', 'Tronador', 'Ruiz Huidobro', 'Pico', 'Paroissien',
+  'Machain', 'Vidal', 'Amenabar', 'Ugarte', 'Blanco Encalada', 'Juramento',
+  'Cramer', 'Moldes', 'Quesada', 'Humahuaca', 'Palmera', 'Castillo',
+  'Julian Alvarez', 'Niceto Vega', 'Scalabrini Ortiz', 'Jufre', 'Diaz Velez',
+  'Gascon', 'Mexico', 'Independencia', 'Sanchez De Loria', 'Humberto Primo',
+  'Bulnes', 'Palacio Gardel', 'Solar Del Abasto', 'Metropolitan',
+  'Guardia Vieja', 'Tucuman', 'Callao', 'Salguero', 'Awwa', 'Regatas',
+  'Infinity', 'Carpediem', 'Nila Tower', 'Premium Libertador', 'Al Rio',
+  'Soldado', 'Teodoro Garcia', 'Arce', 'Quartier Del Polo', 'Arevalo',
+  'NIC Devoto', 'Evoque', 'Mosconi', 'Mirador De Palermo', 'Palmas De La Bahia',
+  'Torres De Tigre', 'Venice', 'Solares De Belgrano', 'Plaza Houssay',
+  'Le Parc Figueroa Alcorta', 'Green House', 'Green Haus', 'Green Tower',
+  'Dome Green Soho', 'Florean Pampa', 'My Residence', 'Wave Libertador',
+  'Bahia Del Puerto', 'Vista Buenos Aires', 'Met Plaza', 'Om Botanico',
+  'Domus Libertador', 'Torre Panorama', 'Plan H', 'Be Libertador',
+  'Puerta Norte', '3 De Febrero', 'Two Winds', 'Baunes', 'Cabildo',
+  'Concord Vte Lopez', 'Libertador 13670', 'Aguero', 'La Riviera',
+  'Torre Mayor', 'Parque Olivos', 'Alto Del Molino', 'Altos De Maria',
+  'Altos De Serrano', 'Mantua', 'Young Stone', 'Las Araucarias',
 ];
 
-export const mockResumenCircuitos: ResumenCircuito[] = [
-  { ID: 14001, NroRuta_RC: '1', NroCircuito_RC: '1A', Status_RC: 'Activo' },
-  { ID: 14002, NroRuta_RC: '1', NroCircuito_RC: '1B', Status_RC: 'Activo' },
-  { ID: 14003, NroRuta_RC: '2', NroCircuito_RC: '2C', Status_RC: 'Activo' },
-  { ID: 14004, NroRuta_RC: '3', NroCircuito_RC: '3A', Status_RC: 'Activo' },
-];
+// Deterministic seeded RNG so the catalog is stable across reloads.
+function _mulberry32(a: number) {
+  return function () {
+    let t = (a += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-export const mockDetalleCircuitos: DetalleCircuito[] = [
-  { ID: 15001, NroCircuito_DC: '1A', NombreEdificio_DC: 'Torre Madero I', Direccion_DC: 'Av. Madero 1280', Status_DC: 'Activo' },
-  { ID: 15002, NroCircuito_DC: '1A', NombreEdificio_DC: 'Torre Madero II', Direccion_DC: 'Av. Madero 1320', Status_DC: 'Activo' },
-  { ID: 15003, NroCircuito_DC: '1B', NombreEdificio_DC: 'Belgrano R', Direccion_DC: 'Av. Cabildo 2800', Status_DC: 'Activo' },
-  { ID: 15004, NroCircuito_DC: '2C', NombreEdificio_DC: 'Edificio Palermo Soho', Direccion_DC: 'Honduras 4500', Status_DC: 'Activo' },
-  { ID: 15005, NroCircuito_DC: '3A', NombreEdificio_DC: 'Recoleta Premium', Direccion_DC: 'Posadas 1500', Status_DC: 'Activo' },
-];
+function _generateConfigCatalog() {
+  const rng = _mulberry32(0xC0FFEE);
+  const rand = (min: number, max: number) =>
+    Math.floor(rng() * (max - min + 1)) + min;
+
+  // --- Edificios canónicos ---
+  const edificios: Edificio[] = [];
+  const seen = new Set<string>();
+  let edifId = 100;
+  let codigo = 1200;
+
+  // Helper to add a building once.
+  const addBuilding = (name: string, direccion: string) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    edificios.push({
+      ID: edifId++,
+      Edificio: name,
+      Codigo: `C-${codigo++}`,
+      Direccion: direccion,
+      Status: 'ALTA',
+      GrupoVentilacion_ED:
+        rng() < 0.4 ? ['Norte', 'Centro', 'Sur'][rand(0, 2)] : undefined,
+      FrecuenciaVent_ED:
+        rng() < 0.4
+          ? ['90', '120', '180', '365'][rand(0, 3)]
+          : undefined,
+    });
+  };
+
+  // Generate a mix of street-only and street+number building names.
+  for (const street of _STREETS) {
+    addBuilding(street, `${street.toUpperCase()} ${rand(800, 5800)}`);
+    // Add 0–2 numbered variants per street
+    const variants = rand(0, 2);
+    for (let i = 0; i < variants; i++) {
+      const n = rand(200, 5900);
+      addBuilding(`${street} ${n}`, `${street.toUpperCase()} ${n}`);
+    }
+  }
+
+  // --- Rutas ---
+  const rutaNums = [1, 2, 3, 4, 5, 6, 7, 10, 11];
+  const rutas: RutaCatalogo[] = rutaNums.map((n, i) => ({
+    ID: 13000 + i + 1,
+    NroRuta_RT: String(n),
+    Status_RT: 'Activo' as const,
+  }));
+
+  // --- Circuitos + DetalleCircuito assignments ---
+  const circuitos: ResumenCircuito[] = [];
+  const detalles: DetalleCircuito[] = [];
+  let circId = 14000;
+  let detId = 15000;
+  let circuitNum = 100;
+
+  for (const ruta of rutaNums) {
+    const circuitCount = rand(3, 7);
+    for (let i = 0; i < circuitCount; i++) {
+      circuitNum += 1;
+      const nroCircuito = String(circuitNum);
+      circuitos.push({
+        ID: ++circId,
+        NroRuta_RC: String(ruta),
+        NroCircuito_RC: nroCircuito,
+        Status_RC: 'Activo',
+      });
+
+      // Pick 5–11 random unique buildings for this circuit
+      const count = rand(5, 11);
+      const pool = [...edificios];
+      const picked: Edificio[] = [];
+      for (let k = 0; k < count && pool.length > 0; k++) {
+        const idx = rand(0, pool.length - 1);
+        picked.push(pool.splice(idx, 1)[0]);
+      }
+      for (const b of picked) {
+        detalles.push({
+          ID: ++detId,
+          NroCircuito_DC: nroCircuito,
+          NombreEdificio_DC: b.Edificio,
+          Direccion_DC: b.Direccion,
+          Status_DC: 'Activo',
+        });
+      }
+    }
+  }
+
+  return { rutas, circuitos, detalles, edificios };
+}
+
+const _configCatalog = _generateConfigCatalog();
+
+export const mockRutas: RutaCatalogo[] = _configCatalog.rutas;
+export const mockResumenCircuitos: ResumenCircuito[] = _configCatalog.circuitos;
+export const mockDetalleCircuitos: DetalleCircuito[] = _configCatalog.detalles;
+export const mockEdificiosCatalogo: Edificio[] = _configCatalog.edificios;
+
+// Merge generator output into the canonical edificios export so the Edificios
+// tab (and any consumer) sees the full set.
+mockEdificios = [..._legacyEdificios, ...mockEdificiosCatalogo];
 
 export const mockFrecuencias: Frecuencia[] = [
   { ID: 16001, Frecuencia_FE: '90', Status_FE: 'Activo' },
