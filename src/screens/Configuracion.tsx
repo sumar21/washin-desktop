@@ -87,14 +87,14 @@ export function Configuracion() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={active.placeholder}
-                className="w-[280px] rounded-full bg-wash-canvas px-9 py-2 text-sm text-wash-text-strong outline-none ring-1 ring-wash-border focus:ring-wash-primary"
+                className="w-[280px] rounded-lg bg-wash-canvas px-9 py-2 text-sm text-wash-text-strong outline-none ring-1 ring-wash-border focus:ring-wash-primary"
               />
             </div>
             {active.addLabel && (
               <button
                 type="button"
                 onClick={() => setAddOpen(true)}
-                className="flex items-center gap-1.5 rounded-full bg-wash-primary px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110"
+                className="flex items-center gap-1.5 rounded-lg bg-wash-primary px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110"
               >
                 <Plus size={14} />
                 {active.addLabel}

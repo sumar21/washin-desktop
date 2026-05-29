@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
-import { Logo, LogoMark } from '@/components/Logo';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ModuloNombre } from '@/types/domain';
 
@@ -49,7 +48,7 @@ export function Sidebar() {
     <TooltipProvider delayDuration={200}>
       <aside
         className={cn(
-          'relative z-30 flex h-full flex-col bg-black/40 backdrop-blur-md ring-1 ring-white/10 transition-[width] duration-300 ease-out',
+          'relative z-30 flex h-full flex-col border-r border-white/15 bg-black/[0.06] transition-[width] duration-300 ease-out',
           collapsed ? 'w-[72px]' : 'w-[200px]'
         )}
       >
@@ -57,11 +56,33 @@ export function Sidebar() {
         {/* Logo */}
         <div
           className={cn(
-            'flex h-[88px] items-center border-b border-white/10',
-            collapsed ? 'justify-center' : 'justify-center px-4'
+            'flex h-[88px] items-center border-b border-white/15',
+            collapsed ? 'justify-center' : 'justify-start px-4'
           )}
         >
-          {collapsed ? <LogoMark size={36} /> : <Logo size={30} sub="DESKTOP" />}
+          {collapsed ? (
+            <img
+              src="/Logoapp.png"
+              alt="Washinn"
+              className="h-10 w-10 rounded-xl shadow-md ring-1 ring-white/25"
+            />
+          ) : (
+            <div className="flex items-center gap-2.5">
+              <img
+                src="/Logoapp.png"
+                alt="Washinn"
+                className="h-10 w-10 rounded-xl shadow-md ring-1 ring-white/25"
+              />
+              <div className="flex flex-col leading-none">
+                <span className="font-display text-[17px] font-black tracking-tight text-white">
+                  Wash Inn
+                </span>
+                <span className="mt-1 inline-flex w-fit items-center rounded-md bg-white/20 px-1.5 py-[2px] text-[8.5px] font-bold uppercase tracking-[0.2em] text-white">
+                  Desktop
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Collapse handle — subtle bar under the logo */}
@@ -100,8 +121,8 @@ export function Sidebar() {
                   'group flex w-full items-center gap-3 text-left text-[13px] font-medium transition-colors',
                   collapsed ? 'justify-center px-0 py-2.5' : 'px-4 py-2.5',
                   active
-                    ? 'border-l-2 border-wash-brand bg-white/10 text-white'
-                    : 'border-l-2 border-transparent text-white/70 hover:bg-white/5 hover:text-white'
+                    ? 'border-l-[3px] border-white bg-white/20 font-semibold text-white'
+                    : 'border-l-[3px] border-transparent text-white/75 hover:bg-white/10 hover:text-white'
                 )}
               >
                 <Icon

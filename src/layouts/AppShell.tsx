@@ -15,11 +15,11 @@ export function AppShell() {
   }
 
   return (
-    <div className="relative flex h-full w-full bg-gradient-to-br from-[#0a0f1c] via-[#0f1a2e] to-[#0a0f1c]">
+    <div className="relative flex h-full w-full bg-gradient-to-b from-wash-navy to-wash-navy-deep">
       <Sidebar />
 
       <main className="relative flex-1 overflow-hidden">
-        <div className="relative h-full w-full overflow-hidden rounded-tl-3xl bg-wash-canvas ring-1 ring-white/5">
+        <div className="relative h-full w-full overflow-hidden rounded-tl-3xl bg-wash-canvas ring-1 ring-black/5">
           <Outlet />
         </div>
       </main>

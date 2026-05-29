@@ -17,6 +17,11 @@
   --color-wash-brand-light: rgb(60 200 240);
   --color-wash-brand-dark: rgb(0 145 195);
 
+  /* Washinn logo blue — used for the navbar / app frame. */
+  --color-wash-navy: rgb(45 138 246);
+  --color-wash-navy-dark: rgb(28 104 220);
+  --color-wash-navy-deep: rgb(22 86 188);
+
   /* Softer cyan used for buttons (less neon than the pure brand). */
   --color-wash-action: rgb(20 130 175);
   --color-wash-action-dark: rgb(15 105 140);

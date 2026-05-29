@@ -378,7 +378,7 @@ export function ConfigReportes({ query }: ConfigReportesProps) {
       {/* Sub-toolbar */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-wash-divider/40 bg-wash-surface px-6 py-3">
         {/* Segmented control */}
-        <div className="inline-flex rounded-full bg-wash-canvas p-1 ring-1 ring-wash-border">
+        <div className="inline-flex rounded-lg bg-wash-canvas p-1 ring-1 ring-wash-border">
           <SegmentButton
             icon={FileText}
             label="Reporte general"
@@ -400,7 +400,7 @@ export function ConfigReportes({ query }: ConfigReportesProps) {
               <button
                 type="button"
                 onClick={() => setPendingEstado(estadoFilter)}
-                className="flex items-center gap-1.5 rounded-full bg-wash-canvas px-3.5 py-2 text-sm font-medium text-wash-text-strong ring-1 ring-wash-border hover:bg-wash-border/40"
+                className="flex items-center gap-1.5 rounded-lg bg-wash-canvas px-3.5 py-2 text-sm font-medium text-wash-text-strong ring-1 ring-wash-border hover:bg-wash-border/40"
               >
                 <Filter size={14} />
                 Filtrar
@@ -479,7 +479,7 @@ export function ConfigReportes({ query }: ConfigReportesProps) {
           <button
             type="button"
             onClick={handleDownload}
-            className="flex items-center gap-1.5 rounded-full bg-wash-action px-3.5 py-2 text-sm font-semibold text-white shadow-sm shadow-wash-action/30 hover:bg-wash-action-dark"
+            className="flex items-center gap-1.5 rounded-lg bg-wash-action px-3.5 py-2 text-sm font-semibold text-white shadow-sm shadow-wash-action/30 hover:bg-wash-action-dark"
             title={`Descargar ${mode === 'general' ? 'Reporte general' : 'Reporte de incidentes'}`}
           >
             <Download size={14} />
@@ -863,7 +863,7 @@ function SegmentButton({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition',
+        'flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[12.5px] font-semibold transition',
         active
           ? 'bg-wash-action text-white shadow-sm shadow-wash-action/30'
           : 'text-wash-text-muted hover:text-wash-text-strong'

@@ -28,7 +28,7 @@ export function PageHeader({
   rightExtra,
 }: PageHeaderProps) {
   const filterButtonClass =
-    'flex items-center gap-1.5 rounded-full bg-wash-canvas px-3.5 py-2 text-sm font-medium text-wash-text-strong ring-1 ring-wash-border hover:bg-wash-border/40';
+    'flex items-center gap-1.5 rounded-lg bg-wash-canvas px-3.5 py-2 text-sm font-medium text-wash-text-strong ring-1 ring-wash-border hover:bg-wash-border/40';
 
   return (
     <div className="flex h-[88px] items-center justify-between border-b border-wash-border bg-wash-surface px-6">
@@ -48,7 +48,7 @@ export function PageHeader({
               value={search.value}
               onChange={(e) => search.onChange(e.target.value)}
               placeholder={search.placeholder ?? 'Buscar...'}
-              className="w-[280px] rounded-full bg-wash-canvas px-9 py-2 text-sm text-wash-text-strong outline-none ring-1 ring-wash-border focus:ring-wash-primary"
+              className="w-[280px] rounded-lg bg-wash-canvas px-9 py-2 text-sm text-wash-text-strong outline-none ring-1 ring-wash-border focus:ring-wash-primary"
             />
           </div>
         )}
@@ -82,7 +82,7 @@ export function PageHeader({
           <button
             type="button"
             onClick={onRefresh}
-            className="flex items-center gap-1.5 rounded-full bg-wash-primary/10 px-3.5 py-2 text-sm font-medium text-wash-primary hover:bg-wash-primary/20"
+            className="flex items-center gap-1.5 rounded-lg bg-wash-primary/10 px-3.5 py-2 text-sm font-medium text-wash-primary hover:bg-wash-primary/20"
           >
             <RotateCw size={14} />
             Refrescar
@@ -92,7 +92,7 @@ export function PageHeader({
           <button
             type="button"
             onClick={onAdd}
-            className="flex items-center gap-1.5 rounded-full bg-wash-primary px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110"
+            className="flex items-center gap-1.5 rounded-lg bg-wash-primary px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110"
           >
             <Plus size={14} />
             {addLabel}

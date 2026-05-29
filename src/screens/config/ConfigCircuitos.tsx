@@ -124,11 +124,135 @@ export function ConfigCircuitos({
     );
   }
 
+  const columns: Column<ResumenCircuito>[] = [
+    {
+      key: 'circuito',
+      header: 'Circuito',
+      width: 'minmax(200px, 1fr)',
+      truncate: false,
+      render: (c) => (
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-wash-brand to-wash-brand-dark text-white shadow-sm shadow-wash-brand/30">
+            <GitBranch size={15} />
+          </span>
+          <div className="min-w-0">
+            <p className="font-display text-[13.5px] font-black text-wash-accent">
+              Circuito {c.NroCircuito_RC}
+            </p>
+            <p className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-wash-brand">
+              <MapPin size={9} />
+              Ruta {c.NroRuta_RC}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'total',
+      header: 'Edificios totales',
+      width: '160px',
+      align: 'center',
+      truncate: false,
+      render: (c) => {
+        const n = edifsByCircuito.get(c.NroCircuito_RC)?.length ?? 0;
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2.5 py-1 text-[12.5px] font-bold text-wash-text-strong tabular-nums">
+            <Building2 size={11} className="text-wash-brand" />
+            {n}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'edificios',
+      header: 'Edificios',
+      width: 'minmax(0, 1.6fr)',
+      truncate: false,
+      render: (c) => {
+        const edifs = edifsByCircuito.get(c.NroCircuito_RC) ?? [];
+        if (edifs.length === 0) {
+          return (
+            <span className="text-[11.5px] italic text-wash-text-muted">
+              Sin edificios
+            </span>
+          );
+        }
+        const visible = edifs.slice(0, 4);
+        const extra = edifs.length - visible.length;
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            {visible.map((e) => {
+              const code = codeFor(e.NombreEdificio_DC);
+              return (
+                <span
+                  key={e.ID}
+                  className="inline-flex items-center gap-1 rounded bg-wash-surface-2 px-1.5 py-0.5 text-[10.5px] font-medium text-wash-text-strong ring-1 ring-wash-border"
+                >
+                  {code && (
+                    <span className="font-mono text-[9.5px] font-bold text-wash-brand">
+                      {code}
+                    </span>
+                  )}
+                  <span className="max-w-[140px] truncate">
+                    {e.NombreEdificio_DC}
+                  </span>
+                </span>
+              );
+            })}
+            {extra > 0 && (
+              <span className="inline-flex items-center rounded bg-wash-brand/10 px-1.5 py-0.5 text-[10.5px] font-bold text-wash-brand ring-1 ring-wash-brand/20">
+                +{extra}
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'actions',
+      header: 'Acciones',
+      width: '150px',
+      align: 'right',
+      truncate: false,
+      render: (c) => (
+        <div className="flex items-center justify-end gap-1.5">
+          <ActionBtn
+            icon={MessageSquare}
+            tone="neutral"
+            title="Observaciones"
+            onClick={(e) => {
+              e.stopPropagation();
+              setObserving(c);
+            }}
+          />
+          <ActionBtn
+            icon={Eye}
+            tone="brand"
+            title="Ver detalle"
+            onClick={(e) => {
+              e.stopPropagation();
+              setViewing(c);
+            }}
+          />
+          <ActionBtn
+            icon={Trash2}
+            tone="danger"
+            title="Eliminar"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeleting(c);
+            }}
+          />
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.04)_1px,transparent_0)] bg-[size:22px_22px]">
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex min-h-0 flex-1 flex-col p-6">
         {/* Section header with summary */}
-        <div className="flex items-end justify-between">
+        <div className="flex shrink-0 items-end justify-between">
           <div>
             <p className="font-display text-[13px] font-black uppercase tracking-wider text-wash-text-strong">
               Catálogo de circuitos
@@ -141,28 +265,16 @@ export function ConfigCircuitos({
           </div>
         </div>
 
-        {/* Card grid */}
-        {filtered.length === 0 ? (
-          <EmptyCircuitos />
-        ) : (
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {filtered.map((c) => {
-              const edifs = edifsByCircuito.get(c.NroCircuito_RC) ?? [];
-              return (
-                <CircuitoCard
-                  key={c.ID}
-                  nroCircuito={c.NroCircuito_RC}
-                  nroRuta={c.NroRuta_RC}
-                  edificios={edifs}
-                  codeFor={codeFor}
-                  onView={() => setViewing(c)}
-                  onObserve={() => setObserving(c)}
-                  onDelete={() => setDeleting(c)}
-                />
-              );
-            })}
-          </div>
-        )}
+        {/* Table */}
+        <div className="mt-3 min-h-0 flex-1">
+          <DataTable
+            rows={filtered}
+            rowKey={(c) => c.ID}
+            columns={columns}
+            empty="Sin circuitos registrados."
+            onRowClick={(c) => setViewing(c)}
+          />
+        </div>
       </div>
 
       {/* Crear circuito */}
@@ -1157,160 +1269,3 @@ function Label({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ----- Circuit card (main list) -----
-
-function CircuitoCard({
-  nroCircuito,
-  nroRuta,
-  edificios,
-  codeFor,
-  onView,
-  onObserve,
-  onDelete,
-}: {
-  nroCircuito: string;
-  nroRuta: string;
-  edificios: DetalleCircuito[];
-  codeFor: (name: string) => string | undefined;
-  onView: () => void;
-  onObserve: () => void;
-  onDelete: () => void;
-}) {
-  const visible = edificios.slice(0, 3);
-  const extra = edificios.length - visible.length;
-
-  return (
-    <div
-      onClick={onView}
-      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-sm shadow-slate-900/[0.04] ring-1 ring-wash-border transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-wash-brand/15 hover:ring-wash-brand/50"
-    >
-      {/* Top accent gradient bar */}
-      <div className="h-1 w-full bg-gradient-to-r from-wash-brand-light via-wash-brand to-wash-brand-dark" />
-
-      {/* Background glow */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-wash-brand/[0.06] blur-3xl transition duration-300 group-hover:bg-wash-brand/20"
-      />
-
-      {/* Header */}
-      <div className="relative p-4">
-        <div className="flex items-center gap-3">
-          <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-wash-brand to-wash-brand-dark text-white shadow-md shadow-wash-brand/30 ring-2 ring-wash-surface transition group-hover:shadow-lg group-hover:shadow-wash-brand/40">
-            <GitBranch size={17} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-1.5">
-              <h3 className="truncate font-display text-[15px] font-black leading-tight text-wash-accent">
-                Circuito {nroCircuito}
-              </h3>
-              <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-wash-surface-2 px-1.5 py-0.5 text-[10px] font-bold text-wash-text-strong tabular-nums ring-1 ring-wash-border">
-                <Building2 size={9} className="text-wash-brand" />
-                {edificios.length}
-              </span>
-            </div>
-            <p className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-wash-brand/10 px-1.5 py-0 text-[9.5px] font-bold uppercase tracking-wider text-wash-brand ring-1 ring-wash-brand/20">
-              <MapPin size={9} />
-              Ruta {nroRuta}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Edificios list */}
-      <div className="relative flex-1 px-4 pb-3">
-        <p className="text-[9px] font-bold uppercase tracking-wider text-wash-text-muted">
-          Edificios asignados
-        </p>
-        {edificios.length === 0 ? (
-          <p className="mt-1.5 rounded-md bg-wash-surface-2/40 px-2.5 py-1.5 text-[11px] italic text-wash-text-muted ring-1 ring-wash-border">
-            Sin edificios asignados.
-          </p>
-        ) : (
-          <ul className="mt-1.5 space-y-0.5">
-            {visible.map((e) => {
-              const code = codeFor(e.NombreEdificio_DC);
-              return (
-                <li
-                  key={e.ID}
-                  className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[11.5px] transition hover:bg-wash-surface-2/50"
-                >
-                  {code ? (
-                    <span className="shrink-0 rounded bg-wash-brand/10 px-1 py-0 font-mono text-[9.5px] font-bold text-wash-brand tabular-nums">
-                      {code}
-                    </span>
-                  ) : (
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-wash-text-faint" />
-                  )}
-                  <span className="truncate font-medium text-wash-text-strong">
-                    {e.NombreEdificio_DC}
-                  </span>
-                </li>
-              );
-            })}
-            {extra > 0 && (
-              <li className="px-1 pt-0.5 text-[10.5px] font-semibold text-wash-brand">
-                + {extra} más
-              </li>
-            )}
-          </ul>
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between gap-1.5 border-t border-wash-border bg-wash-surface-2/40 px-3 py-2">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onView();
-          }}
-          className="inline-flex items-center gap-1 rounded-md bg-wash-brand/10 px-2.5 py-1 text-[11.5px] font-semibold text-wash-brand ring-1 ring-wash-brand/20 transition hover:bg-wash-brand/15"
-        >
-          <Eye size={12} />
-          Ver
-        </button>
-        <div className="flex items-center gap-1">
-          <ActionBtn
-            icon={MessageSquare}
-            tone="neutral"
-            title="Observaciones"
-            onClick={(e) => {
-              e.stopPropagation();
-              onObserve();
-            }}
-          />
-          <ActionBtn
-            icon={Trash2}
-            tone="danger"
-            title="Eliminar"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EmptyCircuitos() {
-  return (
-    <div className="mt-6 flex flex-col items-center justify-center rounded-2xl border border-dashed border-wash-border bg-wash-surface-2/30 p-12 text-center">
-      <div className="relative mb-3">
-        <span className="absolute inset-0 animate-ping rounded-2xl bg-wash-brand/15" />
-        <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/25">
-          <GitBranch size={28} strokeWidth={1.6} />
-        </div>
-      </div>
-      <p className="font-display text-[15px] font-bold text-wash-text-strong">
-        Sin circuitos registrados
-      </p>
-      <p className="mt-1 max-w-[320px] text-[12px] leading-relaxed text-wash-text-muted">
-        Creá el primer circuito tocando <strong>Agregar Circuito</strong> en la
-        barra superior.
-      </p>
-    </div>
-  );
-}
