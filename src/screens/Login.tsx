@@ -1,7 +1,18 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Loader2, ArrowRight } from 'lucide-react';
-import { Logo } from '@/components/Logo';
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  ArrowRight,
+  User2,
+  Lock,
+  RotateCw,
+  Building2,
+  ClipboardList,
+  AlertOctagon,
+  Wind,
+} from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 
 export function Login() {
@@ -14,7 +25,6 @@ export function Login() {
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showHints, setShowHints] = useState(false);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -35,64 +45,68 @@ export function Login() {
     }, 400);
   };
 
-  const quickFill = (u: string, p: string) => {
-    setUsuario(u);
-    setPassword(p);
-    setError(null);
-  };
-
   return (
-    <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-slate-50">
-      {/* Very subtle cyan corner accents */}
-      <div
-        className="pointer-events-none absolute -right-48 -top-48 h-[520px] w-[520px] rounded-full opacity-[0.08]"
-        style={{ background: 'radial-gradient(circle, var(--color-wash-brand) 0%, transparent 70%)' }}
-      />
-      <div
-        className="pointer-events-none absolute -bottom-48 -left-48 h-[520px] w-[520px] rounded-full opacity-[0.06]"
-        style={{ background: 'radial-gradient(circle, var(--color-wash-brand) 0%, transparent 70%)' }}
-      />
-
-      <div className="relative z-10 w-full max-w-[440px] px-6">
-        {/* Logo above card */}
-        <div className="mb-8 flex justify-center">
-          <Logo size={52} tone="dark" sub="DESKTOP" />
+    <div className="grid h-full w-full grid-cols-1 bg-white lg:grid-cols-2">
+      {/* ----- Left: form ----- */}
+      <div className="relative flex h-full flex-col">
+        {/* Top: logo */}
+        <div className="flex items-center gap-2.5 p-8">
+          <img
+            src="/Logoapp.png"
+            alt="Wash Inn"
+            className="h-10 w-10 rounded-xl shadow-sm ring-1 ring-slate-200"
+          />
+          <div className="flex flex-col leading-none">
+            <span className="font-display text-[18px] font-black tracking-tight text-slate-900">
+              Wash <span className="text-wash-navy">Inn</span>
+            </span>
+            <span className="mt-1 inline-flex w-fit items-center rounded-md bg-slate-100 px-1.5 py-[2px] text-[8.5px] font-bold uppercase tracking-[0.2em] text-slate-600">
+              Desktop
+            </span>
+          </div>
         </div>
 
-        {/* Card */}
-        <div className="overflow-hidden rounded-2xl bg-white shadow-[0_24px_48px_-24px_rgba(15,23,42,0.18),0_8px_16px_-12px_rgba(15,23,42,0.10)] ring-1 ring-slate-200/70">
-          {/* Top accent strip */}
-          <div className="h-[3px] bg-gradient-to-r from-wash-brand-light via-wash-brand to-wash-brand-dark" />
-
-          <form onSubmit={handleSubmit} className="flex flex-col gap-5 p-8">
+        {/* Center: form card */}
+        <div className="flex flex-1 items-center justify-center px-8">
+          <form
+            onSubmit={handleSubmit}
+            className="flex w-full max-w-[420px] flex-col gap-5"
+          >
             <div>
-              <h1 className="font-display text-2xl font-black text-slate-900">
-                Inicia sesión
+              <h1 className="font-display text-3xl font-black tracking-tight text-slate-900">
+                Bienvenido
               </h1>
-              <p className="mt-1 text-sm text-slate-500">
-                Ingresá tus credenciales para continuar
+              <p className="mt-1.5 text-sm text-slate-500">
+                Iniciá sesión para gestionar la operación.
               </p>
             </div>
 
-            <Field label="Usuario">
-              <input
-                value={usuario}
-                onChange={(e) => setUsuario(e.target.value)}
-                placeholder="Tu usuario"
-                autoComplete="username"
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-[15px] text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
-              />
-            </Field>
+            <FieldWithIcon
+              icon={User2}
+              label="Usuario"
+              type="text"
+              placeholder="Tu usuario"
+              value={usuario}
+              onChange={setUsuario}
+              autoComplete="username"
+            />
 
-            <Field label="Contraseña">
-              <div className="relative">
+            <div>
+              <label className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-slate-600">
+                Contraseña
+              </label>
+              <div className="mt-1.5 relative">
+                <Lock
+                  size={16}
+                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                />
                 <input
                   type={showPwd ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="current-password"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pr-12 text-[15px] text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+                  className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-12 text-[14.5px] text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-wash-navy focus:ring-2 focus:ring-wash-navy/15"
                 />
                 <button
                   type="button"
@@ -101,10 +115,18 @@ export function Login() {
                   tabIndex={-1}
                   aria-label={showPwd ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 >
-                  {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
+                  {showPwd ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
-            </Field>
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  className="text-[12px] font-semibold text-wash-navy hover:underline"
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
+            </div>
 
             {error && (
               <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
@@ -116,7 +138,7 @@ export function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="group mt-1 flex items-center justify-center gap-2 rounded-xl bg-wash-brand px-4 py-3 text-[15px] font-semibold text-white shadow-sm shadow-wash-brand/30 transition hover:bg-wash-brand-dark disabled:cursor-not-allowed disabled:opacity-60"
+              className="group mt-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-wash-navy to-wash-navy-dark px-4 py-3 text-[15px] font-semibold text-white shadow-md shadow-wash-navy/30 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? (
                 <>
@@ -133,65 +155,140 @@ export function Login() {
                 </>
               )}
             </button>
+
+            <div className="mt-2 text-center text-[11px] font-mono text-slate-400">
+              {VarVersion}
+            </div>
           </form>
-
-          {/* Demo users footer inside card */}
-          <div className="border-t border-slate-100 bg-slate-50/50 px-8 py-4">
-            <button
-              type="button"
-              onClick={() => setShowHints((v) => !v)}
-              className="flex w-full items-center justify-between text-xs font-medium text-slate-500 hover:text-slate-700"
-            >
-              <span>¿Estás probando la app?</span>
-              <span className="text-wash-brand">
-                {showHints ? 'Ocultar' : 'Ver usuarios demo →'}
-              </span>
-            </button>
-
-            {showHints && (
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {[
-                  ['admin', 'admin', 'Admin'],
-                  ['jtaller', 'jtaller', 'Jefe Taller'],
-                  ['supervisor', 'super', 'Supervisor'],
-                  ['mfernandez', 'tecnico', 'Técnico'],
-                ].map(([u, p, role]) => (
-                  <button
-                    key={u}
-                    type="button"
-                    onClick={() => quickFill(u, p)}
-                    className="rounded-lg border border-slate-200 bg-white p-2.5 text-left text-xs transition hover:border-wash-brand hover:bg-wash-brand/[0.03]"
-                  >
-                    <div className="font-mono text-[11px] font-semibold text-slate-700">
-                      {u}
-                    </div>
-                    <div className="mt-0.5 text-[10px] text-slate-400">{role}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
 
-        <div className="mt-6 text-center text-[11px] text-slate-400">
-          {VarVersion}
+        {/* Bottom: footer */}
+        <div className="flex items-center justify-between border-t border-slate-100 px-8 py-4 text-[11.5px] text-slate-500">
+          <span>© {new Date().getFullYear()} Wash Inn</span>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center gap-1.5 font-semibold uppercase tracking-wider hover:text-slate-900"
+          >
+            <RotateCw size={12} />
+            Actualizar
+          </button>
+        </div>
+      </div>
+
+      {/* ----- Right: marketing panel ----- */}
+      <div className="relative hidden h-full overflow-hidden bg-gradient-to-br from-wash-navy via-wash-navy to-wash-navy-deep lg:block">
+        {/* Subtle dot pattern */}
+        <div
+          aria-hidden
+          className="absolute inset-0 opacity-[0.18]"
+          style={{
+            backgroundImage:
+              'radial-gradient(circle at 1.5px 1.5px, rgba(255,255,255,0.5) 1.5px, transparent 0)',
+            backgroundSize: '28px 28px',
+          }}
+        />
+        {/* Soft glows */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -left-32 -top-32 h-[500px] w-[500px] rounded-full bg-white/10 blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-32 -right-32 h-[500px] w-[500px] rounded-full bg-white/5 blur-3xl"
+        />
+
+        <div className="relative flex h-full flex-col items-center justify-center px-12 text-white">
+          {/* Logo */}
+          <div className="mb-8 flex items-center gap-3">
+            <img
+              src="/Logoapp.png"
+              alt="Wash Inn"
+              className="h-14 w-14 rounded-2xl shadow-lg ring-2 ring-white/25"
+            />
+            <span className="font-display text-[28px] font-black tracking-tight">
+              Wash Inn
+            </span>
+          </div>
+
+          {/* Headline */}
+          <h2 className="text-center font-display text-[40px] font-black leading-[1.1] tracking-tight xl:text-[48px]">
+            Operación de
+            <br />
+            <span className="text-white/85">lavandería</span> bajo
+            <br />
+            control.
+          </h2>
+
+          <p className="mt-6 max-w-[440px] text-center text-[14.5px] leading-relaxed text-white/80">
+            Stock, planificación de rutas, incidentes y mantenimiento —
+            toda la operación diaria de tus edificios en una sola app.
+          </p>
+
+          {/* Feature pills */}
+          <div className="mt-8 flex flex-wrap justify-center gap-2">
+            <FeaturePill icon={Building2} label="Multi-edificio" />
+            <FeaturePill icon={ClipboardList} label="Stock & repuestos" />
+            <FeaturePill icon={AlertOctagon} label="Incidentes" />
+            <FeaturePill icon={Wind} label="Ventilaciones" />
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function Field({
+function FieldWithIcon({
+  icon: Icon,
   label,
-  children,
+  type,
+  placeholder,
+  value,
+  onChange,
+  autoComplete,
 }: {
+  icon: typeof User2;
   label: string;
-  children: React.ReactNode;
+  type: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-slate-700">{label}</span>
-      {children}
-    </label>
+    <div>
+      <label className="text-[10.5px] font-bold uppercase tracking-[0.18em] text-slate-600">
+        {label}
+      </label>
+      <div className="relative mt-1.5">
+        <Icon
+          size={16}
+          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+        />
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-3 text-[14.5px] text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-wash-navy focus:ring-2 focus:ring-wash-navy/15"
+        />
+      </div>
+    </div>
+  );
+}
+
+function FeaturePill({
+  icon: Icon,
+  label,
+}: {
+  icon: typeof Building2;
+  label: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white ring-1 ring-white/20 backdrop-blur-sm">
+      <Icon size={12} />
+      {label}
+    </span>
   );
 }

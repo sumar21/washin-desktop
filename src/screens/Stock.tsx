@@ -9,6 +9,8 @@ import {
   Search,
   Plus,
   Minus,
+  Check,
+  X,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal, ModalActions } from '@/components/Modal';
@@ -52,8 +54,14 @@ export function Stock() {
   const [editing, setEditing] = useState<StockItem | null>(null);
   const [editQty, setEditQty] = useState('');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [filterTipo, setFilterTipo] = useState<TipoStock | 'Todos'>('Todos');
+  // Multi-select: empty array means "all types".
+  const [filterTipos, setFilterTipos] = useState<TipoStock[]>([]);
   const [addOpen, setAddOpen] = useState(false);
+
+  const toggleTipo = (t: TipoStock) =>
+    setFilterTipos((prev) =>
+      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+    );
 
   const canEdit = VarTipoUser === 'Admin' || VarTipoUser === 'Jefe Taller';
 
@@ -72,7 +80,9 @@ export function Stock() {
     const q = query.toLowerCase();
     return stock
       .filter((i) => i.Status_ST === 'Activo')
-      .filter((i) => (filterTipo === 'Todos' ? true : i.Tipo_ST === filterTipo))
+      .filter((i) =>
+        filterTipos.length === 0 ? true : filterTipos.includes(i.Tipo_ST)
+      )
       .filter(
         (i) =>
           i.Item_ST.toLowerCase().includes(q) ||
@@ -81,7 +91,7 @@ export function Stock() {
           i.Tipo_ST.toLowerCase().includes(q)
       )
       .sort((a, b) => a.Tipo_ST.localeCompare(b.Tipo_ST));
-  }, [stock, query, filterTipo]);
+  }, [stock, query, filterTipos]);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -99,12 +109,12 @@ export function Stock() {
         {TIPOS.map((t) => {
           const meta = tipoMeta[t];
           const Icon = meta.icon;
-          const isActive = filterTipo === t;
+          const isActive = filterTipos.includes(t);
           return (
             <button
               key={t}
               type="button"
-              onClick={() => setFilterTipo(isActive ? 'Todos' : t)}
+              onClick={() => toggleTipo(t)}
               className={cn(
                 'group flex items-center gap-2.5 rounded-xl border bg-wash-surface px-3 py-2 text-left transition-all',
                 isActive
@@ -132,6 +142,39 @@ export function Stock() {
           );
         })}
       </div>
+
+      {/* Active filter chips */}
+      {filterTipos.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
+          <span className="font-semibold uppercase tracking-wider">
+            Filtro{filterTipos.length === 1 ? '' : 's'} activo
+            {filterTipos.length === 1 ? '' : 's'}:
+          </span>
+          {filterTipos.map((t) => (
+            <span
+              key={t}
+              className="inline-flex items-center gap-1 rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand"
+            >
+              {t}
+              <button
+                type="button"
+                onClick={() => toggleTipo(t)}
+                className="-mr-1 flex h-4 w-4 items-center justify-center rounded-full hover:bg-wash-brand/20"
+                title={`Quitar ${t}`}
+              >
+                <X size={10} strokeWidth={2.5} />
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={() => setFilterTipos([])}
+            className="ml-auto text-wash-text-muted hover:text-wash-text-strong"
+          >
+            Limpiar todo
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="flex-1 overflow-hidden px-6 pb-6 pt-4">
@@ -300,32 +343,35 @@ export function Stock() {
         title="Filtrar stock"
         width={460}
       >
-        <Label>Tipo</Label>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <FilterChip
-            label="Todos"
-            active={filterTipo === 'Todos'}
-            onClick={() => setFilterTipo('Todos')}
-          />
+        <div className="flex items-center justify-between">
+          <Label>Tipo</Label>
+          <span className="text-[11px] text-wash-text-muted">
+            {filterTipos.length === 0
+              ? 'Mostrando todos'
+              : `${filterTipos.length} seleccionado${filterTipos.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+        <p className="mt-1 text-[11px] text-wash-text-muted">
+          Podés elegir varios. Sin selección se muestran todos.
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
           {TIPOS.map((t) => (
             <FilterChip
               key={t}
               label={t}
               icon={tipoMeta[t].icon}
               tone={tipoMeta[t].tone}
-              active={filterTipo === t}
-              onClick={() => setFilterTipo(t)}
+              active={filterTipos.includes(t)}
+              onClick={() => toggleTipo(t)}
             />
           ))}
         </div>
         <ModalActions>
           <button
             type="button"
-            onClick={() => {
-              setFilterTipo('Todos');
-              setFilterOpen(false);
-            }}
-            className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+            onClick={() => setFilterTipos([])}
+            disabled={filterTipos.length === 0}
+            className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Limpiar
           </button>
@@ -384,7 +430,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition',
+        'group flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition',
         active
           ? 'border-wash-brand bg-wash-brand/5 text-wash-brand ring-2 ring-wash-brand/20'
           : 'border-wash-border text-wash-text-strong hover:border-wash-brand/40 hover:bg-wash-surface-2'
@@ -400,7 +446,17 @@ function FilterChip({
           <Icon size={13} />
         </span>
       )}
-      <span className="truncate">{label}</span>
+      <span className="flex-1 truncate">{label}</span>
+      <span
+        className={cn(
+          'flex h-4 w-4 shrink-0 items-center justify-center rounded transition',
+          active
+            ? 'bg-wash-brand text-white ring-1 ring-wash-brand'
+            : 'bg-wash-surface text-transparent ring-1 ring-wash-border group-hover:ring-wash-brand/40'
+        )}
+      >
+        <Check size={10} strokeWidth={3} />
+      </span>
     </button>
   );
 }

@@ -51,8 +51,14 @@ export function Aprobaciones() {
   const VarUsuario = useAppStore((s) => s.VarUsuario);
 
   const [query, setQuery] = useState('');
-  const [filterTipo, setFilterTipo] = useState<TipoAprobacion | 'Todos'>('Todos');
+  // Multi-select: empty array means "all types".
+  const [filterTipos, setFilterTipos] = useState<TipoAprobacion[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
+
+  const toggleTipo = (t: TipoAprobacion) =>
+    setFilterTipos((prev) =>
+      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+    );
   const [viewing, setViewing] = useState<Aprobacion | null>(null);
   const [approving, setApproving] = useState<Aprobacion | null>(null);
   const [rejecting, setRejecting] = useState<Aprobacion | null>(null);
@@ -66,14 +72,16 @@ export function Aprobaciones() {
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return pending
-      .filter((a) => (filterTipo === 'Todos' ? true : a.TipoAprobacion_AP === filterTipo))
+      .filter((a) =>
+        filterTipos.length === 0 ? true : filterTipos.includes(a.TipoAprobacion_AP)
+      )
       .filter(
         (a) =>
           a.TipoAprobacion_AP.toLowerCase().includes(q) ||
           a.ConcatAprobacion_AP.toLowerCase().includes(q) ||
           a.Status_AP.toLowerCase().includes(q)
       );
-  }, [pending, query, filterTipo]);
+  }, [pending, query, filterTipos]);
 
   const countByTipo = useMemo(() => {
     const map: Record<string, number> = {};
@@ -239,19 +247,35 @@ export function Aprobaciones() {
         />
       </div>
 
-      {/* Active filter chip */}
-      {filterTipo !== 'Todos' && (
-        <div className="flex items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
-          <span className="font-semibold uppercase tracking-wider">Filtro activo:</span>
-          <span className="rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand">
-            {filterTipo}
+      {/* Active filter chips */}
+      {filterTipos.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
+          <span className="font-semibold uppercase tracking-wider">
+            Filtro{filterTipos.length === 1 ? '' : 's'} activo
+            {filterTipos.length === 1 ? '' : 's'}:
           </span>
+          {filterTipos.map((t) => (
+            <span
+              key={t}
+              className="inline-flex items-center gap-1 rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand"
+            >
+              {t}
+              <button
+                type="button"
+                onClick={() => toggleTipo(t)}
+                className="-mr-1 flex h-4 w-4 items-center justify-center rounded-full hover:bg-wash-brand/20"
+                title={`Quitar ${t}`}
+              >
+                <X size={10} strokeWidth={2.5} />
+              </button>
+            </span>
+          ))}
           <button
             type="button"
-            onClick={() => setFilterTipo('Todos')}
+            onClick={() => setFilterTipos([])}
             className="ml-auto text-wash-text-muted hover:text-wash-text-strong"
           >
-            Limpiar
+            Limpiar todo
           </button>
         </div>
       )}
@@ -270,9 +294,9 @@ export function Aprobaciones() {
                 Sin aprobaciones pendientes
               </p>
               <p className="mt-1 text-xs text-wash-text-muted">
-                {filterTipo === 'Todos'
+                {filterTipos.length === 0
                   ? 'Todas las solicitudes fueron resueltas.'
-                  : `No hay solicitudes de tipo "${filterTipo}".`}
+                  : `No hay solicitudes de los tipos seleccionados.`}
               </p>
             </div>
           }
@@ -288,17 +312,20 @@ export function Aprobaciones() {
       >
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-wash-text-muted">
-              Tipo de aprobación
-            </label>
-            <div className="mt-2 grid grid-cols-1 gap-2">
-              <FilterChip
-                label="Todos"
-                icon={ClipboardList}
-                active={filterTipo === 'Todos'}
-                onClick={() => setFilterTipo('Todos')}
-                tone="bg-wash-brand/10 text-wash-brand ring-wash-brand/20"
-              />
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wider text-wash-text-muted">
+                Tipo de aprobación
+              </label>
+              <span className="text-[11px] text-wash-text-muted">
+                {filterTipos.length === 0
+                  ? 'Mostrando todos'
+                  : `${filterTipos.length} seleccionado${filterTipos.length === 1 ? '' : 's'}`}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-wash-text-muted">
+              Podés elegir varios. Sin selección se muestran todos.
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-2">
               {TIPOS.map((t) => {
                 const meta = tipoMeta[t];
                 return (
@@ -306,8 +333,8 @@ export function Aprobaciones() {
                     key={t}
                     label={t}
                     icon={meta.icon}
-                    active={filterTipo === t}
-                    onClick={() => setFilterTipo(t)}
+                    active={filterTipos.includes(t)}
+                    onClick={() => toggleTipo(t)}
                     tone={meta.tone}
                   />
                 );
@@ -318,11 +345,9 @@ export function Aprobaciones() {
         <ModalActions>
           <button
             type="button"
-            onClick={() => {
-              setFilterTipo('Todos');
-              setFilterOpen(false);
-            }}
-            className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+            onClick={() => setFilterTipos([])}
+            disabled={filterTipos.length === 0}
+            className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Limpiar
           </button>
@@ -874,7 +899,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition',
+        'group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition',
         active
           ? 'border-wash-brand bg-wash-brand/5 text-wash-brand ring-2 ring-wash-brand/20'
           : 'border-wash-border text-wash-text-strong hover:border-wash-brand/40 hover:bg-wash-surface-2'
@@ -885,7 +910,17 @@ function FilterChip({
       >
         <Icon size={14} />
       </span>
-      <span className="truncate">{label}</span>
+      <span className="flex-1 truncate">{label}</span>
+      <span
+        className={cn(
+          'flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition',
+          active
+            ? 'bg-wash-brand text-white ring-1 ring-wash-brand'
+            : 'bg-wash-surface text-transparent ring-1 ring-wash-border group-hover:ring-wash-brand/40'
+        )}
+      >
+        <Check size={12} strokeWidth={3} />
+      </span>
     </button>
   );
 }

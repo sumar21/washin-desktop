@@ -93,11 +93,16 @@ export function ConfigReportes({ query }: ConfigReportesProps) {
       .join('')
       .toUpperCase();
 
+  // Estado se deriva del progreso: 0 = Pendiente (sin empezar),
+  // cualquier valor > 0 = Finalizado (aunque tenga ítems sin check).
+  const estadoFor = (r: Registro): 'Pendiente' | 'Finalizado' =>
+    (r.Progreso ?? 0) > 0 ? 'Finalizado' : 'Pendiente';
+
   // --- General report rows ---
   const filteredRegistros = useMemo(() => {
     const q = query.toLowerCase().trim();
     return registros.filter((r) => {
-      if (estadoFilter !== 'todos' && r.Estado !== estadoFilter) return false;
+      if (estadoFilter !== 'todos' && estadoFor(r) !== estadoFilter) return false;
       if (!q) return true;
       return (
         r.Edificio.toLowerCase().includes(q) ||
@@ -209,7 +214,7 @@ export function ConfigReportes({ query }: ConfigReportesProps) {
       header: 'Estado',
       width: '130px',
       truncate: false,
-      render: (r) => <StatusBadge status={r.Estado} />,
+      render: (r) => <StatusBadge status={estadoFor(r)} />,
     },
     {
       key: 'progreso',

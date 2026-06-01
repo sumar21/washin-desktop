@@ -178,15 +178,17 @@ export function Home() {
                 </Pie>
               </PieChart>
             </ChartContainer>
-            <div className="flex flex-1 flex-col gap-0.5 text-[10px]">
+            <div className="flex flex-1 flex-col gap-1.5 text-[12.5px]">
               {stockPorTipo.map((s, i) => (
-                <div key={s.tipo} className="flex items-center gap-1.5">
+                <div key={s.tipo} className="flex items-center gap-2">
                   <span
-                    className="h-2 w-2 shrink-0 rounded-sm"
+                    className="h-2.5 w-2.5 shrink-0 rounded"
                     style={{ background: pieColors[i % pieColors.length] }}
                   />
-                  <span className="truncate text-wash-text-muted">{s.tipo}</span>
-                  <span className="ml-auto font-semibold text-wash-text-strong tabular-nums">
+                  <span className="truncate font-medium text-wash-text-muted">
+                    {s.tipo}
+                  </span>
+                  <span className="ml-auto font-bold text-wash-text-strong tabular-nums">
                     {s.cantidad}
                   </span>
                 </div>

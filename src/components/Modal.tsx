@@ -23,7 +23,7 @@ export function Modal({ open, onClose, title, children, width = 580, className }
 
   if (!open) return null;
   return (
-    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm">
       <div
         className={cn(
           'relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-2xl',
