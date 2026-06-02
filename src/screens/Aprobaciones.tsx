@@ -3,6 +3,7 @@ import {
   Check,
   X,
   Eye,
+  Pencil,
   ShoppingCart,
   Wrench,
   ArrowLeftRight,
@@ -13,9 +14,10 @@ import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions } from '@/components/Modal';
 import { StatusBadge } from '@/components/StatusBadge';
+import { EditCompraForm } from '@/components/EditCompraForm';
 import { useAppStore } from '@/store/useAppStore';
 import { cn, formatToday, currentTime } from '@/lib/utils';
-import type { Aprobacion } from '@/types/domain';
+import type { Aprobacion, PedidoCompra } from '@/types/domain';
 
 type TipoAprobacion = Aprobacion['TipoAprobacion_AP'];
 
@@ -47,7 +49,12 @@ export function Aprobaciones() {
   const aprobaciones = useAppStore((s) => s.CollectAprobaciones);
   const patchAprobacion = useAppStore((s) => s.patchAprobacion);
   const patchCompra = useAppStore((s) => s.patchCompra);
+  const patchDetalleCompra = useAppStore((s) => s.patchDetalleCompra);
+  const addDetalleCompra = useAppStore((s) => s.addDetalleCompra);
+  const removeDetalleCompra = useAppStore((s) => s.removeDetalleCompra);
   const pedidos = useAppStore((s) => s.CollectCompras);
+  const detallesCompras = useAppStore((s) => s.CollectDetalleCompras);
+  const catalog = useAppStore((s) => s.CollectStockCatalog);
   const VarUsuario = useAppStore((s) => s.VarUsuario);
 
   const [query, setQuery] = useState('');
@@ -63,6 +70,7 @@ export function Aprobaciones() {
   const [approving, setApproving] = useState<Aprobacion | null>(null);
   const [rejecting, setRejecting] = useState<Aprobacion | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [editingCompra, setEditingCompra] = useState<PedidoCompra | null>(null);
 
   const pending = useMemo(
     () => aprobaciones.filter((a) => a.Aprobada_AP === 'NO' && a.Rechazada_AP === 'NO'),
@@ -168,7 +176,7 @@ export function Aprobaciones() {
     {
       key: 'actions',
       header: 'Acciones',
-      width: '150px',
+      width: '190px',
       align: 'right',
       truncate: false,
       render: (a) => (
@@ -182,6 +190,18 @@ export function Aprobaciones() {
               setViewing(a);
             }}
           />
+          {a.TipoAprobacion_AP === 'Compra' && a.IDCompra_AP && (
+            <ActionButton
+              icon={Pencil}
+              tone="brand"
+              title="Editar compra"
+              onClick={(e) => {
+                e.stopPropagation();
+                const pedido = pedidos.find((p) => String(p.ID) === a.IDCompra_AP);
+                if (pedido) setEditingCompra(pedido);
+              }}
+            />
+          )}
           <ActionButton
             icon={Check}
             tone="approve"
@@ -390,6 +410,57 @@ export function Aprobaciones() {
           setRejectReason('');
         }}
       />
+
+      {/* Editar compra (desde Aprobaciones) */}
+      <Modal
+        open={!!editingCompra}
+        onClose={() => setEditingCompra(null)}
+        title={editingCompra ? `Editar compra #${editingCompra.ID}` : ''}
+        width={760}
+      >
+        {editingCompra && (
+          <EditCompraForm
+            pedido={editingCompra}
+            initialDetalles={detallesCompras.filter(
+              (d) => d.IDCompra_DC === editingCompra.IDUnivoco_PC
+            )}
+            catalog={catalog}
+            onCancel={() => setEditingCompra(null)}
+            onSave={({ obs, lines, removedIds }) => {
+              removedIds.forEach((id) => removeDetalleCompra(id));
+              let totalQty = 0;
+              lines.forEach((l) => {
+                totalQty += l.qty;
+                if (l.id) {
+                  patchDetalleCompra(l.id, {
+                    Item_DC: l.item,
+                    Cantidad_DC: l.qty,
+                    Codigo_DC: l.codigo,
+                    Marca_DC: l.marca,
+                  });
+                } else {
+                  addDetalleCompra({
+                    IDCompra_DC: editingCompra.IDUnivoco_PC,
+                    Item_DC: l.item,
+                    Cantidad_DC: l.qty,
+                    FechaMesAno_DC: editingCompra.FechaMesAno_PC,
+                    Fecha_DC: editingCompra.Fecha_PC,
+                    Segmento_DC: editingCompra.Segmento_PC,
+                    Status_DC: 'Pendiente',
+                    Codigo_DC: l.codigo,
+                    Marca_DC: l.marca,
+                  });
+                }
+              });
+              patchCompra(editingCompra.ID, {
+                Observaciones_PC: obs,
+                Cantidad_PC: totalQty,
+              });
+              setEditingCompra(null);
+            }}
+          />
+        )}
+      </Modal>
     </div>
   );
 }
@@ -826,13 +897,15 @@ function ActionButton({
   onClick,
 }: {
   icon: typeof Eye;
-  tone: 'neutral' | 'approve' | 'reject';
+  tone: 'neutral' | 'brand' | 'approve' | 'reject';
   title: string;
   onClick: (e: React.MouseEvent) => void;
 }) {
   const cls = {
     neutral:
       'text-wash-text-muted ring-wash-border hover:bg-wash-surface-2 hover:text-wash-text-strong hover:ring-wash-text-muted/40',
+    brand:
+      'text-wash-brand ring-wash-brand/30 hover:bg-wash-brand/10 hover:ring-wash-brand',
     approve:
       'text-emerald-700 ring-emerald-500/30 hover:bg-emerald-500/10 hover:ring-emerald-500',
     reject:

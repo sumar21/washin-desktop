@@ -20,7 +20,7 @@ import {
   YAxis,
 } from 'recharts';
 import { useAppStore } from '@/store/useAppStore';
-import { proper } from '@/lib/utils';
+import { proper, cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -318,20 +318,16 @@ function VisitaCard({
   onDelete: () => void;
 }) {
   const progreso = registro.Progreso ?? (registro.Estado === 'Finalizado' ? 100 : 0);
-  const isPendiente = progreso === 0 || (registro.Estado === 'Pendiente' && progreso < 100);
+  // Pendiente sólo si no empezó. Con progreso > 0 ya cuenta como Finalizado.
+  const isPendiente = progreso === 0;
 
   return (
     <div className="group relative overflow-hidden rounded-xl bg-wash-surface ring-1 ring-wash-border transition-all hover:-translate-y-0.5 hover:shadow-md hover:ring-wash-brand/30">
-      {/* Progress accent bar */}
+      {/* Top accent strip — decorative border */}
       <div
-        className="absolute inset-x-0 top-0 h-[3px] bg-wash-brand/15"
+        className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-wash-brand-light via-wash-brand to-wash-brand-dark"
         aria-hidden
-      >
-        <div
-          className="h-full bg-gradient-to-r from-wash-brand-light to-wash-brand transition-all"
-          style={{ width: `${progreso}%` }}
-        />
-      </div>
+      />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-2 px-3.5 pt-3 pb-2">
@@ -344,13 +340,9 @@ function VisitaCard({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {isPendiente ? (
+          {isPendiente && (
             <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 ring-1 ring-amber-500/30">
               Pendiente
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded-full bg-gradient-to-r from-wash-brand to-wash-brand-dark px-2.5 py-0.5 text-[11px] font-bold text-white shadow-sm shadow-wash-brand/30 tabular-nums">
-              {progreso}%
             </span>
           )}
           <button
@@ -365,7 +357,7 @@ function VisitaCard({
       </div>
 
       {/* Body: stats grid like PowerApp */}
-      <div className="space-y-1 px-3.5 pb-3 text-[11px]">
+      <div className="space-y-1 px-3.5 pb-2.5 text-[11px]">
         <div className="grid grid-cols-2 gap-x-3">
           <KV label="Ruta" value={registro.NroRuta_R} />
           <KV label="Circuito" value={registro.NroCircuito_R} />
@@ -374,6 +366,40 @@ function VisitaCard({
         <div className="grid grid-cols-2 gap-x-3">
           <KV label="Hora inicio" value={registro.HoraInicio ?? '—'} />
           <KV label="Hora fin" value={registro.HoraFinal ?? '—'} />
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="border-t border-wash-divider/60 bg-wash-surface-2/30 px-3.5 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[9.5px] font-bold uppercase tracking-wider text-wash-text-muted">
+            Progreso
+          </span>
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold tabular-nums shadow-sm',
+              progreso === 100
+                ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-emerald-500/30'
+                : progreso > 0
+                  ? 'bg-gradient-to-r from-wash-brand to-wash-brand-dark text-white shadow-wash-brand/30'
+                  : 'bg-wash-surface text-wash-text-muted ring-1 ring-wash-border'
+            )}
+          >
+            {progreso}%
+          </span>
+        </div>
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-wash-border/60">
+          <div
+            className={cn(
+              'h-full rounded-full transition-all',
+              progreso === 100
+                ? 'bg-emerald-500'
+                : progreso > 0
+                  ? 'bg-gradient-to-r from-wash-brand-light to-wash-brand'
+                  : 'bg-wash-border/60'
+            )}
+            style={{ width: `${progreso}%` }}
+          />
         </div>
       </div>
     </div>

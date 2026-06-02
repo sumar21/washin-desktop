@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 
 export interface Column<T> {
@@ -8,6 +8,8 @@ export interface Column<T> {
   align?: 'left' | 'right' | 'center';
   /** Apply text-truncate to the cell. Defaults to true. */
   truncate?: boolean;
+  /** Pin this column to the left when horizontally scrolling. */
+  sticky?: boolean;
   render: (row: T, index: number) => ReactNode;
 }
 
@@ -31,46 +33,92 @@ export function DataTable<T>({
   const alignClass = (a?: 'left' | 'right' | 'center') =>
     a === 'right' ? 'text-right' : a === 'center' ? 'text-center' : 'text-left';
 
-  return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-sm ring-1 ring-wash-border">
-      <div
-        className="grid border-b border-wash-border bg-wash-canvas px-4 text-[11px] font-bold uppercase tracking-wider text-wash-text-muted"
-        style={{ gridTemplateColumns: columns.map((c) => c.width ?? 'minmax(0,1fr)').join(' ') }}
-      >
-        {columns.map((c) => (
-          <div key={c.key} className={cn('py-2.5', alignClass(c.align))}>
-            {c.header}
-          </div>
-        ))}
-      </div>
+  const gridTpl = useMemo(
+    () => columns.map((c) => c.width ?? 'minmax(0,1fr)').join(' '),
+    [columns]
+  );
 
-      <div className="flex-1 overflow-y-auto">
-        {rows.length === 0 && (
-          <div className="flex h-full items-center justify-center text-sm text-wash-text-muted">
+  // Left offsets (px) for each sticky column = sum of widths of prior sticky
+  // columns. Starts at 0 because we put horizontal padding on the cells
+  // (pl-4 on first, pr-4 on last) instead of on the grid container, so each
+  // cell's grid track starts flush against the previous one with no parent
+  // padding gap that would let scrolled content peek through.
+  const stickyLefts = useMemo(() => {
+    const map = new Map<string, number>();
+    let acc = 0;
+    for (const col of columns) {
+      if (col.sticky) {
+        map.set(col.key, acc);
+        const px = parseInt(col.width ?? '0', 10);
+        acc += Number.isFinite(px) ? px : 0;
+      }
+    }
+    return map;
+  }, [columns]);
+
+  const lastIdx = columns.length - 1;
+
+  return (
+    <div className="h-full overflow-hidden rounded-2xl bg-wash-surface shadow-sm ring-1 ring-wash-border">
+      <div className="h-full overflow-auto">
+        {/* Header — sticky to the top on vertical scroll */}
+        <div
+          className="sticky top-0 z-20 grid border-b border-wash-border bg-wash-canvas text-[11px] font-bold uppercase tracking-wider text-wash-text-muted"
+          style={{ gridTemplateColumns: gridTpl }}
+        >
+          {columns.map((c, idx) => (
+            <div
+              key={c.key}
+              className={cn(
+                'py-2.5',
+                idx === 0 && 'pl-4',
+                idx === lastIdx && 'pr-4',
+                alignClass(c.align),
+                c.sticky && 'sticky z-30 bg-wash-canvas'
+              )}
+              style={c.sticky ? { left: stickyLefts.get(c.key) } : undefined}
+            >
+              {c.header}
+            </div>
+          ))}
+        </div>
+
+        {/* Body */}
+        {rows.length === 0 ? (
+          <div className="flex h-[280px] items-center justify-center px-4 text-sm text-wash-text-muted">
             {empty ?? 'Sin resultados'}
           </div>
+        ) : (
+          rows.map((row, idx) => (
+            <div
+              key={rowKey(row)}
+              onClick={() => onRowClick?.(row)}
+              className={cn(
+                'group grid items-center border-b border-wash-divider/60 bg-wash-surface text-sm text-wash-text-strong transition-colors',
+                dense ? 'py-2' : 'py-4',
+                onRowClick && 'cursor-pointer hover:bg-wash-canvas'
+              )}
+              style={{ gridTemplateColumns: gridTpl }}
+            >
+              {columns.map((c, cIdx) => (
+                <div
+                  key={c.key}
+                  className={cn(
+                    cIdx === 0 && 'pl-4',
+                    cIdx === lastIdx && 'pr-4',
+                    c.truncate !== false && 'truncate',
+                    alignClass(c.align),
+                    c.sticky &&
+                      'sticky z-10 bg-wash-surface group-hover:bg-wash-canvas'
+                  )}
+                  style={c.sticky ? { left: stickyLefts.get(c.key) } : undefined}
+                >
+                  {c.render(row, idx)}
+                </div>
+              ))}
+            </div>
+          ))
         )}
-        {rows.map((row, idx) => (
-          <div
-            key={rowKey(row)}
-            onClick={() => onRowClick?.(row)}
-            className={cn(
-              'grid items-center border-b border-wash-divider/60 px-4 text-sm text-wash-text-strong transition-colors',
-              dense ? 'py-2' : 'py-4',
-              onRowClick && 'cursor-pointer hover:bg-wash-canvas'
-            )}
-            style={{ gridTemplateColumns: columns.map((c) => c.width ?? 'minmax(0,1fr)').join(' ') }}
-          >
-            {columns.map((c) => (
-              <div
-                key={c.key}
-                className={cn(c.truncate !== false && 'truncate', alignClass(c.align))}
-              >
-                {c.render(row, idx)}
-              </div>
-            ))}
-          </div>
-        ))}
       </div>
     </div>
   );

@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
+import { EditCompraForm } from '@/components/EditCompraForm';
 import { cn, currentMonthYear, formatToday, tipoLabel } from '@/lib/utils';
 import type {
   DetalleCompra,
@@ -51,6 +52,8 @@ export function Compras() {
   const catalog = useAppStore((s) => s.CollectStockCatalog);
   const patchCompra = useAppStore((s) => s.patchCompra);
   const patchDetalleCompra = useAppStore((s) => s.patchDetalleCompra);
+  const addDetalleCompra = useAppStore((s) => s.addDetalleCompra);
+  const removeDetalleCompra = useAppStore((s) => s.removeDetalleCompra);
   const addCompra = useAppStore((s) => s.addCompra);
   const VarUsuario = useAppStore((s) => s.VarUsuario) ?? 'usr';
 
@@ -272,18 +275,55 @@ export function Compras() {
         )}
       </Modal>
 
-      {/* Editar (observaciones) */}
+      {/* Editar pedido (items + observaciones) */}
       <Modal
         open={!!editing}
         onClose={() => setEditing(null)}
         title={editing ? `Editar pedido #${editing.ID}` : ''}
+        width={760}
       >
         {editing && (
           <EditCompraForm
             pedido={editing}
+            initialDetalles={detallesDe(editing)}
+            catalog={catalog}
             onCancel={() => setEditing(null)}
-            onSave={(obs) => {
-              patchCompra(editing.ID, { Observaciones_PC: obs });
+            onSave={({ obs, lines, removedIds }) => {
+              // Remove deleted detalles
+              removedIds.forEach((id) => removeDetalleCompra(id));
+
+              // Patch existing + add new
+              let totalQty = 0;
+              lines.forEach((l) => {
+                totalQty += l.qty;
+                if (l.id) {
+                  patchDetalleCompra(l.id, {
+                    Item_DC: l.item,
+                    Cantidad_DC: l.qty,
+                    Codigo_DC: l.codigo,
+                    Marca_DC: l.marca,
+                  });
+                } else {
+                  addDetalleCompra({
+                    IDCompra_DC: editing.IDUnivoco_PC,
+                    Item_DC: l.item,
+                    Cantidad_DC: l.qty,
+                    FechaMesAno_DC: editing.FechaMesAno_PC,
+                    Fecha_DC: editing.Fecha_PC,
+                    Segmento_DC: editing.Segmento_PC,
+                    Status_DC: 'Pendiente',
+                    Codigo_DC: l.codigo,
+                    Marca_DC: l.marca,
+                  });
+                }
+              });
+
+              // Update pedido (observations + total quantity)
+              patchCompra(editing.ID, {
+                Observaciones_PC: obs,
+                Cantidad_PC: totalQty,
+              });
+
               setEditing(null);
             }}
           />
@@ -376,46 +416,6 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function EditCompraForm({
-  pedido,
-  onCancel,
-  onSave,
-}: {
-  pedido: PedidoCompra;
-  onCancel: () => void;
-  onSave: (obs: string) => void;
-}) {
-  const [obs, setObs] = useState(pedido.Observaciones_PC ?? '');
-  return (
-    <>
-      <label className="text-xs font-semibold uppercase tracking-wider text-wash-text-muted">
-        Observaciones
-      </label>
-      <textarea
-        rows={3}
-        value={obs}
-        onChange={(e) => setObs(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-wash-border bg-wash-surface px-3 py-2 outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
-      />
-      <ModalActions>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={() => onSave(obs)}
-          className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark"
-        >
-          Guardar
-        </button>
-      </ModalActions>
-    </>
-  );
-}
 
 // ----- Nueva compra modal -----
 

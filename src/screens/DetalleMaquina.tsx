@@ -306,7 +306,7 @@ export function DetalleMaquina() {
           <button
             type="button"
             onClick={() => openSelector('setup')}
-            className="flex items-center gap-1.5 rounded-full bg-wash-canvas px-3.5 py-2 text-sm font-medium text-wash-text-strong ring-1 ring-wash-border hover:bg-wash-border/40"
+            className="flex items-center gap-1.5 rounded-lg bg-wash-canvas px-3.5 py-2 text-sm font-medium text-wash-text-strong ring-1 ring-wash-border hover:bg-wash-border/40"
             title={edificio ? 'Cambiar edificio' : 'Seleccionar edificio'}
           >
             <Building2 size={14} />

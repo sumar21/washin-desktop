@@ -126,6 +126,8 @@ interface AppState {
   patchVentilacion: (id: number, changes: Partial<Ventilacion>) => void;
 
   addCompra: (pedido: Omit<PedidoCompra, 'ID'>, detalles: Omit<DetalleCompra, 'ID'>[]) => void;
+  addDetalleCompra: (detalle: Omit<DetalleCompra, 'ID'>) => void;
+  removeDetalleCompra: (id: number) => void;
   addIncidente: (incidente: Omit<Incidente, 'ID'>) => void;
   addStock: (
     catalogItem: StockCatalogItem,
@@ -175,6 +177,8 @@ const initialState: Omit<
   | 'patchMaquina'
   | 'patchVentilacion'
   | 'addCompra'
+  | 'addDetalleCompra'
+  | 'removeDetalleCompra'
   | 'addIncidente'
   | 'addStock'
   | 'removeRegistro'
@@ -331,6 +335,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         CollectDetalleCompras: [...s.CollectDetalleCompras, ...newDetalles],
       };
     }),
+
+  addDetalleCompra: (detalle) =>
+    set((s) => {
+      const id = nextId(s.CollectDetalleCompras);
+      return {
+        CollectDetalleCompras: [...s.CollectDetalleCompras, { ...detalle, ID: id }],
+      };
+    }),
+
+  removeDetalleCompra: (id) =>
+    set((s) => ({
+      CollectDetalleCompras: s.CollectDetalleCompras.filter((it) => it.ID !== id),
+    })),
 
   addIncidente: (incidente) =>
     set((s) => {

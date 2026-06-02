@@ -144,12 +144,14 @@ export function Incidentes() {
       header: 'Estado',
       width: '120px',
       truncate: false,
+      sticky: true,
       render: (i) => <StatusBadge status={i.Status_IN} />,
     },
     {
       key: 'fecha',
       header: 'Fecha',
       width: '110px',
+      sticky: true,
       render: (i) => (
         <span className="inline-flex items-center gap-1.5 text-[12.5px] text-wash-text">
           <Calendar size={11} className="text-wash-text-faint" />

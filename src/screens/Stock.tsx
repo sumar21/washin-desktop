@@ -250,7 +250,7 @@ export function Stock() {
                         {row.Cantidad_ST}
                       </Badge>
                     </div>
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-1.5">
                       {showEdit && (
                         <button
                           type="button"
@@ -258,19 +258,19 @@ export function Stock() {
                             setEditing(row);
                             setEditQty(String(row.Cantidad_ST));
                           }}
-                          className="rounded-md p-1.5 text-wash-text-muted ring-1 ring-wash-border transition hover:bg-wash-brand/10 hover:text-wash-brand hover:ring-wash-brand/30"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-wash-text-muted ring-1 ring-wash-border transition hover:bg-wash-brand/10 hover:text-wash-brand hover:ring-wash-brand/40"
                           title="Editar cantidad"
                         >
-                          <Pencil size={13} />
+                          <Pencil size={15} />
                         </button>
                       )}
                       {showEdit && (
                         <button
                           type="button"
-                          className="rounded-md p-1.5 text-wash-text-muted ring-1 ring-wash-border transition hover:bg-wash-brand/10 hover:text-wash-brand hover:ring-wash-brand/30"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-wash-text-muted ring-1 ring-wash-border transition hover:bg-wash-brand/10 hover:text-wash-brand hover:ring-wash-brand/40"
                           title="Asignar a técnico"
                         >
-                          <ArrowLeftRight size={13} />
+                          <ArrowLeftRight size={15} />
                         </button>
                       )}
                     </div>
