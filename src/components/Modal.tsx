@@ -1,6 +1,9 @@
 import { type ReactNode, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { X, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { backdropClose } from '@/lib/backdropClose';
+import { useModalAnimation } from '@/hooks/useModalAnimation';
 
 interface ModalProps {
   open: boolean;
@@ -12,6 +15,8 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, children, width = 580, className }: ModalProps) {
+  const { visible, overlayClass, modalClass } = useModalAnimation(open);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -21,12 +26,20 @@ export function Modal({ open, onClose, title, children, width = 580, className }
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm">
+  if (!visible) return null;
+
+  return createPortal(
+    <div
+      className={cn(
+        'fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm',
+        overlayClass
+      )}
+      {...backdropClose(onClose)}
+    >
       <div
         className={cn(
           'relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-2xl',
+          modalClass,
           className
         )}
         style={{ width }}
@@ -39,6 +52,7 @@ export function Modal({ open, onClose, title, children, width = 580, className }
             <button
               type="button"
               onClick={onClose}
+              aria-label="Cerrar"
               className="rounded-full p-1 text-wash-text-muted hover:bg-wash-canvas"
             >
               <X size={20} />
@@ -47,7 +61,8 @@ export function Modal({ open, onClose, title, children, width = 580, className }
         )}
         <div className="flex-1 overflow-y-auto p-6">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -64,6 +79,10 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   tone?: 'danger' | 'primary';
+  /** Mientras `busy` está en true, el confirm se deshabilita y no se puede cerrar el diálogo. */
+  busy?: boolean;
+  /** Mensaje de error a mostrar (p. ej. si la acción confirmada falló). */
+  error?: string | null;
 }
 
 export function ConfirmDialog({
@@ -75,23 +94,40 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   tone = 'primary',
+  busy = false,
+  error = null,
 }: ConfirmDialogProps) {
+  // Con una acción en vuelo, ignorar cierres (Escape / backdrop / Cancelar).
+  const guardedCancel = () => {
+    if (!busy) onCancel();
+  };
   return (
-    <Modal open={open} onClose={onCancel} title={title} width={460}>
+    <Modal open={open} onClose={guardedCancel} title={title} width={460}>
+      {error && (
+        <div
+          role="alert"
+          className="mb-3 flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700"
+        >
+          <AlertCircle size={14} className="shrink-0" />
+          {error}
+        </div>
+      )}
       <p className="text-wash-text-strong">{message}</p>
       <ModalActions>
         <button
           type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-wash-border bg-wash-surface px-5 py-2 font-medium text-wash-text-strong hover:bg-wash-canvas"
+          onClick={guardedCancel}
+          disabled={busy}
+          className="rounded-lg border border-wash-border bg-wash-surface px-5 py-2 font-medium text-wash-text-strong hover:bg-wash-canvas disabled:cursor-not-allowed disabled:opacity-50"
         >
           {cancelLabel}
         </button>
         <button
           type="button"
           onClick={onConfirm}
+          disabled={busy}
           className={cn(
-            'rounded-lg px-5 py-2 font-medium text-white',
+            'rounded-lg px-5 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60',
             tone === 'danger'
               ? 'bg-wash-status-rejected hover:brightness-110'
               : 'bg-wash-primary hover:brightness-110'

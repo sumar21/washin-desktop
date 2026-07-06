@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Eye,
@@ -11,9 +11,11 @@ import {
   Building2,
   ClipboardList,
   AlertOctagon,
+  AlertCircle,
   Wind,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
+import { getLockStatus, recordFailedAttempt, resetAttempts, formatLockTime } from '@/lib/rateLimit';
 
 export function Login() {
   const navigate = useNavigate();
@@ -25,24 +27,35 @@ export function Login() {
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lockSecs, setLockSecs] = useState(() => getLockStatus('login').remainingSeconds);
 
-  const handleSubmit = (e: FormEvent) => {
+  useEffect(() => {
+    if (lockSecs <= 0) return;
+    const t = setInterval(() => {
+      setLockSecs((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [lockSecs]);
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (lockSecs > 0) return;
     setError(null);
     setLoading(true);
-    setTimeout(() => {
-      const result = login(usuario, password);
-      setLoading(false);
-      if (!result.ok) {
-        setError(
-          result.reason === 'empty'
-            ? 'Completá usuario y contraseña.'
-            : 'Usuario o contraseña incorrectos.'
-        );
-        return;
-      }
-      navigate('/home', { replace: true });
-    }, 400);
+    const result = await login(usuario, password);
+    setLoading(false);
+    if (!result.ok) {
+      const status = recordFailedAttempt('login');
+      setLockSecs(status.remainingSeconds);
+      setError(
+        status.locked
+          ? `Demasiados intentos. Probá de nuevo en ${formatLockTime(status.remainingSeconds)}.`
+          : result.message
+      );
+      return;
+    }
+    resetAttempts('login');
+    navigate('/home', { replace: true });
   };
 
   return (
@@ -129,18 +142,26 @@ export function Login() {
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
-                <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+              <div
+                role="alert"
+                className="flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3.5 py-2.5 text-sm font-medium text-red-700"
+              >
+                <AlertCircle size={16} className="shrink-0" />
                 {error}
               </div>
             )}
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || lockSecs > 0}
               className="group mt-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-wash-navy to-wash-navy-dark px-4 py-3 text-[15px] font-semibold text-white shadow-md shadow-wash-navy/30 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {loading ? (
+              {lockSecs > 0 ? (
+                <>
+                  <Lock size={16} />
+                  Bloqueado · {formatLockTime(lockSecs)}
+                </>
+              ) : loading ? (
                 <>
                   <Loader2 className="animate-spin" size={16} />
                   Validando…

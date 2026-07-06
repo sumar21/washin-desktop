@@ -1,14 +1,31 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
+import { useAppStore } from '@/store/useAppStore';
+
+const MIN_SPLASH_MS = 900;
 
 export function Start() {
   const navigate = useNavigate();
+  const restoreSession = useAppStore((s) => s.restoreSession);
 
   useEffect(() => {
-    const t = setTimeout(() => navigate('/login', { replace: true }), 1800);
-    return () => clearTimeout(t);
-  }, [navigate]);
+    let cancelled = false;
+    const startedAt = Date.now();
+
+    restoreSession().then((restored) => {
+      if (cancelled) return;
+      const elapsed = Date.now() - startedAt;
+      const wait = Math.max(0, MIN_SPLASH_MS - elapsed);
+      setTimeout(() => {
+        if (!cancelled) navigate(restored ? '/home' : '/login', { replace: true });
+      }, wait);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, restoreSession]);
 
   return (
     <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-[#020816]">

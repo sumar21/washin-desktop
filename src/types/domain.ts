@@ -109,14 +109,16 @@ export interface RepuestoTecnico {
 }
 
 // 05.PedidoCompras
+// Segmento_PC es un string real del catálogo (Title Case, ej. "Lavadora", "Repuesto"),
+// no el enum TipoStock uppercase — los valores vienen de 99.ABM_ItemCompras.
 export interface PedidoCompra {
   ID: number;
   IDUnivoco_PC: string;
   Fecha_PC: string;
   FechaMesAno_PC: string;
-  Segmento_PC: TipoStock;
+  Segmento_PC: string;
   Cantidad_PC: number;
-  Status_PC: 'Pendiente' | 'En Aprobacion' | 'Aprobada' | 'Recibida' | 'Rechazada';
+  Status_PC: 'Pendiente' | 'En Aprobacion' | 'Aprobada' | 'Recibida' | 'Rechazada' | 'Anulado';
   Filtrar_PC: 'SI' | 'NO';
   Observaciones_PC?: string;
   Rechazada_PC?: 'SI' | 'NO';
@@ -125,6 +127,8 @@ export interface PedidoCompra {
 }
 
 // 06.DetalleCompra
+// OJO: 06.DetalleCompra NO tiene columna Codigo_DC en SharePoint — `Codigo_DC` es
+// solo de UI (se deriva del catálogo), no se persiste.
 export interface DetalleCompra {
   ID: number;
   IDCompra_DC: string;
@@ -133,8 +137,8 @@ export interface DetalleCompra {
   CantidadIngresada_DC?: number;
   FechaMesAno_DC: string;
   Fecha_DC: string;
-  Segmento_DC: TipoStock;
-  Status_DC: 'Pendiente' | 'Aprobada' | 'Rechazada' | 'Recibida';
+  Segmento_DC: string;
+  Status_DC: 'Pendiente' | 'Aprobada' | 'Rechazada' | 'Recibida' | 'Anulado';
   Rechazada_DC?: 'SI' | 'NO';
   Codigo_DC?: string;
   Marca_DC?: string;
@@ -162,6 +166,8 @@ export interface Aprobacion {
 }
 
 // 08.DetalleMaquina
+// Segmento_DM es un string real (Title Case: "Lavadora", "Secadora Simple"…),
+// columna interna `Segmentp_DM` (typo en SharePoint) — no el enum TipoStock.
 export interface DetalleMaquina {
   ID: number;
   IDMaquina_DM: string;
@@ -170,7 +176,7 @@ export interface DetalleMaquina {
   NroSerie_DM: string;
   ConcatMaquina_DM: string;
   ConcatMaquinaIncidente_DM: string;
-  Segmento_DM: TipoStock;
+  Segmento_DM: string;
   Encendido_DM?: string;
   Status_DM: 'INSTALADA' | 'DEPOSITO' | 'ELIMINADA';
   Edificio_DM: string;
@@ -188,24 +194,26 @@ export interface HistorialMaquina {
 }
 
 // 10.Incidentes
+// OJO: la lista real NO tiene Titulo_IN (se deriva de Categoria_IN/NoResuelto_IN) ni una
+// columna IDIncidente propia (la clave es el ID numérico; `IDIncidente` = String(ID)).
+// NoResuelto_IN/Status_IN son strings reales amplios (incluyen 'Atencion al Cliente',
+// 'Cambio de Maquina', 'Aprobada', …).
 export interface Incidente {
   ID: number;
   IDIncidente: string;
   Fecha_IN: string;
-  FechaMes_IN: string;
+  FechaMes_IN?: string;
   FechaMesAno_IN: string;
   Titulo_IN: string;
-  NoResuelto_IN:
-    | 'Requiere Repuesto'
-    | 'Cambio Maquina'
-    | 'Reportado Por Tecnico'
-    | 'Baja de Maquina'
-    | 'Transferencia';
-  Status_IN: 'A Revisar' | 'Asignado' | 'Pendiente' | 'En Aprobacion' | 'Resuelto' | 'Anulado';
+  NoResuelto_IN: string;
+  Categoria_IN?: string;
+  Status_IN: string;
   Resuelto_IN: 'SI' | 'NO';
   NombreEdificio_IN: string;
+  CodigoEdifcio_IN?: string;
   IDMaquina_IN?: string;
   ConcatMaquina_IN?: string;
+  MaquinaAsignada_IN?: string;
   TecnicoAsignado_IN?: string;
   CantidadRepuestos_IN: number;
   DescripcionCarga_IN?: string;
@@ -213,6 +221,7 @@ export interface Incidente {
   DescripcionResuelto_IN?: string;
   DescripcionAnulado_IN?: string;
   FechaResuelto_IN?: string;
+  FechaAsignada_IN?: string;
   User_IN: string;
 }
 
@@ -356,13 +365,15 @@ export interface Encendedor {
   Status_EN: 'Activo' | 'Inactivo';
 }
 
-// Catálogo de items que se pueden agregar al stock
+// Catálogo de items que se pueden agregar al stock / a una compra.
+// Tipo = segmento real del catálogo (string Title Case), no el enum uppercase.
 export interface StockCatalogItem {
   ID: number;
-  Tipo: TipoStock;
+  Tipo: string;
   Item: string;
   Marca?: string;
   Codigo?: string;
+  Modelo?: string;
 }
 
 // 99.ABM_MaquinasCompra

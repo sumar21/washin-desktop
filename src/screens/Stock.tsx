@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Pencil,
   ArrowLeftRight,
@@ -11,11 +11,22 @@ import {
   Minus,
   Check,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal, ModalActions } from '@/components/Modal';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
+import { ErrorState } from '@/components/ErrorState';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { PopoverClose } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
 import { cn, proper } from '@/lib/utils';
 import type { StockItem, TipoStock, StockCatalogItem } from '@/types/domain';
@@ -43,20 +54,49 @@ const tipoMeta: Record<TipoStock, { icon: typeof WashingMachine; tone: string }>
   REPUESTO: { icon: Boxes, tone: 'bg-wash-brand/10 text-wash-brand ring-wash-brand/20' },
 };
 
+// Meta neutral para filas con Tipo_ST desconocido/vacío (datos sucios de 04.Stock).
+const TIPO_FALLBACK = { icon: Boxes, tone: 'bg-slate-100 text-slate-600 ring-slate-300/70' };
+
 export function Stock() {
   const stock = useAppStore((s) => s.CollectStock);
   const catalog = useAppStore((s) => s.CollectStockCatalog);
+  const segmentos = useAppStore((s) => s.CollectSegmentos);
   const patchStock = useAppStore((s) => s.patchStock);
   const addStock = useAppStore((s) => s.addStock);
+  const fetchStock = useAppStore((s) => s.fetchStock);
+  const fetchCatalog = useAppStore((s) => s.fetchCatalog);
+  const assignStockToTecnico = useAppStore((s) => s.assignStockToTecnico);
   const VarTipoUser = useAppStore((s) => s.VarTipoUser);
 
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<StockItem | null>(null);
   const [editQty, setEditQty] = useState('');
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<StockItem | null>(null);
   // Multi-select: empty array means "all types".
   const [filterTipos, setFilterTipos] = useState<TipoStock[]>([]);
   const [addOpen, setAddOpen] = useState(false);
+  const [stockLoading, setStockLoading] = useState(true);
+  const [stockError, setStockError] = useState<string | null>(null);
+
+  const loadStock = useCallback(() => {
+    setStockLoading(true);
+    setStockError(null);
+    // El catálogo alimenta el modal "Agregar stock" (segmentos + items reales).
+    return Promise.all([fetchStock(), fetchCatalog()])
+      .catch((err) => {
+        setStockError(err instanceof Error ? err.message : 'No se pudo cargar el stock.');
+      })
+      .finally(() => {
+        setStockLoading(false);
+      });
+  }, [fetchStock, fetchCatalog]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; `loadStock` también la dispara el botón "Reintentar".
+    loadStock();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar; `loadStock` ya setea su propio loading.
+  }, []);
 
   const toggleTipo = (t: TipoStock) =>
     setFilterTipos((prev) =>
@@ -94,16 +134,21 @@ export function Stock() {
   }, [stock, query, filterTipos]);
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div className="relative flex h-full w-full flex-col">
       <PageHeader
         title="Stock"
         subtitle="Inventario general"
         search={{ value: query, onChange: setQuery, placeholder: 'Buscar item, marca, código…' }}
-        onFilter={() => setFilterOpen(true)}
+        filterPopover={<FilterContent tipos={filterTipos} onApply={setFilterTipos} />}
         onAdd={canEdit ? () => setAddOpen(true) : undefined}
         addLabel="Agregar"
       />
+      <LoadingOverlay visible={stockLoading} label="Cargando stock…" />
 
+      {stockError ? (
+        <ErrorState message={stockError} onRetry={loadStock} />
+      ) : (
+      <>
       {/* Counters */}
       <div className="grid grid-cols-7 gap-2.5 border-b border-wash-border bg-wash-surface px-6 py-4">
         {TIPOS.map((t) => {
@@ -116,25 +161,25 @@ export function Stock() {
               type="button"
               onClick={() => toggleTipo(t)}
               className={cn(
-                'group flex items-center gap-2.5 rounded-xl border bg-wash-surface px-3 py-2 text-left transition-all',
+                'flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors',
                 isActive
-                  ? 'border-wash-brand ring-2 ring-wash-brand/20'
-                  : 'border-wash-border hover:border-wash-brand/40 hover:shadow-sm'
+                  ? 'border-wash-brand bg-wash-brand/[0.06]'
+                  : 'border-wash-border bg-wash-surface hover:border-wash-brand/40'
               )}
             >
               <span
                 className={cn(
-                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1',
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
                   meta.tone
                 )}
               >
-                <Icon size={16} />
+                <Icon size={15} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
                   {t}
                 </div>
-                <div className="font-display text-lg font-black leading-tight text-wash-text-strong tabular-nums">
+                <div className="font-display text-lg font-bold leading-tight text-wash-text-strong tabular-nums">
                   {totales[t] ?? 0}
                 </div>
               </div>
@@ -161,6 +206,7 @@ export function Stock() {
                 onClick={() => toggleTipo(t)}
                 className="-mr-1 flex h-4 w-4 items-center justify-center rounded-full hover:bg-wash-brand/20"
                 title={`Quitar ${t}`}
+                aria-label={`Quitar filtro ${t}`}
               >
                 <X size={10} strokeWidth={2.5} />
               </button>
@@ -178,7 +224,7 @@ export function Stock() {
 
       {/* Table */}
       <div className="flex-1 overflow-hidden px-6 pb-6 pt-4">
-        <Card className="h-full overflow-hidden ring-wash-border">
+        <Card className="h-full gap-0 overflow-hidden py-0 ring-wash-border">
           <div
             className="grid border-b border-wash-border bg-wash-surface-2/60 px-5 text-[11px] font-bold uppercase tracking-wider text-wash-text-muted"
             style={{
@@ -207,7 +253,9 @@ export function Stock() {
               </div>
             ) : (
               filtered.map((row) => {
-                const meta = tipoMeta[row.Tipo_ST];
+                // Fallback defensivo: 04.Stock tiene datos sucios (p. ej. filas con Tipo_ST
+                // vacío o un valor fuera de los 7 conocidos) — no debe crashear la tabla.
+                const meta = tipoMeta[row.Tipo_ST] ?? TIPO_FALLBACK;
                 const Icon = meta.icon;
                 const showEdit = canEdit && row.Tipo_ST === 'REPUESTO';
                 return (
@@ -221,15 +269,15 @@ export function Stock() {
                     <div>
                       <span
                         className={cn(
-                          'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wider ring-1',
+                          'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wider',
                           meta.tone
                         )}
                       >
                         <Icon size={11} />
-                        {row.Tipo_ST}
+                        {row.Tipo_ST || 'SIN TIPO'}
                       </span>
                     </div>
-                    <div className="min-w-0 truncate font-display font-bold text-wash-accent">
+                    <div className="min-w-0 truncate font-medium text-wash-text-strong">
                       {proper(row.Item_ST)}
                     </div>
                     <div className="truncate text-wash-text">{row.Marca_ST ?? '—'}</div>
@@ -257,9 +305,11 @@ export function Stock() {
                           onClick={() => {
                             setEditing(row);
                             setEditQty(String(row.Cantidad_ST));
+                            setEditError(null);
                           }}
                           className="flex h-8 w-8 items-center justify-center rounded-lg text-wash-text-muted ring-1 ring-wash-border transition hover:bg-wash-brand/10 hover:text-wash-brand hover:ring-wash-brand/40"
                           title="Editar cantidad"
+                          aria-label={`Editar cantidad de ${proper(row.Item_ST)}`}
                         >
                           <Pencil size={15} />
                         </button>
@@ -267,8 +317,10 @@ export function Stock() {
                       {showEdit && (
                         <button
                           type="button"
+                          onClick={() => setAssigning(row)}
                           className="flex h-8 w-8 items-center justify-center rounded-lg text-wash-text-muted ring-1 ring-wash-border transition hover:bg-wash-brand/10 hover:text-wash-brand hover:ring-wash-brand/40"
                           title="Asignar a técnico"
+                          aria-label={`Asignar ${proper(row.Item_ST)} a técnico`}
                         >
                           <ArrowLeftRight size={15} />
                         </button>
@@ -281,6 +333,8 @@ export function Stock() {
           </div>
         </Card>
       </div>
+      </>
+      )}
 
       {/* --- Edit modal --- */}
       <Modal
@@ -289,6 +343,15 @@ export function Stock() {
         title={editing ? `Editar cantidad — ${proper(editing.Item_ST)}` : ''}
         width={420}
       >
+        {editError && (
+          <div
+            role="alert"
+            className="mb-3 flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700"
+          >
+            <AlertCircle size={14} className="shrink-0" />
+            {editError}
+          </div>
+        )}
         <Label>Cantidad</Label>
         <div className="mt-1 flex items-stretch overflow-hidden rounded-lg border border-wash-border focus-within:border-wash-brand focus-within:ring-2 focus-within:ring-wash-brand/15">
           <button
@@ -297,6 +360,7 @@ export function Stock() {
               setEditQty((q) => String(Math.max(0, (Number(q) || 0) - 1)))
             }
             className="flex w-10 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
+            aria-label="Restar uno a la cantidad"
           >
             <Minus size={14} />
           </button>
@@ -305,12 +369,14 @@ export function Stock() {
             onChange={(e) => setEditQty(e.target.value)}
             type="number"
             min={0}
+            aria-label="Cantidad"
             className="w-full min-w-0 flex-1 bg-wash-surface px-1 py-2 text-center text-base font-bold tabular-nums outline-none"
           />
           <button
             type="button"
             onClick={() => setEditQty((q) => String((Number(q) || 0) + 1))}
             className="flex w-10 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
+            aria-label="Sumar uno a la cantidad"
           >
             <Plus size={14} />
           </button>
@@ -325,62 +391,19 @@ export function Stock() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (editing) patchStock(editing.ID, { Cantidad_ST: Number(editQty) || 0 });
-              setEditing(null);
+            onClick={async () => {
+              if (!editing) return;
+              setEditError(null);
+              try {
+                await patchStock(editing.ID, { Cantidad_ST: Number(editQty) || 0 });
+                setEditing(null);
+              } catch (err) {
+                setEditError(err instanceof Error ? err.message : 'No se pudo guardar la cantidad.');
+              }
             }}
             className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark"
           >
             Guardar
-          </button>
-        </ModalActions>
-      </Modal>
-
-      {/* --- Filter modal --- */}
-      <Modal
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        title="Filtrar stock"
-        width={460}
-      >
-        <div className="flex items-center justify-between">
-          <Label>Tipo</Label>
-          <span className="text-[11px] text-wash-text-muted">
-            {filterTipos.length === 0
-              ? 'Mostrando todos'
-              : `${filterTipos.length} seleccionado${filterTipos.length === 1 ? '' : 's'}`}
-          </span>
-        </div>
-        <p className="mt-1 text-[11px] text-wash-text-muted">
-          Podés elegir varios. Sin selección se muestran todos.
-        </p>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {TIPOS.map((t) => (
-            <FilterChip
-              key={t}
-              label={t}
-              icon={tipoMeta[t].icon}
-              tone={tipoMeta[t].tone}
-              active={filterTipos.includes(t)}
-              onClick={() => toggleTipo(t)}
-            />
-          ))}
-        </div>
-        <ModalActions>
-          <button
-            type="button"
-            onClick={() => setFilterTipos([])}
-            disabled={filterTipos.length === 0}
-            className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Limpiar
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterOpen(false)}
-            className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark"
-          >
-            Aplicar
           </button>
         </ModalActions>
       </Modal>
@@ -390,17 +413,30 @@ export function Stock() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         catalog={catalog}
-        onAdd={(item, qty, extras) => {
-          addStock(item, qty, extras);
+        segmentos={segmentos}
+        onAdd={async (item, qty, extras) => {
+          await addStock(item, qty, extras);
           setAddOpen(false);
+        }}
+      />
+
+      {/* --- Assign to técnico modal --- */}
+      <AssignModal
+        item={assigning}
+        onClose={() => setAssigning(null)}
+        onAssign={async (tecnico, cantidad) => {
+          if (!assigning) return;
+          await assignStockToTecnico(assigning.ID, tecnico, cantidad);
+          setAssigning(null);
         }}
       />
     </div>
   );
 }
 
-// Segmentos que son máquinas individuales (con Nro Serie + ID Maquina)
-const MACHINE_SEGMENTS: TipoStock[] = ['LAVADORA', 'SECADORA SIMPLE', 'SECADORA DOBLE'];
+// Segmentos que NO son máquinas individuales (misma regla que el backend `isMachineSegment`).
+const SIMPLE_SEGMENTS = new Set(['repuesto', 'cargadora', 'expendedora', 'encendedor', 'encendedora']);
+const isMachineSegment = (s: string) => !SIMPLE_SEGMENTS.has(s.trim().toLowerCase());
 
 // ----- subcomponents -----
 
@@ -461,38 +497,97 @@ function FilterChip({
   );
 }
 
+function FilterContent({
+  tipos,
+  onApply,
+}: {
+  tipos: TipoStock[];
+  onApply: (tipos: TipoStock[]) => void;
+}) {
+  const [pending, setPending] = useState<TipoStock[]>(tipos);
+  const dirty =
+    pending.length !== tipos.length || pending.some((t) => !tipos.includes(t));
+
+  const toggle = (t: TipoStock) =>
+    setPending((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between border-b border-wash-border pb-2.5">
+        <h3 className="text-sm font-bold text-wash-text-strong">Filtrar por tipo</h3>
+        {pending.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setPending([])}
+            className="text-[11px] font-semibold text-wash-text-muted hover:text-wash-text-strong"
+          >
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        {TIPOS.map((t) => (
+          <FilterChip
+            key={t}
+            label={t}
+            icon={tipoMeta[t].icon}
+            tone={tipoMeta[t].tone}
+            active={pending.includes(t)}
+            onClick={() => toggle(t)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-4 flex justify-end gap-2 border-t border-wash-border pt-3">
+        <PopoverClose asChild>
+          <button
+            type="button"
+            className="rounded-lg border border-wash-border px-4 py-2 text-[12.5px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          >
+            Cancelar
+          </button>
+        </PopoverClose>
+        <PopoverClose asChild>
+          <button
+            type="button"
+            disabled={!dirty}
+            onClick={() => onApply(pending)}
+            className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Aplicar
+          </button>
+        </PopoverClose>
+      </div>
+    </div>
+  );
+}
+
 interface AddStockModalProps {
   open: boolean;
   onClose: () => void;
   catalog: StockCatalogItem[];
+  segmentos: string[];
   onAdd: (
     item: StockCatalogItem,
     qty: number,
     extras?: { NroSerie?: string; IDMaquina?: string }
-  ) => void;
+  ) => Promise<void>;
 }
 
-function AddStockModal({ open, onClose, catalog, onAdd }: AddStockModalProps) {
-  const [segmento, setSegmento] = useState<TipoStock | ''>('');
+function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockModalProps) {
+  const [segmento, setSegmento] = useState<string>('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [itemSearch, setItemSearch] = useState('');
   const [cantidad, setCantidad] = useState('1');
   const [nroSerie, setNroSerie] = useState('');
   const [idMaquina, setIdMaquina] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
-  const isMachine = segmento ? MACHINE_SEGMENTS.includes(segmento) : false;
-
+  const isMachine = segmento ? isMachineSegment(segmento) : false;
   const itemsOfSegment = useMemo(
-    () =>
-      catalog
-        .filter((c) => segmento && c.Tipo === segmento)
-        .filter(
-          (c) =>
-            !itemSearch ||
-            c.Item.toLowerCase().includes(itemSearch.toLowerCase()) ||
-            (c.Codigo ?? '').toLowerCase().includes(itemSearch.toLowerCase())
-        ),
-    [catalog, segmento, itemSearch]
+    () => catalog.filter((c) => segmento && c.Tipo === segmento),
+    [catalog, segmento]
   );
 
   const selected = catalog.find((c) => c.ID === selectedId) ?? null;
@@ -501,10 +596,10 @@ function AddStockModal({ open, onClose, catalog, onAdd }: AddStockModalProps) {
   const reset = () => {
     setSegmento('');
     setSelectedId(null);
-    setItemSearch('');
     setCantidad('1');
     setNroSerie('');
     setIdMaquina('');
+    setAddError(null);
   };
 
   return (
@@ -515,128 +610,51 @@ function AddStockModal({ open, onClose, catalog, onAdd }: AddStockModalProps) {
         onClose();
       }}
       title="Agregar stock"
-      width={620}
+      width={520}
     >
       <div className="space-y-4">
-        <div>
-          <Label>Segmento</Label>
-          <div className="mt-2 grid grid-cols-4 gap-2">
-            {TIPOS.map((t) => {
-              const Icon = tipoMeta[t].icon;
-              const active = segmento === t;
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => {
-                    setSegmento(t);
-                    setSelectedId(null);
-                    setItemSearch('');
-                  }}
-                  className={cn(
-                    'flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-[10.5px] font-semibold uppercase tracking-wider transition',
-                    active
-                      ? 'border-wash-brand bg-wash-brand/5 text-wash-brand'
-                      : 'border-wash-border text-wash-text-strong hover:border-wash-brand/40 hover:bg-wash-surface-2'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex h-8 w-8 items-center justify-center rounded-md ring-1',
-                      tipoMeta[t].tone
-                    )}
-                  >
-                    <Icon size={14} />
-                  </span>
-                  <span className="text-center leading-tight">{t}</span>
-                </button>
-              );
-            })}
+        {addError && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700"
+          >
+            <AlertCircle size={14} className="shrink-0" />
+            {addError}
           </div>
-        </div>
+        )}
+        <div className="grid grid-cols-[1fr_140px] gap-3">
+          <div>
+            <Label>Segmento</Label>
+            <Select
+              value={segmento || undefined}
+              onValueChange={(value) => {
+                setSegmento(value);
+                setSelectedId(null);
+              }}
+            >
+              <SelectTrigger className="mt-1.5 h-10 w-full">
+                <SelectValue placeholder="Seleccionar…" />
+              </SelectTrigger>
+              <SelectContent>
+                {segmentos.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {proper(t)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div>
-          <Label>Item</Label>
-          {!segmento ? (
-            <div className="mt-2 rounded-lg border border-dashed border-wash-border px-3 py-4 text-center text-xs text-wash-text-muted">
-              Primero seleccioná un segmento.
-            </div>
-          ) : (
-            <>
-              <div className="relative mt-2">
-                <Search
-                  size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-wash-text-muted"
-                />
-                <input
-                  type="text"
-                  value={itemSearch}
-                  onChange={(e) => setItemSearch(e.target.value)}
-                  placeholder="Buscar item o código…"
-                  className="w-full rounded-lg border border-wash-border bg-wash-surface px-9 py-2 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
-                />
-              </div>
-              <div className="mt-2 max-h-[220px] overflow-y-auto rounded-lg border border-wash-border">
-                {itemsOfSegment.length === 0 ? (
-                  <p className="px-3 py-4 text-center text-xs text-wash-text-muted">
-                    Sin coincidencias.
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-wash-divider">
-                    {itemsOfSegment.map((c) => {
-                      const active = selectedId === c.ID;
-                      return (
-                        <li key={c.ID}>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedId(c.ID)}
-                            className={cn(
-                              'flex w-full items-center gap-3 px-3 py-2 text-left text-[13px] transition',
-                              active ? 'bg-wash-brand/5' : 'hover:bg-wash-surface-2'
-                            )}
-                          >
-                            {c.Codigo && (
-                              <span className="shrink-0 rounded-md bg-wash-surface-2 px-2 py-0.5 text-[13px] font-semibold text-wash-text">
-                                {c.Codigo}
-                              </span>
-                            )}
-                            <span className="min-w-0 flex-1 truncate font-semibold text-wash-text-strong">
-                              {c.Item}
-                            </span>
-                            {c.Marca && (
-                              <span className="shrink-0 text-wash-text-muted">
-                                {c.Marca}
-                              </span>
-                            )}
-                            {active && (
-                              <span className="h-2 w-2 shrink-0 rounded-full bg-wash-brand" />
-                            )}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div
-          className={cn(
-            'grid gap-3',
-            isMachine ? 'grid-cols-3' : 'grid-cols-1'
-          )}
-        >
           <div>
             <Label>Cantidad</Label>
-            <div className="mt-2 flex h-10 items-stretch overflow-hidden rounded-lg border border-wash-border focus-within:border-wash-brand focus-within:ring-2 focus-within:ring-wash-brand/15">
+            <div className="mt-1.5 flex h-10 items-stretch overflow-hidden rounded-lg border border-wash-border focus-within:border-wash-brand focus-within:ring-2 focus-within:ring-wash-brand/15">
               <button
                 type="button"
                 onClick={() =>
                   setCantidad((q) => String(Math.max(1, (Number(q) || 1) - 1)))
                 }
-                className="flex w-9 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
+                className="flex w-8 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
+                aria-label="Restar uno a la cantidad"
               >
                 <Minus size={14} />
               </button>
@@ -645,50 +663,82 @@ function AddStockModal({ open, onClose, catalog, onAdd }: AddStockModalProps) {
                 min={1}
                 value={cantidad}
                 onChange={(e) => setCantidad(e.target.value)}
+                aria-label="Cantidad"
                 className="w-full min-w-0 flex-1 bg-wash-surface px-1 text-center text-sm font-bold tabular-nums outline-none"
               />
               <button
                 type="button"
                 onClick={() => setCantidad((q) => String((Number(q) || 0) + 1))}
-                className="flex w-9 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
+                className="flex w-8 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
+                aria-label="Sumar uno a la cantidad"
               >
                 <Plus size={14} />
               </button>
             </div>
           </div>
-
-          {isMachine && (
-            <>
-              <div>
-                <Label>Nro serie</Label>
-                <input
-                  type="text"
-                  value={nroSerie}
-                  onChange={(e) => setNroSerie(e.target.value)}
-                  placeholder="Ej. LG2024-001"
-                  className="mt-2 h-10 w-full rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
-                />
-              </div>
-              <div>
-                <Label>ID Máquina</Label>
-                <input
-                  type="text"
-                  value={idMaquina}
-                  onChange={(e) => setIdMaquina(e.target.value)}
-                  placeholder="Ej. TM1-LAV-01"
-                  className="mt-2 h-10 w-full rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
-                />
-              </div>
-            </>
-          )}
         </div>
+
+        <div>
+          <Label>Item</Label>
+          <Select
+            value={selectedId ? String(selectedId) : undefined}
+            onValueChange={(value) => setSelectedId(Number(value))}
+            disabled={!segmento}
+          >
+            <SelectTrigger className="mt-1.5 h-10 w-full">
+              <SelectValue
+                placeholder={segmento ? 'Seleccionar item…' : 'Elegí un segmento primero'}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {itemsOfSegment.map((c) => (
+                <SelectItem key={c.ID} value={String(c.ID)}>
+                  <span className="flex w-full items-center gap-2">
+                    {c.Codigo && (
+                      <span className="shrink-0 rounded bg-wash-surface-2 px-1.5 py-0.5 text-[10.5px] font-semibold text-wash-text">
+                        {c.Codigo}
+                      </span>
+                    )}
+                    <span className="font-medium text-wash-text-strong">{c.Item}</span>
+                    {c.Marca && (
+                      <span className="ml-auto text-xs text-wash-text-muted">{c.Marca}</span>
+                    )}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {isMachine && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Nro serie</Label>
+              <input
+                type="text"
+                value={nroSerie}
+                onChange={(e) => setNroSerie(e.target.value)}
+                placeholder="Ej. LG2024-001"
+                className="mt-1.5 h-10 w-full rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+              />
+            </div>
+            <div>
+              <Label>ID Máquina</Label>
+              <input
+                type="text"
+                value={idMaquina}
+                onChange={(e) => setIdMaquina(e.target.value)}
+                placeholder="Ej. TM1-LAV-01"
+                className="mt-1.5 h-10 w-full rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+              />
+            </div>
+          </div>
+        )}
 
         {selected && (
           <div className="rounded-lg bg-wash-surface-2 p-3 text-xs">
             <p className="font-semibold text-wash-text-strong">
-              Vas a agregar <span className="text-wash-brand">{cantidad || 0}</span> uds de:
-            </p>
-            <p className="mt-0.5 text-wash-text-muted">
+              Vas a agregar <span className="text-wash-brand">{cantidad || 0}</span> uds de{' '}
               {selected.Codigo ? `${selected.Codigo} · ` : ''}
               {selected.Item}
               {selected.Marca ? ` (${selected.Marca})` : ''}
@@ -725,22 +775,165 @@ function AddStockModal({ open, onClose, catalog, onAdd }: AddStockModalProps) {
         </button>
         <button
           type="button"
-          disabled={!ready}
-          onClick={() => {
-            if (ready && selected) {
-              const extras = isMachine
-                ? {
-                    NroSerie: nroSerie.trim() || undefined,
-                    IDMaquina: idMaquina.trim() || undefined,
-                  }
-                : undefined;
-              onAdd(selected, Number(cantidad), extras);
+          disabled={!ready || saving}
+          onClick={async () => {
+            if (!ready || !selected) return;
+            const extras = isMachine
+              ? {
+                  NroSerie: nroSerie.trim() || undefined,
+                  IDMaquina: idMaquina.trim() || undefined,
+                }
+              : undefined;
+            setSaving(true);
+            setAddError(null);
+            try {
+              await onAdd(selected, Number(cantidad), extras);
               reset();
+            } catch (err) {
+              setAddError(err instanceof Error ? err.message : 'No se pudo agregar el item.');
+            } finally {
+              setSaving(false);
             }
           }}
           className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Agregar
+          {saving ? 'Agregando…' : 'Agregar'}
+        </button>
+      </ModalActions>
+    </Modal>
+  );
+}
+
+// ----- Assign to técnico modal -----
+
+interface AssignModalProps {
+  item: StockItem | null;
+  onClose: () => void;
+  onAssign: (tecnico: string, cantidad: number) => Promise<void>;
+}
+
+function AssignModal({ item, onClose, onAssign }: AssignModalProps) {
+  const tecnicos = useAppStore((s) => s.CollectTecnicosDisponibles);
+  const fetchTecnicos = useAppStore((s) => s.fetchTecnicos);
+
+  const [tecnico, setTecnico] = useState('');
+  const [cantidad, setCantidad] = useState('1');
+  const [tecnicosLoading, setTecnicosLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!item) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetea el form al abrir el modal para un item nuevo.
+    setCantidad(String(item.Cantidad_ST || 1));
+    setTecnico('');
+    setError(null);
+    setTecnicosLoading(true);
+    fetchTecnicos()
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'No se pudieron cargar los técnicos.');
+      })
+      .finally(() => {
+        setTecnicosLoading(false);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recargar solo cuando se abre para un item nuevo.
+  }, [item]);
+
+  const disponible = item?.Cantidad_ST ?? 0;
+  const cantidadNum = Number(cantidad) || 0;
+  const ready = !!item && !!tecnico && cantidadNum > 0 && cantidadNum <= disponible;
+
+  return (
+    <Modal
+      open={!!item}
+      onClose={onClose}
+      title={item ? `Asignar a técnico — ${proper(item.Item_ST)}` : ''}
+      width={440}
+    >
+      {error && (
+        <div
+          role="alert"
+          className="mb-3 flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700"
+        >
+          <AlertCircle size={14} className="shrink-0" />
+          {error}
+        </div>
+      )}
+
+      <Label>Técnico</Label>
+      <Select value={tecnico || undefined} onValueChange={setTecnico} disabled={tecnicosLoading}>
+        <SelectTrigger className="mt-1.5 h-10 w-full">
+          <SelectValue placeholder={tecnicosLoading ? 'Cargando técnicos…' : 'Seleccionar técnico…'} />
+        </SelectTrigger>
+        <SelectContent>
+          {tecnicos.map((t) => (
+            <SelectItem key={t.ID} value={t.Nombre_Tecnico}>
+              {t.Nombre_Tecnico}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <div className="mt-4 flex items-center justify-between">
+        <Label>Cantidad</Label>
+        <span className="text-[11px] text-wash-text-muted">Disponible: {disponible}</span>
+      </div>
+      <div className="mt-1.5 flex items-stretch overflow-hidden rounded-lg border border-wash-border focus-within:border-wash-brand focus-within:ring-2 focus-within:ring-wash-brand/15">
+        <button
+          type="button"
+          onClick={() => setCantidad((q) => String(Math.max(1, (Number(q) || 1) - 1)))}
+          className="flex w-10 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
+          aria-label="Restar uno a la cantidad"
+        >
+          <Minus size={14} />
+        </button>
+        <input
+          value={cantidad}
+          onChange={(e) => setCantidad(e.target.value)}
+          type="number"
+          min={1}
+          max={disponible}
+          aria-label="Cantidad a asignar"
+          className="w-full min-w-0 flex-1 bg-wash-surface px-1 py-2 text-center text-base font-bold tabular-nums outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => setCantidad((q) => String(Math.min(disponible, (Number(q) || 0) + 1)))}
+          className="flex w-10 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
+          aria-label="Sumar uno a la cantidad"
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+      {cantidadNum > disponible && (
+        <p className="mt-1.5 text-[11px] font-medium text-red-600">No hay suficiente stock disponible.</p>
+      )}
+
+      <ModalActions>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          disabled={!ready || saving}
+          onClick={async () => {
+            setSaving(true);
+            setError(null);
+            try {
+              await onAssign(tecnico, cantidadNum);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'No se pudo asignar el stock.');
+            } finally {
+              setSaving(false);
+            }
+          }}
+          className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? 'Asignando…' : 'Asignar'}
         </button>
       </ModalActions>
     </Modal>
