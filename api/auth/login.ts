@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, GraphError } from '../_lib/graph.ts';
-import { LIST_IDS, mapUsuario, modulosPermitidos, permisosSelectFields } from '../_lib/lists.ts';
-import { createSessionCookie } from '../_lib/session.ts';
+import { listItems, GraphError } from '../_lib/graph.js';
+import { LIST_IDS, mapUsuario, modulosPermitidos, permisosSelectFields } from '../_lib/lists.js';
+import { createSessionCookie } from '../_lib/session.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

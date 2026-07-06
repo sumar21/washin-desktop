@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, createItem, GraphError } from '../_lib/graph.ts';
+import { listItems, createItem, GraphError } from '../_lib/graph.js';
 import {
   LIST_IDS,
   mapPedidoCompra,
@@ -8,8 +8,8 @@ import {
   detalleCompraSelectFields,
   fechasHoy,
   APP_VERSION,
-} from '../_lib/lists.ts';
-import { readSession } from '../_lib/session.ts';
+} from '../_lib/lists.js';
+import { readSession } from '../_lib/session.js';
 
 interface NewLine {
   item?: string;

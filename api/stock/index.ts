@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, createItem, updateItem, GraphError } from '../_lib/graph.ts';
-import { LIST_IDS, mapStock, stockSelectFields, STOCK_EDIT_ROLES } from '../_lib/lists.ts';
-import { readSession } from '../_lib/session.ts';
+import { listItems, createItem, updateItem, GraphError } from '../_lib/graph.js';
+import { LIST_IDS, mapStock, stockSelectFields, STOCK_EDIT_ROLES } from '../_lib/lists.js';
+import { readSession } from '../_lib/session.js';
 
 interface AddStockBody {
   tipo?: string;

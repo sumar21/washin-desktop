@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, getItem, createItem, updateItem, GraphError } from '../_lib/graph.ts';
+import { listItems, getItem, createItem, updateItem, GraphError } from '../_lib/graph.js';
 import {
   LIST_IDS,
   mapPedidoCompra,
@@ -11,8 +11,8 @@ import {
   fechasHoy,
   isMachineSegment,
   APP_VERSION,
-} from '../_lib/lists.ts';
-import { readSession, type SessionPayload } from '../_lib/session.ts';
+} from '../_lib/lists.js';
+import { readSession, type SessionPayload } from '../_lib/session.js';
 
 function odataEscape(v: string): string {
   return v.replace(/'/g, "''");

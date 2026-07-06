@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, GraphError } from '../_lib/graph.ts';
-import { LIST_IDS, mapHistorial, historialSelectFields } from '../_lib/lists.ts';
-import { readSession } from '../_lib/session.ts';
+import { listItems, GraphError } from '../_lib/graph.js';
+import { LIST_IDS, mapHistorial, historialSelectFields } from '../_lib/lists.js';
+import { readSession } from '../_lib/session.js';
 
 function odataEscape(v: string): string {
   return v.replace(/'/g, "''");

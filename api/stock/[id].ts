@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { updateItem, GraphError } from '../_lib/graph.ts';
-import { LIST_IDS, STOCK_EDIT_ROLES } from '../_lib/lists.ts';
-import { readSession } from '../_lib/session.ts';
+import { updateItem, GraphError } from '../_lib/graph.js';
+import { LIST_IDS, STOCK_EDIT_ROLES } from '../_lib/lists.js';
+import { readSession } from '../_lib/session.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'PATCH') {

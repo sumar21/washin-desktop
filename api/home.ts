@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, GraphError } from './_lib/graph.ts';
+import { listItems, GraphError } from './_lib/graph.js';
 import {
   LIST_IDS,
   mapRegistro,
@@ -7,8 +7,8 @@ import {
   mapDetalleCompra,
   detalleCompraSelectFields,
   fechasHoy,
-} from './_lib/lists.ts';
-import { readSession } from './_lib/session.ts';
+} from './_lib/lists.js';
+import { readSession } from './_lib/session.js';
 
 function currentMesAno(): string {
   return fechasHoy().mesAno; // mm/yyyy en hora de Argentina (ver fechasHoy)

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, GraphError } from '../_lib/graph.ts';
-import { LIST_IDS, modulosPermitidos, permisosSelectFields } from '../_lib/lists.ts';
-import { readSession } from '../_lib/session.ts';
+import { listItems, GraphError } from '../_lib/graph.js';
+import { LIST_IDS, modulosPermitidos, permisosSelectFields } from '../_lib/lists.js';
+import { readSession } from '../_lib/session.js';
 
 /** Rehidrata la sesión al recargar la página (App.tsx la llama en el arranque). */
 export default async function handler(req: VercelRequest, res: VercelResponse) {

@@ -1,4 +1,4 @@
-import type { SharePointItem } from './graph';
+import type { SharePointItem } from './graph.js';
 
 /**
  * GUIDs de listas y mapeo de campos reales de SharePoint -> shapes del frontend

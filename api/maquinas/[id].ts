@@ -1,12 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getItem, createItem, GraphError } from '../_lib/graph.ts';
-import { LIST_IDS, mapMaquina, maquinaSelectFields } from '../_lib/lists.ts';
+import { getItem, createItem, GraphError } from '../_lib/graph.js';
+import { LIST_IDS, mapMaquina, maquinaSelectFields } from '../_lib/lists.js';
 import {
   applyMaquinaTransfer,
   applyMaquinaBaja,
   buildTransferAprobacionFields,
-} from '../_lib/maquinaMoves.ts';
-import { readSession } from '../_lib/session.ts';
+} from '../_lib/maquinaMoves.js';
+import { readSession } from '../_lib/session.js';
 
 interface Body {
   action?: 'transfer' | 'baja';

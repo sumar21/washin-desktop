@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, getItem, updateItem, GraphError } from '../_lib/graph.ts';
+import { listItems, getItem, updateItem, GraphError } from '../_lib/graph.js';
 import {
   LIST_IDS,
   mapAprobacion,
@@ -9,14 +9,14 @@ import {
   mapDetalleCompra,
   detalleCompraSelectFields,
   fechasHoy,
-} from '../_lib/lists.ts';
+} from '../_lib/lists.js';
 import {
   applyTransferFromAprobacion,
   transferAprobacionSelectFields,
   applyCambioMaquinaFromAprobacion,
   cambioMaquinaAprobacionSelectFields,
-} from '../_lib/maquinaMoves.ts';
-import { readSession, type SessionPayload } from '../_lib/session.ts';
+} from '../_lib/maquinaMoves.js';
+import { readSession, type SessionPayload } from '../_lib/session.js';
 
 function odataEscape(v: string): string {
   return v.replace(/'/g, "''");

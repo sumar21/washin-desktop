@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, getItem, createItem, updateItem, GraphError } from '../_lib/graph.ts';
+import { listItems, getItem, createItem, updateItem, GraphError } from '../_lib/graph.js';
 import {
   LIST_IDS,
   mapIncidente,
@@ -10,8 +10,8 @@ import {
   stockSelectFields,
   fechasHoy,
   APP_VERSION,
-} from '../_lib/lists.ts';
-import { readSession, type SessionPayload } from '../_lib/session.ts';
+} from '../_lib/lists.js';
+import { readSession, type SessionPayload } from '../_lib/session.js';
 
 interface Body {
   action?: 'assign' | 'cambiar-tecnico' | 'cambio-maquina' | 'generar-compra';

@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, GraphError } from './_lib/graph.ts';
+import { listItems, GraphError } from './_lib/graph.js';
 import {
   LIST_IDS,
   buildCatalog,
   itemComprasSelectFields,
   repuestosSelectFields,
   maquinasCompraSelectFields,
-} from './_lib/lists.ts';
-import { readSession } from './_lib/session.ts';
+} from './_lib/lists.js';
+import { readSession } from './_lib/session.js';
 
 /**
  * Catálogo para armar una compra / alta de stock:

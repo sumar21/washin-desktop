@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, GraphError } from '../_lib/graph.ts';
-import { LIST_IDS, mapTecnicos, tecnicosSelectFields } from '../_lib/lists.ts';
-import { readSession } from '../_lib/session.ts';
+import { listItems, GraphError } from '../_lib/graph.js';
+import { LIST_IDS, mapTecnicos, tecnicosSelectFields } from '../_lib/lists.js';
+import { readSession } from '../_lib/session.js';
 
 /** Técnicos disponibles para asignar stock (Usuarios activos, rol Tecnico o Jefe Taller). */
 export default async function handler(req: VercelRequest, res: VercelResponse) {

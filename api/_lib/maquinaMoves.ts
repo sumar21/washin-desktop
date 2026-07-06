@@ -1,4 +1,4 @@
-import { listItems, getItem, createItem, updateItem } from './graph.ts';
+import { listItems, getItem, createItem, updateItem } from './graph.js';
 import {
   LIST_IDS,
   mapMaquina,
@@ -8,7 +8,7 @@ import {
   fechasHoy,
   APP_VERSION,
   type MaquinaRow,
-} from './lists.ts';
+} from './lists.js';
 
 export const DEPOSITO = 'Wash Inn';
 

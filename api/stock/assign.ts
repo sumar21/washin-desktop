@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, getItem, createItem, updateItem, GraphError } from '../_lib/graph.ts';
+import { listItems, getItem, createItem, updateItem, GraphError } from '../_lib/graph.js';
 import {
   LIST_IDS,
   mapStock,
@@ -8,8 +8,8 @@ import {
   mapRepuestoTecnico,
   repuestoTecnicoSelectFields,
   buildConcatRT,
-} from '../_lib/lists.ts';
-import { readSession } from '../_lib/session.ts';
+} from '../_lib/lists.js';
+import { readSession } from '../_lib/session.js';
 
 interface AssignBody {
   id?: number;
