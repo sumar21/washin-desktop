@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeftRight,
   Pencil,
@@ -7,17 +7,15 @@ import {
   Minus,
   Wrench,
   UserCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions } from '@/components/Modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
+import { ErrorState } from '@/components/ErrorState';
+import { Combobox } from '@/components/ui/combobox';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -25,15 +23,18 @@ import type { RepuestoTecnico } from '@/types/domain';
 
 export function StockTecnicos() {
   const stockT = useAppStore((s) => s.CollectStockTecnicos);
-  const usuarios = useAppStore((s) => s.CollectUser);
+  const tecnicosDisp = useAppStore((s) => s.CollectTecnicosDisponibles);
+  const fetchStockTecnicos = useAppStore((s) => s.fetchStockTecnicos);
   const patchStockTecnico = useAppStore((s) => s.patchStockTecnico);
   const reingressStockTecnico = useAppStore((s) => s.reingressStockTecnico);
   const assignStockTecnico = useAppStore((s) => s.assignStockTecnico);
   const VarTipoUser = useAppStore((s) => s.VarTipoUser);
 
   const [query, setQuery] = useState('');
-  const [filterTecnico, setFilterTecnico] = useState<string>('Todos');
-  const [filterRepuesto, setFilterRepuesto] = useState<string>('Todos');
+  const [filterTecnico, setFilterTecnico] = useState<string[]>([]);
+  const [filterRepuesto, setFilterRepuesto] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modals
   const [assigning, setAssigning] = useState<RepuestoTecnico | null>(null);
@@ -42,13 +43,22 @@ export function StockTecnicos() {
 
   const canEdit = VarTipoUser === 'Admin' || VarTipoUser === 'Jefe Taller';
 
-  const tecnicos = useMemo(
-    () =>
-      usuarios.filter(
-        (u) => u.Status === 'ALTA' && (u.Rol === 'Tecnico' || u.Rol === 'Jefe Taller')
-      ),
-    [usuarios]
-  );
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    return fetchStockTecnicos()
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudo cargar el stock de técnicos.'))
+      .finally(() => setLoading(false));
+  }, [fetchStockTecnicos]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; "Reintentar" también dispara load().
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar.
+  }, []);
+
+  // Técnicos reales (Usuarios rol Tecnico/Jefe Taller) para el picker de asignación.
+  const tecnicos = useMemo(() => tecnicosDisp.map((t) => t.Nombre_Tecnico), [tecnicosDisp]);
 
   // Distinct lists for filter
   const tecnicosInStock = useMemo(
@@ -64,8 +74,8 @@ export function StockTecnicos() {
     const q = query.toLowerCase();
     return stockT
       .filter((r) => r.Cantidad_RT > 0)
-      .filter((r) => (filterTecnico === 'Todos' ? true : r.Tecnico_RT === filterTecnico))
-      .filter((r) => (filterRepuesto === 'Todos' ? true : r.Concat_RT === filterRepuesto))
+      .filter((r) => filterTecnico.length === 0 || filterTecnico.includes(r.Tecnico_RT))
+      .filter((r) => filterRepuesto.length === 0 || filterRepuesto.includes(r.Concat_RT))
       .filter(
         (r) =>
           r.Tecnico_RT.toLowerCase().includes(q) ||
@@ -178,25 +188,28 @@ export function StockTecnicos() {
           />
         }
       />
+      <LoadingOverlay visible={loading} label="Cargando stock de técnicos…" />
 
-      {(filterTecnico !== 'Todos' || filterRepuesto !== 'Todos') && (
-        <div className="flex items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
+      {loadError ? (
+        <ErrorState message={loadError} onRetry={load} />
+      ) : (
+        <>
+      {(filterTecnico.length > 0 || filterRepuesto.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
           <span className="font-semibold uppercase tracking-wider">Filtros:</span>
-          {filterTecnico !== 'Todos' && (
-            <span className="rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand">
-              {filterTecnico}
+          {[...filterTecnico, ...filterRepuesto].map((v) => (
+            <span
+              key={v}
+              className="rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand"
+            >
+              {v}
             </span>
-          )}
-          {filterRepuesto !== 'Todos' && (
-            <span className="rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand">
-              {filterRepuesto}
-            </span>
-          )}
+          ))}
           <button
             type="button"
             onClick={() => {
-              setFilterTecnico('Todos');
-              setFilterRepuesto('Todos');
+              setFilterTecnico([]);
+              setFilterRepuesto([]);
             }}
             className="ml-auto text-wash-text-muted hover:text-wash-text-strong"
           >
@@ -211,16 +224,83 @@ export function StockTecnicos() {
           rowKey={(r) => r.ID}
           columns={columns}
           empty="Sin repuestos asignados"
+          mobileCard={(r) => (
+            <div className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
+              {/* Fila 1: técnico (identificador) + acciones */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
+                    {initials(r.Tecnico_RT)}
+                  </span>
+                  <span className="truncate text-[12.5px] font-semibold text-wash-text-strong">
+                    {r.Tecnico_RT}
+                  </span>
+                </div>
+                {canEdit && (
+                  <div className="flex shrink-0 gap-1.5">
+                    <ActionButton
+                      icon={UserCog}
+                      tone="brand"
+                      title="Asignar a otro técnico"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAssigning(r);
+                      }}
+                    />
+                    <ActionButton
+                      icon={ArrowLeftRight}
+                      tone="neutral"
+                      title="Reingresar a stock"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setReingressing(r);
+                      }}
+                    />
+                    <ActionButton
+                      icon={Pencil}
+                      tone="neutral"
+                      title="Editar cantidad"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditing(r);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              {/* Fila 2: repuesto (dato principal) + código */}
+              <div className="mt-2 min-w-0">
+                <p className="truncate text-[13.5px] font-semibold text-wash-accent">
+                  {r.Concat_RT}
+                </p>
+                <p className="mt-1 min-w-0">
+                  <span className="inline-block rounded bg-wash-surface-2 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-wash-text">
+                    {r.Codigo_RT}
+                  </span>
+                </p>
+              </div>
+              {/* Fila 3: cantidad */}
+              <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-wash-divider/60 pt-2 text-[11.5px] text-wash-text-muted">
+                <span className="font-semibold uppercase tracking-wider">Cantidad</span>
+                <span className="inline-flex min-w-[40px] items-center justify-center rounded-md bg-wash-action/10 px-2 py-0.5 text-sm font-bold text-wash-action ring-1 ring-wash-action/20">
+                  {r.Cantidad_RT}
+                </span>
+              </div>
+            </div>
+          )}
         />
       </div>
+        </>
+      )}
 
       {/* Asignar a técnico */}
       <AssignModal
         item={assigning}
         onClose={() => setAssigning(null)}
-        tecnicos={tecnicos.map((t) => t.Concat_Nombre_Apellido)}
-        onApply={(toTecnico, qty) => {
-          if (assigning) assignStockTecnico(assigning.ID, toTecnico, qty);
+        tecnicos={tecnicos}
+        onApply={async (toTecnico, qty) => {
+          if (!assigning) return;
+          await assignStockTecnico(assigning.ID, toTecnico, qty);
           setAssigning(null);
         }}
       />
@@ -229,8 +309,9 @@ export function StockTecnicos() {
       <ReingressModal
         item={reingressing}
         onClose={() => setReingressing(null)}
-        onApply={(qty) => {
-          if (reingressing) reingressStockTecnico(reingressing.ID, qty);
+        onApply={async (qty) => {
+          if (!reingressing) return;
+          await reingressStockTecnico(reingressing.ID, qty);
           setReingressing(null);
         }}
       />
@@ -239,8 +320,9 @@ export function StockTecnicos() {
       <EditQtyModal
         item={editing}
         onClose={() => setEditing(null)}
-        onApply={(qty) => {
-          if (editing) patchStockTecnico(editing.ID, { Cantidad_RT: qty });
+        onApply={async (qty) => {
+          if (!editing) return;
+          await patchStockTecnico(editing.ID, { Cantidad_RT: qty });
           setEditing(null);
         }}
       />
@@ -303,10 +385,12 @@ function AssignModal({
   item: RepuestoTecnico | null;
   onClose: () => void;
   tecnicos: string[];
-  onApply: (toTecnico: string, qty: number) => void;
+  onApply: (toTecnico: string, qty: number) => Promise<void>;
 }) {
   const [tecnico, setTecnico] = useState('');
   const [qty, setQty] = useState('1');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!item) return null;
   const ready = !!tecnico && Number(qty) > 0 && Number(qty) <= item.Cantidad_RT;
@@ -411,20 +495,15 @@ function AssignModal({
             Técnico destino
           </label>
           <div className="mt-1.5">
-            <Select value={tecnico || undefined} onValueChange={setTecnico}>
-              <SelectTrigger className="h-10 w-full">
-                <SelectValue placeholder="Buscar técnico…" />
-              </SelectTrigger>
-              <SelectContent>
-                {tecnicos
-                  .filter((t) => t !== item.Tecnico_RT)
-                  .map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              options={tecnicos
+                .filter((t) => t !== item.Tecnico_RT)
+                .map((t) => ({ value: t, label: t }))}
+              value={tecnico || null}
+              onChange={(v) => setTecnico(v ?? '')}
+              placeholder="Seleccionar técnico…"
+              searchPlaceholder="Buscar técnico…"
+            />
           </div>
         </div>
         <div>
@@ -434,6 +513,13 @@ function AssignModal({
           <QtyStepper value={qty} onChange={setQty} max={item.Cantidad_RT} />
         </div>
       </div>
+
+      {error && (
+        <div role="alert" className="mt-4 flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">
+          <AlertCircle size={14} className="shrink-0" />
+          {error}
+        </div>
+      )}
 
       <ModalActions>
         <button
@@ -449,16 +535,24 @@ function AssignModal({
         </button>
         <button
           type="button"
-          disabled={!ready}
-          onClick={() => {
-            onApply(tecnico, Number(qty));
-            setTecnico('');
-            setQty('1');
+          disabled={!ready || saving}
+          onClick={async () => {
+            setSaving(true);
+            setError(null);
+            try {
+              await onApply(tecnico, Number(qty));
+              setTecnico('');
+              setQty('1');
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'No se pudo transferir el repuesto.');
+            } finally {
+              setSaving(false);
+            }
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-6 py-3 text-[14px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           <UserCog size={16} />
-          Asignar
+          {saving ? 'Transfiriendo…' : 'Asignar'}
         </button>
       </ModalActions>
     </Modal>
@@ -474,9 +568,11 @@ function ReingressModal({
 }: {
   item: RepuestoTecnico | null;
   onClose: () => void;
-  onApply: (qty: number) => void;
+  onApply: (qty: number) => Promise<void>;
 }) {
   const [qty, setQty] = useState('1');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!item) return null;
   const ready = Number(qty) > 0 && Number(qty) <= item.Cantidad_RT;
@@ -486,6 +582,7 @@ function ReingressModal({
       open={!!item}
       onClose={() => {
         setQty('1');
+        setError(null);
         onClose();
       }}
       title="Reingresar stock"
@@ -533,11 +630,19 @@ function ReingressModal({
         </p>
       </div>
 
+      {error && (
+        <div role="alert" className="mt-4 flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">
+          <AlertCircle size={14} className="shrink-0" />
+          {error}
+        </div>
+      )}
+
       <ModalActions>
         <button
           type="button"
           onClick={() => {
             setQty('1');
+            setError(null);
             onClose();
           }}
           className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
@@ -546,15 +651,23 @@ function ReingressModal({
         </button>
         <button
           type="button"
-          disabled={!ready}
-          onClick={() => {
-            onApply(Number(qty));
-            setQty('1');
+          disabled={!ready || saving}
+          onClick={async () => {
+            setSaving(true);
+            setError(null);
+            try {
+              await onApply(Number(qty));
+              setQty('1');
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'No se pudo reingresar el stock.');
+            } finally {
+              setSaving(false);
+            }
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-6 py-3 text-[14px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           <ArrowLeftRight size={16} />
-          Aceptar
+          {saving ? 'Reingresando…' : 'Aceptar'}
         </button>
       </ModalActions>
     </Modal>
@@ -570,12 +683,15 @@ function EditQtyModal({
 }: {
   item: RepuestoTecnico | null;
   onClose: () => void;
-  onApply: (qty: number) => void;
+  onApply: (qty: number) => Promise<void>;
 }) {
   const [qty, setQty] = useState('1');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (item) setQty(String(item.Cantidad_RT));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetea el form al abrir el modal para un item nuevo.
+    if (item) { setQty(String(item.Cantidad_RT)); setError(null); }
   }, [item]);
 
   if (!item) return null;
@@ -613,6 +729,12 @@ function EditQtyModal({
         </label>
         <QtyStepper value={qty} onChange={setQty} size="lg" />
       </div>
+      {error && (
+        <div role="alert" className="mt-4 flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">
+          <AlertCircle size={14} className="shrink-0" />
+          {error}
+        </div>
+      )}
       <ModalActions>
         <button
           type="button"
@@ -623,12 +745,22 @@ function EditQtyModal({
         </button>
         <button
           type="button"
-          disabled={!ready}
-          onClick={() => onApply(Number(qty))}
+          disabled={!ready || saving}
+          onClick={async () => {
+            setSaving(true);
+            setError(null);
+            try {
+              await onApply(Number(qty));
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'No se pudo guardar la cantidad.');
+            } finally {
+              setSaving(false);
+            }
+          }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-6 py-3 text-[14px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Pencil size={15} />
-          Guardar
+          {saving ? 'Guardando…' : 'Guardar'}
         </button>
       </ModalActions>
     </Modal>
@@ -708,17 +840,22 @@ function FilterContent({
   repuestos,
   onApply,
 }: {
-  tecnico: string;
-  repuesto: string;
+  tecnico: string[];
+  repuesto: string[];
   tecnicos: string[];
   repuestos: string[];
-  onApply: (tecnico: string, repuesto: string) => void;
+  onApply: (tecnico: string[], repuesto: string[]) => void;
 }) {
-  const [pendingTecnico, setPendingTecnico] = useState(tecnico);
-  const [pendingRepuesto, setPendingRepuesto] = useState(repuesto);
+  const [pendingTecnico, setPendingTecnico] = useState<string[]>(tecnico);
+  const [pendingRepuesto, setPendingRepuesto] = useState<string[]>(repuesto);
 
-  const dirty = pendingTecnico !== tecnico || pendingRepuesto !== repuesto;
-  const hasFilters = pendingTecnico !== 'Todos' || pendingRepuesto !== 'Todos';
+  const sameSet = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((x) => b.includes(x));
+  const dirty = !sameSet(pendingTecnico, tecnico) || !sameSet(pendingRepuesto, repuesto);
+  const hasFilters = pendingTecnico.length > 0 || pendingRepuesto.length > 0;
+
+  const toggle = (setter: React.Dispatch<React.SetStateAction<string[]>>) => (v: string) =>
+    setter((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
 
   return (
     <div>
@@ -728,8 +865,8 @@ function FilterContent({
           <button
             type="button"
             onClick={() => {
-              setPendingTecnico('Todos');
-              setPendingRepuesto('Todos');
+              setPendingTecnico([]);
+              setPendingRepuesto([]);
             }}
             className="text-[11px] font-semibold text-wash-text-muted hover:text-wash-text-strong"
           >
@@ -739,46 +876,22 @@ function FilterContent({
       </div>
 
       <div className="space-y-3">
-        <div>
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
-            Técnico
-          </label>
-          <div className="mt-1.5">
-            <Select value={pendingTecnico} onValueChange={setPendingTecnico}>
-              <SelectTrigger className="h-9 w-full text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Todos">Todos</SelectItem>
-                {tecnicos.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div>
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
-            Repuesto
-          </label>
-          <div className="mt-1.5">
-            <Select value={pendingRepuesto} onValueChange={setPendingRepuesto}>
-              <SelectTrigger className="h-9 w-full text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Todos">Todos</SelectItem>
-                {repuestos.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <MultiSelect
+          label="Técnico"
+          searchable
+          options={tecnicos.map((t) => ({ value: t, label: t }))}
+          selected={pendingTecnico}
+          onToggle={toggle(setPendingTecnico)}
+          onClear={() => setPendingTecnico([])}
+        />
+        <MultiSelect
+          label="Repuesto"
+          searchable
+          options={repuestos.map((r) => ({ value: r, label: r }))}
+          selected={pendingRepuesto}
+          onToggle={toggle(setPendingRepuesto)}
+          onClear={() => setPendingRepuesto([])}
+        />
       </div>
 
       <div className="mt-4 flex justify-end gap-2 border-t border-wash-border pt-3">

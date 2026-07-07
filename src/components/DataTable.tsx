@@ -20,6 +20,12 @@ interface DataTableProps<T> {
   empty?: ReactNode;
   onRowClick?: (row: T) => void;
   dense?: boolean;
+  /**
+   * Render de una card por fila para mobile (<lg). Si se pasa, en pantallas chicas
+   * se muestran cards en vez de la tabla (DESIGN.md §5.4); en ≥lg va la tabla. Si se
+   * omite, la tabla se muestra siempre (scrollea horizontal en mobile).
+   */
+  mobileCard?: (row: T, index: number) => ReactNode;
 }
 
 export function DataTable<T>({
@@ -29,6 +35,7 @@ export function DataTable<T>({
   empty,
   onRowClick,
   dense,
+  mobileCard,
 }: DataTableProps<T>) {
   const alignClass = (a?: 'left' | 'right' | 'center') =>
     a === 'right' ? 'text-right' : a === 'center' ? 'text-center' : 'text-left';
@@ -59,8 +66,28 @@ export function DataTable<T>({
   const lastIdx = columns.length - 1;
 
   return (
-    <div className="h-full overflow-hidden rounded-2xl bg-wash-surface shadow-sm ring-1 ring-wash-border">
-      <div className="h-full overflow-auto">
+    <>
+      {/* MOBILE (<lg): una card por fila (DESIGN.md §5.4) */}
+      {mobileCard && (
+        <div className="flex h-full flex-col gap-2 overflow-y-auto lg:hidden">
+          {rows.length === 0 ? (
+            <div className="flex h-[220px] items-center justify-center px-4 text-center text-sm text-wash-text-muted">
+              {empty ?? 'Sin resultados'}
+            </div>
+          ) : (
+            rows.map((row, idx) => <div key={rowKey(row)}>{mobileCard(row, idx)}</div>)
+          )}
+        </div>
+      )}
+
+      {/* DESKTOP (≥lg si hay cards; siempre si no): tabla */}
+      <div
+        className={cn(
+          'h-full overflow-hidden rounded-2xl bg-wash-surface shadow-sm ring-1 ring-wash-border',
+          mobileCard && 'hidden lg:block'
+        )}
+      >
+        <div className="h-full overflow-auto">
         {/* Header — sticky to the top on vertical scroll */}
         <div
           className="sticky top-0 z-20 grid border-b border-wash-border bg-wash-canvas text-[11px] font-bold uppercase tracking-wider text-wash-text-muted"
@@ -119,7 +146,8 @@ export function DataTable<T>({
             </div>
           ))
         )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

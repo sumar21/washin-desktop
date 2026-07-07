@@ -23,10 +23,12 @@ interface KpiCardProps {
   badge?: string;
   delta?: number;
   deltaLabel?: string;
+  /** Invierte el color del delta: subir es "malo" (rojo). Útil para incidentes, mora, etc. */
+  invertDelta?: boolean;
   sub?: ReactNode;
 }
 
-export function KpiCard({ icon: Icon, label, value, accent, badge, delta, deltaLabel, sub }: KpiCardProps) {
+export function KpiCard({ icon: Icon, label, value, accent, badge, delta, deltaLabel, invertDelta, sub }: KpiCardProps) {
   const hasFooter = delta != null || sub != null;
   return (
     <Card className={cn('ring-wash-border', accent && 'bg-wash-brand/[0.04] ring-wash-brand/25')}>
@@ -52,7 +54,7 @@ export function KpiCard({ icon: Icon, label, value, accent, badge, delta, deltaL
         </div>
         {hasFooter && (
           <div className="mt-3 flex items-center justify-between gap-2 border-t border-wash-divider pt-2.5 text-xs text-wash-text-muted">
-            {delta != null ? <DeltaChip value={delta} label={deltaLabel ?? ''} /> : sub}
+            {delta != null ? <DeltaChip value={delta} label={deltaLabel ?? ''} invert={invertDelta} /> : sub}
           </div>
         )}
       </CardContent>
@@ -82,13 +84,14 @@ export function SectionTitle({
 }
 
 // ── DeltaChip — pill de tendencia verde/rojo ─────────────────────────────────
-export function DeltaChip({ value, label }: { value: number; label: string }) {
-  const up = value >= 0;
+export function DeltaChip({ value, label, invert }: { value: number; label: string; invert?: boolean }) {
+  const up = value >= 0; // dirección de la flecha (magnitud)
+  const good = invert ? value <= 0 : value >= 0; // sentimiento (color)
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold',
-        up ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'
+        good ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'
       )}
     >
       {up ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}

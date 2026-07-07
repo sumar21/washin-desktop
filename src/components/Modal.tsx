@@ -31,18 +31,19 @@ export function Modal({ open, onClose, title, children, width = 580, className }
   return createPortal(
     <div
       className={cn(
-        'fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-6 backdrop-blur-sm',
+        'fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm sm:p-6',
         overlayClass
       )}
       {...backdropClose(onClose)}
     >
       <div
         className={cn(
-          'relative flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-2xl',
+          // Ancho fluido en mobile (w-full hasta max-w), el body scrollea si no entra (§5.5).
+          'relative flex w-full max-h-[90dvh] flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-2xl',
           modalClass,
           className
         )}
-        style={{ width }}
+        style={{ maxWidth: width }}
         role="dialog"
         aria-modal="true"
       >
@@ -67,7 +68,16 @@ export function Modal({ open, onClose, title, children, width = 580, className }
 }
 
 export function ModalActions({ children }: { children: ReactNode }) {
-  return <div className="mt-6 flex justify-end gap-3">{children}</div>;
+  // Footer pegado al fondo del modal: los botones quedan SIEMPRE visibles aunque el
+  // cuerpo scrollee (evita tener que scrollear para ver Guardar/Aceptar/Cancelar,
+  // incluso a 125% de zoom). Se extiende a los bordes (-mx-6/-mb-6) para tapar el
+  // padding p-6 del cuerpo y dibujar una barra con borde superior.
+  // Mobile: apilados full-width; desktop: en línea a la derecha (§5.5).
+  return (
+    <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-6 flex flex-col gap-2 border-t border-wash-border bg-wash-surface px-6 py-4 sm:flex-row sm:justify-end sm:gap-3">
+      {children}
+    </div>
+  );
 }
 
 interface ConfirmDialogProps {

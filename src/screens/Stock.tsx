@@ -20,6 +20,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PopoverClose } from '@/components/ui/popover';
+import { Combobox } from '@/components/ui/combobox';
 import {
   Select,
   SelectContent,
@@ -150,7 +151,7 @@ export function Stock() {
       ) : (
       <>
       {/* Counters */}
-      <div className="grid grid-cols-7 gap-2.5 border-b border-wash-border bg-wash-surface px-6 py-4">
+      <div className="grid grid-cols-3 gap-2.5 border-b border-wash-border bg-wash-surface px-4 py-3 sm:grid-cols-4 md:px-6 md:py-4 lg:grid-cols-7">
         {TIPOS.map((t) => {
           const meta = tipoMeta[t];
           const Icon = meta.icon;
@@ -190,7 +191,7 @@ export function Stock() {
 
       {/* Active filter chips */}
       {filterTipos.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
+        <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-4 py-2 text-xs text-wash-text-muted md:px-6">
           <span className="font-semibold uppercase tracking-wider">
             Filtro{filterTipos.length === 1 ? '' : 's'} activo
             {filterTipos.length === 1 ? '' : 's'}:
@@ -222,8 +223,88 @@ export function Stock() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="flex-1 overflow-hidden px-6 pb-6 pt-4">
+      {/* MOBILE (<lg): una card por item (DESIGN.md §5.4) */}
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-4 pt-3 lg:hidden">
+        {filtered.length === 0 ? (
+          <div className="flex h-[220px] flex-col items-center justify-center text-center">
+            <div className="mb-3 rounded-2xl bg-wash-surface-2 p-3 text-wash-text-muted">
+              <Search size={26} strokeWidth={1.6} />
+            </div>
+            <p className="text-sm font-semibold text-wash-text-strong">No se encontraron items</p>
+            <p className="mt-1 text-xs text-wash-text-muted">Probá con otros filtros o ajustá la búsqueda.</p>
+          </div>
+        ) : (
+          filtered.map((row) => {
+            const meta = tipoMeta[row.Tipo_ST] ?? TIPO_FALLBACK;
+            const Icon = meta.icon;
+            const showEdit = canEdit && row.Tipo_ST === 'REPUESTO';
+            return (
+              <div
+                key={row.ID}
+                className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wider',
+                      meta.tone
+                    )}
+                  >
+                    <Icon size={11} />
+                    {row.Tipo_ST || 'SIN TIPO'}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Badge
+                      variant="secondary"
+                      className="bg-wash-brand/10 text-[12px] font-bold tabular-nums text-wash-brand"
+                    >
+                      {row.Cantidad_ST}
+                    </Badge>
+                    {showEdit && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(row);
+                          setEditQty(String(row.Cantidad_ST));
+                          setEditError(null);
+                        }}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-wash-text-muted ring-1 ring-wash-border transition hover:bg-wash-brand/10 hover:text-wash-brand hover:ring-wash-brand/40"
+                        title="Editar cantidad"
+                        aria-label={`Editar cantidad de ${proper(row.Item_ST)}`}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                    )}
+                    {showEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setAssigning(row)}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-wash-text-muted ring-1 ring-wash-border transition hover:bg-wash-brand/10 hover:text-wash-brand hover:ring-wash-brand/40"
+                        title="Asignar a técnico"
+                        aria-label={`Asignar ${proper(row.Item_ST)} a técnico`}
+                      >
+                        <ArrowLeftRight size={15} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 min-w-0">
+                  <p className="truncate text-[13.5px] font-semibold text-wash-text-strong">
+                    {proper(row.Item_ST)}
+                  </p>
+                  <p className="mt-0.5 truncate text-[11.5px] text-wash-text-muted">
+                    {row.Marca_ST || 'Sin marca'}
+                    {row.Nro_ST ? ` · ${row.Nro_ST}` : ''}
+                  </p>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* DESKTOP (≥lg): tabla */}
+      <div className="hidden flex-1 overflow-hidden px-6 pb-6 pt-4 lg:block">
         <Card className="h-full gap-0 overflow-hidden py-0 ring-wash-border">
           <div
             className="grid border-b border-wash-border bg-wash-surface-2/60 px-5 text-[11px] font-bold uppercase tracking-wider text-wash-text-muted"
@@ -680,34 +761,21 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
 
         <div>
           <Label>Item</Label>
-          <Select
-            value={selectedId ? String(selectedId) : undefined}
-            onValueChange={(value) => setSelectedId(Number(value))}
-            disabled={!segmento}
-          >
-            <SelectTrigger className="mt-1.5 h-10 w-full">
-              <SelectValue
-                placeholder={segmento ? 'Seleccionar item…' : 'Elegí un segmento primero'}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {itemsOfSegment.map((c) => (
-                <SelectItem key={c.ID} value={String(c.ID)}>
-                  <span className="flex w-full items-center gap-2">
-                    {c.Codigo && (
-                      <span className="shrink-0 rounded bg-wash-surface-2 px-1.5 py-0.5 text-[10.5px] font-semibold text-wash-text">
-                        {c.Codigo}
-                      </span>
-                    )}
-                    <span className="font-medium text-wash-text-strong">{c.Item}</span>
-                    {c.Marca && (
-                      <span className="ml-auto text-xs text-wash-text-muted">{c.Marca}</span>
-                    )}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="mt-1.5">
+            <Combobox
+              options={itemsOfSegment.map((c) => ({
+                value: String(c.ID),
+                label: c.Item,
+                sublabel: [c.Codigo, c.Marca].filter(Boolean).join(' · ') || undefined,
+              }))}
+              value={selectedId ? String(selectedId) : null}
+              onChange={(value) => setSelectedId(value ? Number(value) : null)}
+              disabled={!segmento}
+              placeholder={segmento ? 'Seleccionar item…' : 'Elegí un segmento primero'}
+              searchPlaceholder="Buscar item…"
+              emptyText="Sin items en este segmento"
+            />
+          </div>
         </div>
 
         {isMachine && (
@@ -861,18 +929,16 @@ function AssignModal({ item, onClose, onAssign }: AssignModalProps) {
       )}
 
       <Label>Técnico</Label>
-      <Select value={tecnico || undefined} onValueChange={setTecnico} disabled={tecnicosLoading}>
-        <SelectTrigger className="mt-1.5 h-10 w-full">
-          <SelectValue placeholder={tecnicosLoading ? 'Cargando técnicos…' : 'Seleccionar técnico…'} />
-        </SelectTrigger>
-        <SelectContent>
-          {tecnicos.map((t) => (
-            <SelectItem key={t.ID} value={t.Nombre_Tecnico}>
-              {t.Nombre_Tecnico}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="mt-1.5">
+        <Combobox
+          options={tecnicos.map((t) => ({ value: t.Nombre_Tecnico, label: t.Nombre_Tecnico }))}
+          value={tecnico || null}
+          onChange={(v) => setTecnico(v ?? '')}
+          disabled={tecnicosLoading}
+          placeholder={tecnicosLoading ? 'Cargando técnicos…' : 'Seleccionar técnico…'}
+          searchPlaceholder="Buscar técnico…"
+        />
+      </div>
 
       <div className="mt-4 flex items-center justify-between">
         <Label>Cantidad</Label>

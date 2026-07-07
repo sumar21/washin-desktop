@@ -13,12 +13,11 @@ import {
   Compass,
   StickyNote,
   GitBranch,
-  CheckCircle2,
   Wind,
   CalendarClock,
 } from 'lucide-react';
 import { DataTable, type Column } from '@/components/DataTable';
-import { Modal, ModalActions } from '@/components/Modal';
+import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import {
   Select,
   SelectContent,
@@ -28,132 +27,92 @@ import {
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
-import type { Edificio } from '@/types/domain';
-import { buildingExtras } from './_helpers';
-
-// --- Derived building row (merges catalog + circuit + visit sources) ---
-interface EdificioRow {
-  id: string;
-  edificio: Edificio | null; // if from the canonical catalog
-  nombre: string;
-  codigo?: string;
-  direccion?: string;
-  circuitos: string[];
-  frecuencia?: string;
-  grupo?: string;
-}
+import type { EdificioAbm, DetalleCircuitoAbm } from '@/types/domain';
+import type { EdificioAbmInput } from '@/services/api';
 
 interface ConfigEdificiosProps {
   query: string;
   addOpen: boolean;
   setAddOpen: (v: boolean) => void;
+  /** Solo-lectura si false. Roles como Supervisor Ventilaciones / Atención al Cliente entran acá en modo lectura. */
+  canEdit?: boolean;
+}
+
+/** Mapa Codigo de edificio → circuitos (NroCircuito) en los que participa. */
+function circuitsByBuildingCode(detalles: DetalleCircuitoAbm[]): Map<string, number[]> {
+  const map = new Map<string, number[]>();
+  for (const d of detalles) {
+    const cod = d.CodigoEdificio?.trim();
+    if (!cod) continue;
+    const arr = map.get(cod) ?? [];
+    if (!arr.includes(d.NroCircuito)) arr.push(d.NroCircuito);
+    map.set(cod, arr);
+  }
+  for (const arr of map.values()) arr.sort((a, b) => a - b);
+  return map;
 }
 
 export function ConfigEdificios({
   query,
   addOpen,
   setAddOpen,
+  canEdit = false,
 }: ConfigEdificiosProps) {
-  const edificios = useAppStore((s) => s.CollectEdificios);
-  const detalleCircuitos = useAppStore((s) => s.CollectDetalleCircuito);
-  const edificiosVisitar = useAppStore((s) => s.CollectEdificiosVisitar);
-  const frecuencias = useAppStore((s) => s.CollectFrecuencias);
-  const grupos = useAppStore((s) => s.CollectGruposVentilacion);
+  const edificios = useAppStore((s) => s.CollectAbmEdificios);
+  const detalles = useAppStore((s) => s.CollectAbmDetalles);
+  const frecuencias = useAppStore((s) => s.AbmFrecuencias);
+  const grupos = useAppStore((s) => s.AbmGrupos);
+  const createEdificio = useAppStore((s) => s.createEdificio);
+  const updateEdificio = useAppStore((s) => s.updateEdificio);
+  const bajaEdificio = useAppStore((s) => s.bajaEdificio);
 
-  const [viewing, setViewing] = useState<EdificioRow | null>(null);
-  const [editing, setEditing] = useState<EdificioRow | null>(null);
-  const [deleting, setDeleting] = useState<EdificioRow | null>(null);
+  const [viewing, setViewing] = useState<EdificioAbm | null>(null);
+  const [editing, setEditing] = useState<EdificioAbm | null>(null);
+  const [deleting, setDeleting] = useState<EdificioAbm | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Merge all unique buildings from catalog + circuit details + visit catalog
-  const allRows = useMemo<EdificioRow[]>(() => {
-    const byName = new Map<string, EdificioRow>();
+  const circuitosByCodigo = useMemo(() => circuitsByBuildingCode(detalles), [detalles]);
+  const circuitosDe = (e: EdificioAbm) =>
+    (e.Codigo?.trim() && circuitosByCodigo.get(e.Codigo.trim())) || [];
 
-    // Visit catalog (richest source — has C-XXXX codes + addresses)
-    for (const ev of edificiosVisitar) {
-      const key = ev.NombreEdificio_EV;
-      if (!byName.has(key)) {
-        byName.set(key, {
-          id: `ev-${ev.ID}`,
-          edificio: null,
-          nombre: key,
-          codigo: ev.Codigo_EV,
-          direccion: ev.Direccion_EV,
-          circuitos: [],
-        });
-      }
-    }
-
-    // Circuit-detail catalog
-    for (const dc of detalleCircuitos) {
-      const key = dc.NombreEdificio_DC;
-      if (!byName.has(key)) {
-        byName.set(key, {
-          id: `dc-${dc.ID}`,
-          edificio: null,
-          nombre: key,
-          direccion: dc.Direccion_DC,
-          circuitos: [],
-        });
-      }
-      const row = byName.get(key)!;
-      if (dc.Status_DC === 'Activo' && !row.circuitos.includes(dc.NroCircuito_DC)) {
-        row.circuitos.push(dc.NroCircuito_DC);
-      }
-      if (!row.direccion && dc.Direccion_DC) row.direccion = dc.Direccion_DC;
-    }
-
-    // Canonical edificios catalog overrides metadata
-    for (const e of edificios) {
-      const key = e.Edificio;
-      if (!byName.has(key)) {
-        byName.set(key, {
-          id: `e-${e.ID}`,
-          edificio: e,
-          nombre: key,
-          codigo: e.Codigo,
-          direccion: e.Direccion,
-          circuitos: [],
-          frecuencia: e.FrecuenciaVent_ED,
-          grupo: e.GrupoVentilacion_ED,
-        });
-      } else {
-        const row = byName.get(key)!;
-        row.edificio = e;
-        row.codigo = e.Codigo ?? row.codigo;
-        row.direccion = e.Direccion ?? row.direccion;
-        row.frecuencia = e.FrecuenciaVent_ED ?? row.frecuencia;
-        row.grupo = e.GrupoVentilacion_ED ?? row.grupo;
-      }
-    }
-
-    return Array.from(byName.values()).sort((a, b) =>
-      a.nombre.localeCompare(b.nombre, 'es')
-    );
-  }, [edificios, detalleCircuitos, edificiosVisitar]);
-
-  const filtered = useMemo(() => {
+  const rows = useMemo(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return allRows;
-    return allRows.filter((r) => {
-      return (
-        r.nombre.toLowerCase().includes(q) ||
-        (r.codigo ?? '').toLowerCase().includes(q) ||
-        (r.direccion ?? '').toLowerCase().includes(q) ||
-        r.circuitos.some((c) => c.toLowerCase().includes(q))
-      );
-    });
-  }, [allRows, query]);
+    const list = q
+      ? edificios.filter(
+          (e) =>
+            e.Edificio.toLowerCase().includes(q) ||
+            e.Codigo.toLowerCase().includes(q) ||
+            e.Direccion.toLowerCase().includes(q)
+        )
+      : edificios;
+    return [...list].sort((a, b) => a.Edificio.localeCompare(b.Edificio, 'es'));
+  }, [edificios, query]);
 
-  const columns: Column<EdificioRow>[] = [
+  const handleBaja = async () => {
+    if (!deleting || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await bajaEdificio(deleting.ID);
+      setDeleting(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'No se pudo dar de baja el edificio.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const columns: Column<EdificioAbm>[] = [
     {
       key: 'codigo',
       header: 'Código',
       width: '110px',
       truncate: false,
-      render: (r) =>
-        r.codigo ? (
+      render: (e) =>
+        e.Codigo ? (
           <span className="inline-flex rounded-md bg-wash-brand/10 px-2 py-0.5 font-mono text-[11px] font-bold text-wash-brand ring-1 ring-wash-brand/20">
-            {r.codigo}
+            {e.Codigo}
           </span>
         ) : (
           <span className="text-wash-text-faint">—</span>
@@ -164,16 +123,60 @@ export function ConfigEdificios({
       header: 'Edificio',
       width: 'minmax(200px, 1.4fr)',
       truncate: false,
-      render: (r) => (
+      render: (e) => (
         <div className="flex items-center gap-2.5">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-wash-surface-2 text-wash-text-muted ring-1 ring-wash-border">
             <Building2 size={13} />
           </span>
           <span className="truncate font-display text-[13px] font-bold text-wash-accent">
-            {r.nombre}
+            {e.Edificio}
           </span>
         </div>
       ),
+    },
+    {
+      key: 'direccion',
+      header: 'Dirección',
+      width: 'minmax(180px, 1fr)',
+      truncate: false,
+      render: (e) =>
+        e.Direccion ? (
+          <span className="flex items-center gap-1.5 truncate text-[12.5px] text-wash-text">
+            <MapPin size={11} className="shrink-0 text-wash-text-muted" />
+            <span className="truncate uppercase tracking-wide">{e.Direccion}</span>
+          </span>
+        ) : (
+          <span className="text-[12px] text-wash-text-faint">—</span>
+        ),
+    },
+    {
+      key: 'ventilacion',
+      header: 'Ventilación',
+      width: '200px',
+      truncate: false,
+      render: (e) => {
+        const hasGrupo = !!e.Grupo?.trim();
+        const hasFrec = !!e.Frecuencia?.trim();
+        if (!hasGrupo && !hasFrec) {
+          return <span className="text-[12px] text-wash-text-faint">—</span>;
+        }
+        return (
+          <div className="flex flex-col gap-1">
+            {hasGrupo && (
+              <span className="inline-flex w-fit items-center gap-1 rounded-md bg-wash-surface-2 px-2 py-0.5 text-[11.5px] font-semibold text-wash-text-strong ring-1 ring-wash-border">
+                <Wind size={10} className="text-wash-brand" />
+                {e.Grupo}
+              </span>
+            )}
+            {hasFrec && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-wash-text-muted">
+                <CalendarClock size={10} />
+                cada {e.Frecuencia} días
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: 'circuito',
@@ -181,12 +184,13 @@ export function ConfigEdificios({
       width: '130px',
       align: 'center',
       truncate: false,
-      render: (r) => {
-        if (r.circuitos.length === 0) {
+      render: (e) => {
+        const cs = circuitosDe(e);
+        if (cs.length === 0) {
           return <span className="text-[12px] text-wash-text-faint">—</span>;
         }
-        const first = r.circuitos[0];
-        const extra = r.circuitos.length - 1;
+        const first = cs[0];
+        const extra = cs.length - 1;
         return (
           <span className="inline-flex items-center gap-1 rounded-md bg-wash-surface-2 px-2 py-1 text-[11.5px] font-bold text-wash-text-strong tabular-nums ring-1 ring-wash-border">
             <GitBranch size={10} className="text-wash-brand" />
@@ -201,89 +205,45 @@ export function ConfigEdificios({
       },
     },
     {
-      key: 'direccion',
-      header: 'Dirección',
-      width: 'minmax(180px, 1fr)',
-      truncate: false,
-      render: (r) =>
-        r.direccion ? (
-          <span className="flex items-center gap-1.5 truncate text-[12.5px] text-wash-text">
-            <MapPin size={11} className="shrink-0 text-wash-text-muted" />
-            <span className="truncate uppercase tracking-wide">{r.direccion}</span>
-          </span>
-        ) : (
-          <span className="text-[12px] text-wash-text-faint">—</span>
-        ),
-    },
-    {
-      key: 'horario',
-      header: 'Horario',
-      width: '190px',
-      truncate: false,
-      render: (r) => {
-        const x = buildingExtras(r.nombre);
-        return x.horario ? (
-          <span className="inline-flex items-center gap-1.5 truncate text-[12px] text-wash-text">
-            <Clock size={11} className="shrink-0 text-wash-text-muted" />
-            <span className="truncate">{x.horario}</span>
-          </span>
-        ) : (
-          <span className="text-[12px] text-wash-text-faint">—</span>
-        );
-      },
-    },
-    {
-      key: 'encargado',
-      header: 'Encargado',
-      width: '200px',
-      truncate: false,
-      render: (r) => {
-        const x = buildingExtras(r.nombre);
-        return (
-          <span className="flex items-center gap-1.5 truncate text-[12px]">
-            <User2 size={11} className="shrink-0 text-wash-text-muted" />
-            <span className="truncate font-semibold text-wash-text-strong">
-              {x.encargado}
-            </span>
-          </span>
-        );
-      },
-    },
-    {
       key: 'actions',
       header: 'Acciones',
       width: '140px',
       align: 'right',
       truncate: false,
-      render: (r) => (
+      render: (e) => (
         <div className="flex items-center justify-end gap-1.5">
           <ActionBtn
             icon={Eye}
             tone="brand"
             title="Ver detalle"
-            onClick={(e) => {
-              e.stopPropagation();
-              setViewing(r);
+            onClick={(ev) => {
+              ev.stopPropagation();
+              setViewing(e);
             }}
           />
-          <ActionBtn
-            icon={Pencil}
-            tone="neutral"
-            title="Editar"
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditing(r);
-            }}
-          />
-          <ActionBtn
-            icon={Trash2}
-            tone="danger"
-            title="Eliminar"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDeleting(r);
-            }}
-          />
+          {canEdit && (
+            <>
+              <ActionBtn
+                icon={Pencil}
+                tone="neutral"
+                title="Editar"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  setEditing(e);
+                }}
+              />
+              <ActionBtn
+                icon={Trash2}
+                tone="danger"
+                title="Dar de baja"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  setDeleting(e);
+                  setDeleteError(null);
+                }}
+              />
+            </>
+          )}
         </div>
       ),
     },
@@ -293,8 +253,8 @@ export function ConfigEdificios({
     <div className="flex h-full w-full flex-col">
       <div className="flex-1 overflow-hidden p-6">
         <DataTable
-          rows={filtered}
-          rowKey={(r) => r.id}
+          rows={rows}
+          rowKey={(r) => r.ID}
           columns={columns}
           empty="Sin edificios registrados."
           onRowClick={(r) => setViewing(r)}
@@ -303,7 +263,8 @@ export function ConfigEdificios({
 
       {/* Detalle */}
       <EdificioDetailModal
-        row={viewing}
+        edificio={viewing}
+        circuitos={viewing ? circuitosDe(viewing) : []}
         onClose={() => setViewing(null)}
       />
 
@@ -311,28 +272,48 @@ export function ConfigEdificios({
       <EdificioFormModal
         open={addOpen}
         mode="create"
-        frecuencias={frecuencias.map((f) => f.Frecuencia_FE)}
-        grupos={grupos.map((g) => g.Grupo_GV)}
+        frecuencias={frecuencias}
+        grupos={grupos}
         onClose={() => setAddOpen(false)}
-        onSave={() => setAddOpen(false)}
+        onSubmit={async (payload) => {
+          await createEdificio(payload);
+          setAddOpen(false);
+        }}
       />
 
       {/* Editar */}
       <EdificioFormModal
         open={!!editing}
         mode="edit"
-        row={editing}
-        frecuencias={frecuencias.map((f) => f.Frecuencia_FE)}
-        grupos={grupos.map((g) => g.Grupo_GV)}
+        edificio={editing}
+        frecuencias={frecuencias}
+        grupos={grupos}
         onClose={() => setEditing(null)}
-        onSave={() => setEditing(null)}
+        onSubmit={async (payload) => {
+          if (!editing) return;
+          await updateEdificio(editing.ID, payload);
+          setEditing(null);
+        }}
       />
 
-      {/* Eliminar */}
-      <EliminarEdificioModal
-        row={deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={() => setDeleting(null)}
+      {/* Baja */}
+      <ConfirmDialog
+        open={!!deleting}
+        tone="danger"
+        title="Dar de baja edificio"
+        message={
+          deleting
+            ? `¿Dar de baja ${deleting.Codigo ? `${deleting.Codigo} · ` : ''}${deleting.Edificio}? El edificio se marca como BAJA y deja de estar disponible.`
+            : ''
+        }
+        confirmLabel={deleteBusy ? 'Dando de baja…' : 'Dar de baja'}
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => {
+          setDeleting(null);
+          setDeleteError(null);
+        }}
+        onConfirm={handleBaja}
       />
     </div>
   );
@@ -341,22 +322,18 @@ export function ConfigEdificios({
 // ----- Detalle del edificio modal -----
 
 function EdificioDetailModal({
-  row,
+  edificio,
+  circuitos,
   onClose,
 }: {
-  row: EdificioRow | null;
+  edificio: EdificioAbm | null;
+  circuitos: number[];
   onClose: () => void;
 }) {
-  if (!row) return null;
-  const x = buildingExtras(row.nombre);
+  if (!edificio) return null;
 
   return (
-    <Modal
-      open={!!row}
-      onClose={onClose}
-      title="Detalles del edificio"
-      width={860}
-    >
+    <Modal open={!!edificio} onClose={onClose} title="Detalles del edificio" width={860}>
       {/* Header */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-wash-brand/[0.08] via-wash-surface to-wash-surface-2/30 p-5 ring-1 ring-wash-border">
         <div
@@ -369,27 +346,26 @@ function EdificioDetailModal({
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              {row.codigo && (
+              {edificio.Codigo && (
                 <span className="inline-flex items-center gap-1 rounded-md bg-wash-brand/10 px-2 py-0.5 font-mono text-[11.5px] font-bold text-wash-brand tabular-nums ring-1 ring-wash-brand/20">
                   <Hash size={10} />
-                  {row.codigo}
+                  {edificio.Codigo}
                 </span>
               )}
-              {row.circuitos.length > 0 && (
+              {circuitos.length > 0 && (
                 <span className="inline-flex items-center gap-1 rounded-md bg-wash-surface-2 px-2 py-0.5 text-[11.5px] font-semibold text-wash-text-strong ring-1 ring-wash-border">
                   <GitBranch size={10} className="text-wash-brand" />
-                  Circuito{row.circuitos.length === 1 ? '' : 's'}{' '}
-                  {row.circuitos.join(', ')}
+                  Circuito{circuitos.length === 1 ? '' : 's'} {circuitos.join(', ')}
                 </span>
               )}
             </div>
             <h3 className="mt-1.5 font-display text-[18px] font-black leading-tight text-wash-accent">
-              {row.nombre}
+              {edificio.Edificio}
             </h3>
-            {row.direccion && (
+            {edificio.Direccion && (
               <p className="mt-1 flex items-center gap-1.5 text-[12px] text-wash-text-muted">
                 <MapPin size={12} />
-                <span className="uppercase tracking-wide">{row.direccion}</span>
+                <span className="uppercase tracking-wide">{edificio.Direccion}</span>
               </p>
             )}
           </div>
@@ -399,22 +375,17 @@ function EdificioDetailModal({
       {/* Location + Time */}
       <SectionLabel>Ubicación y horario</SectionLabel>
       <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-3">
-        <InfoField icon={Compass} label="Latitud" value={x.lat} mono />
-        <InfoField icon={Compass} label="Longitud" value={x.lng} mono />
-        <InfoField
-          icon={Clock}
-          label="Horario"
-          value={x.horario ?? '—'}
-          muted={!x.horario}
-        />
+        <InfoField icon={Compass} label="Latitud" value={edificio.Latitud || '—'} muted={!edificio.Latitud} mono />
+        <InfoField icon={Compass} label="Longitud" value={edificio.Longitud || '—'} muted={!edificio.Longitud} mono />
+        <InfoField icon={Clock} label="Horario" value={edificio.Horario || '—'} muted={!edificio.Horario} />
       </div>
 
       {/* Contact */}
       <SectionLabel>Contacto</SectionLabel>
       <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-3">
-        <InfoField icon={User2} label="Encargado" value={x.encargado} />
-        <InfoField icon={Mail} label="Mail" value={x.mail ?? '—'} muted={!x.mail} />
-        <InfoField icon={Phone} label="Teléfono" value={x.telefono} mono />
+        <InfoField icon={User2} label="Encargado" value={edificio.Encargado || '—'} muted={!edificio.Encargado} />
+        <InfoField icon={Mail} label="Correo" value={edificio.Correo || '—'} muted={!edificio.Correo} />
+        <InfoField icon={Phone} label="Celular" value={edificio.Celular || '—'} muted={!edificio.Celular} mono />
       </div>
 
       {/* Maintenance */}
@@ -423,15 +394,10 @@ function EdificioDetailModal({
         <InfoField
           icon={CalendarClock}
           label="Frecuencia"
-          value={row.frecuencia ?? '—'}
-          muted={!row.frecuencia}
+          value={edificio.Frecuencia ? `${edificio.Frecuencia} días` : '—'}
+          muted={!edificio.Frecuencia}
         />
-        <InfoField
-          icon={Wind}
-          label="Grupo ventilación"
-          value={row.grupo ?? '—'}
-          muted={!row.grupo}
-        />
+        <InfoField icon={Wind} label="Grupo ventilación" value={edificio.Grupo || '—'} muted={!edificio.Grupo} />
       </div>
 
       {/* Observaciones */}
@@ -443,12 +409,10 @@ function EdificioDetailModal({
         <p
           className={cn(
             'flex-1 text-[13px] leading-relaxed',
-            x.observaciones
-              ? 'text-wash-text-strong'
-              : 'italic text-wash-text-muted'
+            edificio.Observaciones ? 'text-wash-text-strong' : 'italic text-wash-text-muted'
           )}
         >
-          {x.observaciones ?? 'Sin observaciones cargadas.'}
+          {edificio.Observaciones || 'Sin observaciones cargadas.'}
         </p>
       </div>
 
@@ -470,66 +434,95 @@ function EdificioDetailModal({
 function EdificioFormModal({
   open,
   mode,
-  row,
+  edificio,
   frecuencias,
   grupos,
   onClose,
-  onSave,
+  onSubmit,
 }: {
   open: boolean;
   mode: 'create' | 'edit';
-  row?: EdificioRow | null;
+  edificio?: EdificioAbm | null;
   frecuencias: string[];
   grupos: string[];
   onClose: () => void;
-  onSave: () => void;
+  onSubmit: (payload: EdificioAbmInput) => Promise<void>;
 }) {
   const [codigo, setCodigo] = useState('');
   const [nombre, setNombre] = useState('');
   const [direccion, setDireccion] = useState('');
-  const [lat, setLat] = useState('');
-  const [lng, setLng] = useState('');
   const [encargado, setEncargado] = useState('');
-  const [telefono, setTelefono] = useState('');
-  const [mail, setMail] = useState('');
+  const [celular, setCelular] = useState('');
+  const [correo, setCorreo] = useState('');
   const [horario, setHorario] = useState('');
   const [frecuencia, setFrecuencia] = useState('');
   const [grupo, setGrupo] = useState('');
   const [obs, setObs] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    if (mode === 'edit' && row) {
-      const x = buildingExtras(row.nombre);
-      setCodigo(row.codigo ?? '');
-      setNombre(row.nombre);
-      setDireccion(row.direccion ?? '');
-      setLat(x.lat);
-      setLng(x.lng);
-      setEncargado(x.encargado);
-      setTelefono(x.telefono);
-      setMail(x.mail ?? '');
-      setHorario(x.horario ?? '');
-      setFrecuencia(row.frecuencia ?? '');
-      setGrupo(row.grupo ?? '');
-      setObs(x.observaciones ?? '');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reinicia el form al abrir el modal.
+    setError(null);
+    setSaving(false);
+    if (mode === 'edit' && edificio) {
+      setCodigo(edificio.Codigo ?? '');
+      setNombre(edificio.Edificio ?? '');
+      setDireccion(edificio.Direccion ?? '');
+      setEncargado(edificio.Encargado ?? '');
+      setCelular(edificio.Celular ?? '');
+      setCorreo(edificio.Correo ?? '');
+      setHorario(edificio.Horario ?? '');
+      setFrecuencia(edificio.Frecuencia ?? '');
+      setGrupo(edificio.Grupo ?? '');
+      setObs(edificio.Observaciones ?? '');
     } else {
       setCodigo('');
       setNombre('');
       setDireccion('');
-      setLat('');
-      setLng('');
       setEncargado('');
-      setTelefono('');
-      setMail('');
+      setCelular('');
+      setCorreo('');
       setHorario('');
       setFrecuencia('');
       setGrupo('');
       setObs('');
     }
-  }, [open, mode, row]);
+  }, [open, mode, edificio]);
 
-  const canSave = !!codigo && !!nombre;
+  // El select siempre debe poder mostrar el valor actual, aunque ya no esté activo.
+  const frecOptions = useMemo(() => {
+    const set = new Set(frecuencias.filter((f) => f.trim()));
+    if (frecuencia.trim()) set.add(frecuencia.trim());
+    return Array.from(set).sort((a, b) => Number(a) - Number(b));
+  }, [frecuencias, frecuencia]);
+
+  const canSave = !!nombre.trim() && !!codigo.trim();
+
+  const handleSubmit = async () => {
+    if (!canSave || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSubmit({
+        edificio: nombre.trim(),
+        codigo: codigo.trim(),
+        direccion: direccion.trim(),
+        horario: horario.trim(),
+        encargado: encargado.trim(),
+        celular: celular.trim(),
+        correo: correo.trim(),
+        observaciones: obs.trim(),
+        grupo: grupo.trim(),
+        frecuencia: frecuencia.trim(),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo guardar el edificio.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Modal
@@ -545,10 +538,10 @@ function EdificioFormModal({
         </span>
         <div>
           <p className="font-display text-[13px] font-bold text-wash-accent">
-            {mode === 'create' ? 'Nuevo edificio' : `Editar ${row?.nombre ?? ''}`}
+            {mode === 'create' ? 'Nuevo edificio' : `Editar ${edificio?.Edificio ?? ''}`}
           </p>
           <p className="mt-0.5 text-[11.5px] leading-relaxed text-wash-text-muted">
-            Completá los datos del edificio, su ubicación y los datos de contacto.
+            Completá los datos del edificio, su contacto y su grupo/frecuencia de ventilación.
           </p>
         </div>
       </div>
@@ -576,7 +569,7 @@ function EdificioFormModal({
 
       {/* Ubicación */}
       <SectionLabel>Ubicación</SectionLabel>
-      <div className="mt-2 space-y-3">
+      <div className="mt-2">
         <Field label="Dirección">
           <input
             value={direccion}
@@ -585,24 +578,6 @@ function EdificioFormModal({
             className={inputCls}
           />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Latitud">
-            <input
-              value={lat}
-              onChange={(e) => setLat(e.target.value)}
-              placeholder="-34,600826"
-              className={cn(inputCls, 'font-mono tabular-nums')}
-            />
-          </Field>
-          <Field label="Longitud">
-            <input
-              value={lng}
-              onChange={(e) => setLng(e.target.value)}
-              placeholder="-58,419467"
-              className={cn(inputCls, 'font-mono tabular-nums')}
-            />
-          </Field>
-        </div>
       </div>
 
       {/* Contacto */}
@@ -616,18 +591,18 @@ function EdificioFormModal({
             className={inputCls}
           />
         </Field>
-        <Field label="Teléfono">
+        <Field label="Celular">
           <input
-            value={telefono}
-            onChange={(e) => setTelefono(e.target.value)}
+            value={celular}
+            onChange={(e) => setCelular(e.target.value)}
             placeholder="11XXXXXXXX"
             className={cn(inputCls, 'font-mono tabular-nums')}
           />
         </Field>
-        <Field label="Mail">
+        <Field label="Correo">
           <input
-            value={mail}
-            onChange={(e) => setMail(e.target.value)}
+            value={correo}
+            onChange={(e) => setCorreo(e.target.value)}
             placeholder="mail@ejemplo.com"
             className={inputCls}
           />
@@ -651,27 +626,27 @@ function EdificioFormModal({
               <SelectValue placeholder="Seleccionar" />
             </SelectTrigger>
             <SelectContent>
-              {frecuencias.map((f) => (
+              {frecOptions.map((f) => (
                 <SelectItem key={f} value={f}>
-                  {f}
+                  {f} días
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </Field>
         <Field label="Grupo ventilación">
-          <Select value={grupo || undefined} onValueChange={setGrupo}>
-            <SelectTrigger className="h-10 w-full bg-wash-surface">
-              <SelectValue placeholder="Seleccionar" />
-            </SelectTrigger>
-            <SelectContent>
-              {grupos.map((g) => (
-                <SelectItem key={g} value={g}>
-                  {g}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <input
+            value={grupo}
+            onChange={(e) => setGrupo(e.target.value)}
+            list="edificio-grupos-vent"
+            placeholder="Grupo"
+            className={inputCls}
+          />
+          <datalist id="edificio-grupos-vent">
+            {grupos.filter((g) => g.trim()).map((g) => (
+              <option key={g} value={g} />
+            ))}
+          </datalist>
         </Field>
       </div>
 
@@ -687,6 +662,12 @@ function EdificioFormModal({
         />
       </div>
 
+      {error && (
+        <p className="mt-3 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">
+          {error}
+        </p>
+      )}
+
       <ModalActions>
         <button
           type="button"
@@ -697,63 +678,11 @@ function EdificioFormModal({
         </button>
         <button
           type="button"
-          disabled={!canSave}
-          onClick={onSave}
+          disabled={!canSave || saving}
+          onClick={handleSubmit}
           className="rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {mode === 'create' ? 'Guardar' : 'Guardar cambios'}
-        </button>
-      </ModalActions>
-    </Modal>
-  );
-}
-
-// ----- Eliminar modal -----
-
-function EliminarEdificioModal({
-  row,
-  onClose,
-  onConfirm,
-}: {
-  row: EdificioRow | null;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Modal open={!!row} onClose={onClose} width={520}>
-      <div className="flex items-start gap-4">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-rose-200">
-          <Trash2 size={20} />
-        </span>
-        <div className="flex-1">
-          <h2 className="font-display text-lg font-black text-wash-text-strong">
-            Eliminar edificio
-          </h2>
-          <p className="mt-1 text-sm text-wash-text-muted">
-            ¿Eliminar{' '}
-            <span className="font-semibold">
-              {row?.codigo ? `${row.codigo} · ` : ''}
-              {row?.nombre}
-            </span>{' '}
-            del catálogo? Esta acción no se puede deshacer.
-          </p>
-        </div>
-      </div>
-      <ModalActions>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="flex items-center gap-2 rounded-lg bg-rose-600 px-5 py-2.5 font-semibold text-white hover:bg-rose-700"
-        >
-          <CheckCircle2 size={15} />
-          Eliminar
+          {saving ? 'Guardando…' : mode === 'create' ? 'Guardar' : 'Guardar cambios'}
         </button>
       </ModalActions>
     </Modal>
@@ -765,13 +694,7 @@ function EliminarEdificioModal({
 const inputCls =
   'h-10 w-full rounded-md border border-wash-border bg-wash-surface px-3 text-[13px] font-medium text-wash-text-strong outline-none placeholder:text-wash-text-faint focus:border-wash-brand';
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
@@ -837,20 +760,15 @@ function ActionBtn({
   const cls = {
     neutral:
       'text-wash-text-muted ring-wash-border hover:bg-wash-surface-2 hover:text-wash-text-strong hover:ring-wash-text-muted/40',
-    brand:
-      'text-wash-brand ring-wash-brand/30 hover:bg-wash-brand/10 hover:ring-wash-brand',
-    danger:
-      'text-rose-600 ring-rose-500/30 hover:bg-rose-500/10 hover:ring-rose-500',
+    brand: 'text-wash-brand ring-wash-brand/30 hover:bg-wash-brand/10 hover:ring-wash-brand',
+    danger: 'text-rose-600 ring-rose-500/30 hover:bg-rose-500/10 hover:ring-rose-500',
   }[tone];
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
-      className={cn(
-        'flex h-8 w-8 items-center justify-center rounded-lg ring-1 transition',
-        cls
-      )}
+      className={cn('flex h-8 w-8 items-center justify-center rounded-lg ring-1 transition', cls)}
     >
       <Icon size={15} />
     </button>

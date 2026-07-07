@@ -16,7 +16,6 @@ import type {
   DetallePlanificacion,
   MesPlanificacion,
   EdificioVisitar,
-  Ventilacion,
   ItemCompra,
   RutaCatalogo,
   ResumenCircuito,
@@ -432,24 +431,7 @@ export const mockResumenPlanif: ResumenPlanificacion[] = _planif.resumen;
 export const mockDetallePlanif: DetallePlanificacion[] = _planif.detalles;
 export const mockEdificiosVisitar: EdificioVisitar[] = _planif.edificios;
 
-export const mockVentilaciones: Ventilacion[] = [
-  { ID: 11001, Edificio_VE: 'Puerto Pampa', Grupo_VE: '29', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '01/10/2024', ProximaLimpieza_VE: '12/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 1 },
-  { ID: 11002, Edificio_VE: 'Olazabal 4774', Grupo_VE: '2', Frecuencia_VE: '120', Estado_VE: 'Pendiente', FechaUltima_VE: '25/06/2024', ProximaLimpieza_VE: '13/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 2 },
-  { ID: 11003, Edificio_VE: 'Blanco Encalada 1715', Grupo_VE: '79', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '26/11/2024', ProximaLimpieza_VE: '14/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 3 },
-  { ID: 11004, Edificio_VE: 'Libertador 5740', Grupo_VE: '82', Frecuencia_VE: '90', Estado_VE: 'Pendiente', FechaUltima_VE: '03/04/2025', ProximaLimpieza_VE: '19/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 4 },
-  { ID: 11005, Edificio_VE: 'Regatas De Olivos', Grupo_VE: '64', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '11/02/2025', ProximaLimpieza_VE: '19/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 5 },
-  { ID: 11006, Edificio_VE: 'Vista Belgrano', Grupo_VE: '15', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '15/11/2024', ProximaLimpieza_VE: '19/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 6 },
-  { ID: 11007, Edificio_VE: 'Ayacucho 1435', Grupo_VE: '53', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '16/10/2024', ProximaLimpieza_VE: '21/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 7 },
-  { ID: 11008, Edificio_VE: 'Torre Deco Godoy Cruz', Grupo_VE: '92', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '25/09/2025', ProximaLimpieza_VE: '21/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'SI', Orden_VE: 8 },
-  { ID: 11009, Edificio_VE: 'Prima Caballito 2', Grupo_VE: '128', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '08/10/2025', ProximaLimpieza_VE: '05/06/2026', FechaMesAnoProxima_VE: '06/2026', EsIncidente_VE: 'NO', Orden_VE: 9 },
-  { ID: 11010, Edificio_VE: 'Quartier Dorrego', Grupo_VE: '96', Frecuencia_VE: '120', Estado_VE: 'Pendiente', FechaUltima_VE: '07/05/2026', ProximaLimpieza_VE: '05/08/2026', FechaMesAnoProxima_VE: '08/2026', EsIncidente_VE: 'NO', Orden_VE: 10 },
-  { ID: 11011, Edificio_VE: 'Ciudad De La Paz 1972', Grupo_VE: '15', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '13/10/2025', ProximaLimpieza_VE: '09/08/2026', FechaMesAnoProxima_VE: '08/2026', EsIncidente_VE: 'NO', Orden_VE: 11 },
-  { ID: 11012, Edificio_VE: 'Quartier San Telmo', Grupo_VE: '31', Frecuencia_VE: '180', Estado_VE: 'Pendiente', FechaUltima_VE: '11/02/2026', ProximaLimpieza_VE: '10/08/2026', FechaMesAnoProxima_VE: '08/2026', EsIncidente_VE: 'NO', Orden_VE: 12 },
-  // Assigned + Programada + Realizada examples
-  { ID: 11013, Edificio_VE: 'Torre Madero I', Grupo_VE: '42', Frecuencia_VE: '90', Estado_VE: 'Asignada', Asignado_VE: 'Mauro Fernández', FechaUltima_VE: '15/04/2026', ProximaLimpieza_VE: '15/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'NO', Orden_VE: 13 },
-  { ID: 11014, Edificio_VE: 'Belgrano R', Grupo_VE: '8', Frecuencia_VE: '120', Estado_VE: 'Programada', Asignado_VE: 'Julián Ruiz', FechaProgramada_VE: '28/05/2026', FechaUltima_VE: '28/02/2026', ProximaLimpieza_VE: '28/05/2026', FechaMesAnoProxima_VE: currentMonth(), EsIncidente_VE: 'NO', Orden_VE: 14 },
-  { ID: 11015, Edificio_VE: 'Recoleta Premium', Grupo_VE: '17', Frecuencia_VE: '90', Estado_VE: 'Realizada', Asignado_VE: 'Leandro Leyes', FechaUltima_VE: '20/05/2026', ProximaLimpieza_VE: '20/06/2026', FechaMesAnoProxima_VE: '06/2026', ObservacionResuelto_VE: 'Conductos en buen estado. Filtro reemplazado.', EsIncidente_VE: 'NO', Orden_VE: 15 },
-];
+// mockVentilaciones eliminado — el módulo de ventilaciones usa la API real (19.Ventilaciones).
 
 export const mockItemsCompra: ItemCompra[] = [
   { ID: 12001, Item_IC: 'Lavadora LG 15kg', Tipo_IC: 'LAVADORA', Status_IC: 'Activo' },

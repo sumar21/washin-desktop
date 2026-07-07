@@ -26,12 +26,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ── Listar incidentes sin resolver + sus repuestos ──────────────────────
   if (req.method === 'GET') {
+    // Por defecto: incidentes SIN resolver (Resuelto_IN='NO'). Con `?resueltos=MM/YYYY`:
+    // los RESUELTOS de ese mes (acotado por mes para no traer miles). Antes no había forma
+    // de ver los resueltos desde el desktop.
+    const resParam = typeof req.query.resueltos === 'string' ? req.query.resueltos : undefined;
+    const resueltosMes = resParam && /^\d{2}\/\d{4}$/.test(resParam) ? resParam : null;
+    const incFilter = resueltosMes ? `fields/FechaMesAno_IN eq '${resueltosMes}'` : `fields/Resuelto_IN eq 'NO'`;
     try {
       const [incRows, repRows] = await Promise.all([
-        listItems(LIST_IDS.incidentes, { select: incidenteSelectFields(), filter: `fields/Resuelto_IN eq 'NO'`, top: 999 }),
+        listItems(LIST_IDS.incidentes, { select: incidenteSelectFields(), filter: incFilter, top: 999 }),
         listItems(LIST_IDS.repuestosIncidentes, { select: repuestoIncidenteSelectFields(), top: 999 }),
       ]);
-      const incidentes = incRows.map(mapIncidente).sort((a, b) => b.ID - a.ID);
+      let incidentes = incRows.map(mapIncidente);
+      // Filtro compuesto (mes + resuelto) en memoria: SharePoint rechaza `and` sobre columnas no indexadas.
+      if (resueltosMes) incidentes = incidentes.filter((i) => i.Resuelto_IN === 'SI');
+      incidentes.sort((a, b) => b.ID - a.ID);
       const repuestos = repRows.map(mapRepuestoIncidente);
       return res.status(200).json({ incidentes, repuestos });
     } catch (err) {

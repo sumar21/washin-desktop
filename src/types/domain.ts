@@ -48,6 +48,7 @@ export type ModuloNombre =
   | 'Stock Tecnico'
   | 'Planificaciones'
   | 'Ventilacion'
+  | 'Metricas'
   | 'Configuracion';
 
 // ABM.Edificios
@@ -295,21 +296,42 @@ export interface EdificioVisitar {
 }
 
 // 19.Ventilaciones
+// OJO tipos SharePoint: IDEdificio_VE, Frecuencia_VE e IDAsignado_VE son columnas
+// NUMBER (no text). El resto es text. Frecuencia_VE se expone como string para la UI.
 export interface Ventilacion {
   ID: number;
   Edificio_VE: string;
+  IDEdificio_VE: number;
+  DireccionEdificio_VE?: string;
   Grupo_VE: string;
-  Frecuencia_VE: string;
+  Frecuencia_VE: string; // días (columna NUMBER; string para la UI)
   Asignado_VE?: string;
-  Estado_VE: 'Pendiente' | 'Asignada' | 'Programada' | 'Realizada';
+  IDAsignado_VE?: number;
+  Estado_VE: 'Pendiente' | 'Asignada' | 'Programada' | 'Realizada' | 'Eliminada';
+  /** "SI" ⇒ la fecha fue adelantada por un técnico (warning en la galería). */
   EsIncidente_VE?: 'SI' | 'NO';
   Orden_VE?: number;
   FechaUltima_VE?: string;
   ProximaLimpieza_VE: string;
   FechaProgramada_VE?: string;
   FechaMesAnoProxima_VE: string;
+  FechaAnoProxima_VE?: string;
   FechaMesAnoFinalizacion_VE?: string;
+  FechaFinalizacion_VE?: string;
+  FechaAsignado_VE?: string;
   ObservacionResuelto_VE?: string;
+  ObservacionAdelanto_VE?: string;
+}
+
+/** Proyección de ABM.Edificios para el módulo de ventilaciones (alta + circuito). */
+export interface EdificioVent {
+  ID: number;
+  Edificio: string;
+  Direccion: string;
+  Codigo: string;
+  Frecuencia: string; // Frecuencia_ED (NUMBER en SharePoint)
+  Grupo: string; // GrupoVentilacion_ED
+  EnCircuito: boolean; // Ventilaciones_ED === "SI"
 }
 
 // 99.ABM_ItemCompras
@@ -342,6 +364,116 @@ export interface DetalleCircuito {
   NombreEdificio_DC: string;
   Direccion_DC?: string;
   Status_DC: 'Activo' | 'Inactivo';
+}
+
+// ── ABMs reales (Configuración): forma que devuelve /api/abm ──────────────
+// NroRuta/NroCircuito/contadores/Frecuencia son numéricos en SharePoint.
+export interface RutaAbm {
+  ID: number;
+  NroRuta: number;
+  CantidadCircuitos: number;
+  CantidadEdificios: number;
+  Status: string;
+}
+
+export interface CircuitoAbm {
+  ID: number;
+  NroRuta: number;
+  NroCircuito: number;
+  CantidadEdificios: number;
+  Observaciones: string;
+  Status: string;
+}
+
+/** Una fila de DetalleCircuito = un edificio dentro de un circuito. */
+export interface DetalleCircuitoAbm {
+  ID: number;
+  NroCircuito: number;
+  CodigoEdificio: string;
+  Edificio: string;
+  Direccion: string;
+  Horario: string;
+  Encargado: string;
+  ConcatContacto: string;
+  NroCelular: string;
+  MailEdificio: string;
+  Latitud: string;
+  Longitud: string;
+  Observaciones: string;
+  Status: string;
+}
+
+// ── Planificaciones (17.Meses → 15.Resumen → 16.Detalle → 18.EdificiosVisitar) ──
+export interface PlanifMes {
+  ID: number;
+  Mes: string;
+  MesAno: string;
+  RutasTotales: number;
+  TecnicosTotales: number;
+  Status: string;
+}
+/** Una ruta asignada a un técnico en un mes. */
+export interface PlanifRuta {
+  ID: number;
+  Mes: string;
+  MesAno: string;
+  NroRuta: string;
+  Tecnico: string;
+  Circuitos: number;
+  IDUnivocoRuta: string;
+  Status: string;
+  Fecha: string;
+  Hora: string;
+}
+/** Un circuito dentro de una ruta planificada. */
+export interface PlanifCircuito {
+  ID: number;
+  IDUnivocoRuta: string;
+  IDUnivocoCircuito: string;
+  NroRuta: number;
+  NroCircuito: number;
+  CantidadEdificios: number;
+  Tecnico: string;
+  MesAno: string;
+  Mes: string;
+  Observaciones: string;
+  Status: string;
+}
+/** Un edificio a visitar en un circuito planificado (18.EdificiosVisitar). */
+export interface PlanifEdificio {
+  ID: number;
+  Edificio: string;
+  Codigo: string;
+  Direccion: string;
+  Tecnico: string;
+  Estado: string; // Pendiente | Visitado
+  NroCircuito: string;
+  NroRuta: string;
+  MesAno: string;
+  IDUnivocoCircuito: string;
+  IDUnivocoRuta: string;
+  Encargado: string;
+  Celular: string;
+  Mail: string;
+  HoraSugerida: string;
+  Observacion: string;
+}
+
+/** Edificio del master (ABM.Edificios) con contacto/geo + grupo/frecuencia de ventilación. */
+export interface EdificioAbm {
+  ID: number;
+  Edificio: string;
+  Codigo: string;
+  Direccion: string;
+  Horario: string;
+  Encargado: string;
+  Celular: string;
+  Correo: string;
+  Latitud: string;
+  Longitud: string;
+  Observaciones: string;
+  Grupo: string;
+  Frecuencia: string;
 }
 
 // 99.ABM_Frecuencias

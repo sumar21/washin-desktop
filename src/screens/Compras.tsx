@@ -8,6 +8,9 @@ import {
   Plus,
   HelpCircle,
   AlertCircle,
+  X,
+  Check,
+  CalendarDays,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
@@ -22,11 +25,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
+import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
 import { EditCompraForm } from '@/components/EditCompraForm';
+import { estadoOptions, last12MesesOptions } from '@/lib/filters';
 import { cn, tipoLabel } from '@/lib/utils';
 import type { DetalleCompra, PedidoCompra, StockCatalogItem } from '@/types/domain';
 import type { ReceiveLine } from '@/services/api';
+
+/** Orden canónico de los estados de un pedido de compra (para el filtro). */
+const ESTADO_ORDEN_PC = ['Pendiente', 'En Aprobacion', 'Aprobada', 'Recibida', 'Rechazada', 'Anulado'];
 
 interface ComposeLine {
   catalogId: number;
@@ -54,6 +64,12 @@ export function Compras() {
   const anularCompra = useAppStore((s) => s.anularCompra);
 
   const [query, setQuery] = useState('');
+  // Período (mes a ver) — vive en el header y dispara el fetch. Default: mes actual.
+  const periodoOpts = useMemo(() => last12MesesOptions(), []);
+  const [periodo, setPeriodo] = useState<string>(() => periodoOpts[0].value);
+  // Filtros multi-select: array vacío = "todos".
+  const [filterEstados, setFilterEstados] = useState<string[]>([]);
+  const [filterSegmentos, setFilterSegmentos] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
   const [viewing, setViewing] = useState<PedidoCompra | null>(null);
   const [editing, setEditing] = useState<PedidoCompra | null>(null);
@@ -65,13 +81,19 @@ export function Compras() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
+  const load = useCallback((mes?: string) => {
     setLoading(true);
     setLoadError(null);
-    return Promise.all([fetchCompras(), fetchCatalog()])
+    return Promise.all([fetchCompras(mes), fetchCatalog()])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar las compras.'))
       .finally(() => setLoading(false));
   }, [fetchCompras, fetchCatalog]);
+
+  // Cambio de período: recarga ese mes desde SharePoint (con todos sus estados).
+  const onPeriodoChange = (v: string) => {
+    setPeriodo(v);
+    load(v);
+  };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; el botón "Reintentar" también dispara load().
@@ -79,10 +101,24 @@ export function Compras() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar.
   }, []);
 
+  // Estado: mostramos SIEMPRE el set canónico (aunque no haya datos cargados) + cualquier
+  // valor extra presente en los datos, así el filtro nunca queda en "Sin opciones".
+  const estadoOpts = useMemo(
+    () => estadoOptions([...ESTADO_ORDEN_PC, ...pedidos.map((p) => p.Status_PC)], ESTADO_ORDEN_PC),
+    [pedidos]
+  );
+  // Segmento: opciones canónicas del catálogo (siempre disponibles) etiquetadas legibles.
+  const segmentoOpts = useMemo<MultiOption[]>(
+    () => segmentos.map((s) => ({ value: s, label: tipoLabel(s) })),
+    [segmentos]
+  );
+
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return [...pedidos]
       .sort((a, b) => b.ID - a.ID)
+      .filter((p) => filterEstados.length === 0 || filterEstados.includes(p.Status_PC))
+      .filter((p) => filterSegmentos.length === 0 || filterSegmentos.includes(p.Segmento_PC))
       .filter(
         (p) =>
           String(p.ID).includes(q) ||
@@ -90,7 +126,9 @@ export function Compras() {
           p.Status_PC.toLowerCase().includes(q) ||
           p.Segmento_PC.toLowerCase().includes(q)
       );
-  }, [pedidos, query]);
+  }, [pedidos, query, filterEstados, filterSegmentos]);
+
+  const activeFilters = filterEstados.length + filterSegmentos.length;
 
   const detallesDe = (pedido: PedidoCompra): DetalleCompra[] =>
     detalles.filter((d) => d.IDCompra_DC === pedido.IDUnivoco_PC);
@@ -193,6 +231,33 @@ export function Compras() {
         title="Compras"
         subtitle="Pedidos de compra del mes"
         search={{ value: query, onChange: setQuery, placeholder: 'Buscar ID, fecha o estado' }}
+        toolbarExtra={
+          <Select value={periodo} onValueChange={onPeriodoChange} disabled={loading}>
+            <SelectTrigger className="h-9 w-[130px] shrink-0 bg-wash-canvas text-[13px] ring-wash-border sm:w-[150px]">
+              <CalendarDays size={13} className="shrink-0 text-wash-text-muted" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-[320px]">
+              {periodoOpts.map((p) => (
+                <SelectItem key={p.value} value={p.value}>
+                  {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+        filterPopover={
+          <FilterContent
+            estadoOpts={estadoOpts}
+            segmentoOpts={segmentoOpts}
+            estados={filterEstados}
+            segmentos={filterSegmentos}
+            onApply={({ estados, segmentos: segs }) => {
+              setFilterEstados(estados);
+              setFilterSegmentos(segs);
+            }}
+          />
+        }
         onAdd={() => setNewOpen(true)}
         addLabel="Crear compra"
       />
@@ -201,9 +266,123 @@ export function Compras() {
       {loadError ? (
         <ErrorState message={loadError} onRetry={load} />
       ) : (
-        <div className="flex-1 overflow-hidden p-6">
-          <DataTable rows={filtered} rowKey={(r) => r.ID} columns={columns} empty="Sin pedidos este mes" />
+        <>
+        {activeFilters > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-4 py-2 text-xs text-wash-text-muted md:px-6">
+            <span className="font-semibold uppercase tracking-wider">
+              Filtro{activeFilters === 1 ? '' : 's'} activo{activeFilters === 1 ? '' : 's'}:
+            </span>
+            {filterEstados.map((e) => (
+              <FilterChip
+                key={`e-${e}`}
+                label={e}
+                onRemove={() => setFilterEstados((prev) => prev.filter((x) => x !== e))}
+              />
+            ))}
+            {filterSegmentos.map((s) => (
+              <FilterChip
+                key={`s-${s}`}
+                label={tipoLabel(s)}
+                onRemove={() => setFilterSegmentos((prev) => prev.filter((x) => x !== s))}
+              />
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setFilterEstados([]);
+                setFilterSegmentos([]);
+              }}
+              className="ml-auto text-wash-text-muted hover:text-wash-text-strong"
+            >
+              Limpiar todo
+            </button>
+          </div>
+        )}
+        <div className="flex-1 overflow-hidden p-3 md:p-6">
+          <DataTable
+            rows={filtered}
+            rowKey={(r) => r.ID}
+            columns={columns}
+            empty="Sin pedidos este mes"
+            mobileCard={(r) => (
+              <div className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
+                {/* Fila 1: #ID + estado + acciones (mismas que la columna Acciones) */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="font-mono text-[12px] font-bold text-wash-text-strong">#{r.ID}</span>
+                    <StatusBadge status={r.Status_PC} />
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <ActionButton
+                      icon={Eye}
+                      tone="neutral"
+                      title="Ver detalle"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setViewing(r);
+                      }}
+                    />
+                    {r.Status_PC === 'Pendiente' && (
+                      <>
+                        <ActionButton
+                          icon={Pencil}
+                          tone="brand"
+                          title="Editar"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditing(r);
+                          }}
+                        />
+                        <ActionButton
+                          icon={SendHorizonal}
+                          tone="violet"
+                          title="Mandar a aprobar"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEnviando(r);
+                          }}
+                        />
+                        <ActionButton
+                          icon={Trash2}
+                          tone="danger"
+                          title="Anular"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAnulando(r);
+                          }}
+                        />
+                      </>
+                    )}
+                    {r.Status_PC === 'Aprobada' && (
+                      <ActionButton
+                        icon={PackageCheck}
+                        tone="emerald"
+                        title="Recibir mercadería"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRecibiendo(r);
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+                {/* Fila 2: segmento + fecha */}
+                <div className="mt-2 min-w-0">
+                  <p className="truncate text-[13.5px] font-semibold text-wash-text-strong">{tipoLabel(r.Segmento_PC)}</p>
+                  <p className="mt-0.5 truncate text-[11.5px] text-wash-text-muted">{r.Fecha_PC}</p>
+                </div>
+                {/* Fila 3: cantidad + observaciones */}
+                <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-wash-divider/60 pt-2 text-[11.5px] text-wash-text-muted">
+                  <span className="shrink-0">
+                    Cant. <span className="font-bold tabular-nums text-wash-text-strong">{r.Cantidad_PC}</span>
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-right">{r.Observaciones_PC ?? '—'}</span>
+                </div>
+              </div>
+            )}
+          />
         </div>
+        </>
       )}
 
       {/* Nueva compra */}
@@ -394,6 +573,108 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
 function Label({ children }: { children: React.ReactNode }) {
   return (
     <label className="text-xs font-medium uppercase tracking-wider text-wash-text-muted">{children}</label>
+  );
+}
+
+// ----- Filtro (popover) -----
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="-mr-1 flex h-4 w-4 items-center justify-center rounded-full hover:bg-wash-brand/20"
+        title={`Quitar ${label}`}
+        aria-label={`Quitar filtro ${label}`}
+      >
+        <X size={10} strokeWidth={2.5} />
+      </button>
+    </span>
+  );
+}
+
+function FilterContent({
+  estadoOpts,
+  segmentoOpts,
+  estados,
+  segmentos,
+  onApply,
+}: {
+  estadoOpts: MultiOption[];
+  segmentoOpts: MultiOption[];
+  estados: string[];
+  segmentos: string[];
+  onApply: (next: { estados: string[]; segmentos: string[] }) => void;
+}) {
+  const [pendingEstados, setPendingEstados] = useState<string[]>(estados);
+  const [pendingSegmentos, setPendingSegmentos] = useState<string[]>(segmentos);
+
+  const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((v) => b.includes(v));
+  const dirty = !sameSet(pendingEstados, estados) || !sameSet(pendingSegmentos, segmentos);
+  const anySelected = pendingEstados.length > 0 || pendingSegmentos.length > 0;
+
+  const toggle = (setter: React.Dispatch<React.SetStateAction<string[]>>) => (v: string) =>
+    setter((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between border-b border-wash-border pb-2.5">
+        <h3 className="text-sm font-bold text-wash-text-strong">Filtrar</h3>
+        {anySelected && (
+          <button
+            type="button"
+            onClick={() => {
+              setPendingEstados([]);
+              setPendingSegmentos([]);
+            }}
+            className="text-[11px] font-semibold text-wash-text-muted hover:text-wash-text-strong"
+          >
+            Limpiar
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <MultiSelect
+          label="Estado"
+          options={estadoOpts}
+          selected={pendingEstados}
+          onToggle={toggle(setPendingEstados)}
+          onClear={() => setPendingEstados([])}
+        />
+        <MultiSelect
+          label="Segmento"
+          options={segmentoOpts}
+          selected={pendingSegmentos}
+          onToggle={toggle(setPendingSegmentos)}
+          onClear={() => setPendingSegmentos([])}
+          searchable={segmentoOpts.length > 8}
+        />
+      </div>
+
+      <div className="mt-4 flex justify-end gap-2 border-t border-wash-border pt-3">
+        <PopoverClose asChild>
+          <button
+            type="button"
+            className="rounded-lg border border-wash-border px-4 py-2 text-[12.5px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          >
+            Cancelar
+          </button>
+        </PopoverClose>
+        <PopoverClose asChild>
+          <button
+            type="button"
+            disabled={!dirty}
+            onClick={() => onApply({ estados: pendingEstados, segmentos: pendingSegmentos })}
+            className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Aplicar
+          </button>
+        </PopoverClose>
+      </div>
+    </div>
   );
 }
 
@@ -598,7 +879,10 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
   const [qty, setQty] = useState('1');
   const [obs, setObs] = useState('');
   const [lines, setLines] = useState<ComposeLine[]>([]);
+  // Edición inline sobre la fila (no en el form de arriba): índice + borradores de la fila.
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [rowItemId, setRowItemId] = useState<number | ''>('');
+  const [rowQty, setRowQty] = useState('1');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -609,6 +893,17 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
   // Segmentos "simples" sin catálogo de items (Cargadora/Expendedora/Encendedora): item genérico " - ".
   const segmentHasItems = itemsForSegment.length > 0;
 
+  // Opciones para el Combobox de item (lista grande, buscable). Bindea por ID único.
+  const itemOptions = useMemo<ComboboxOption[]>(
+    () =>
+      itemsForSegment.map((c) => ({
+        value: String(c.ID),
+        label: c.Item,
+        sublabel: [c.Codigo, c.Marca].filter(Boolean).join(' · ') || undefined,
+      })),
+    [itemsForSegment]
+  );
+
   const reset = () => {
     setSegment('');
     setSelectedCatalogId('');
@@ -616,6 +911,8 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
     setObs('');
     setLines([]);
     setEditingIdx(null);
+    setRowItemId('');
+    setRowQty('1');
     setError(null);
   };
 
@@ -624,7 +921,7 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
     onClose();
   };
 
-  const handleAddOrUpdate = () => {
+  const handleAdd = () => {
     if (!segment || Number(qty) <= 0) return;
     let newLine: ComposeLine;
     if (segmentHasItems) {
@@ -636,27 +933,38 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
       // Segmento sin items: una sola línea con item placeholder " - ".
       newLine = { catalogId: -1, item: ' - ', qty: Number(qty) };
     }
-    if (editingIdx !== null) {
-      setLines((arr) => arr.map((l, i) => (i === editingIdx ? newLine : l)));
-      setEditingIdx(null);
-    } else {
-      setLines((arr) => [...arr, newLine]);
-    }
+    setLines((arr) => [...arr, newLine]);
     setSelectedCatalogId('');
     setQty('1');
   };
 
+  // --- Edición inline de una fila ya agregada ---
   const startEdit = (idx: number) => {
     const line = lines[idx];
-    setSelectedCatalogId(line.catalogId > 0 ? line.catalogId : '');
-    setQty(String(line.qty));
+    setRowItemId(line.catalogId > 0 ? line.catalogId : '');
+    setRowQty(String(line.qty));
     setEditingIdx(idx);
   };
 
   const cancelEdit = () => {
-    setSelectedCatalogId('');
-    setQty('1');
     setEditingIdx(null);
+    setRowItemId('');
+    setRowQty('1');
+  };
+
+  const saveEdit = () => {
+    if (editingIdx === null || Number(rowQty) <= 0) return;
+    let updated: ComposeLine;
+    if (segmentHasItems) {
+      if (!rowItemId) return;
+      const cat = catalog.find((c) => c.ID === rowItemId);
+      if (!cat) return;
+      updated = { catalogId: cat.ID, item: cat.Item, marca: cat.Marca, codigo: cat.Codigo, qty: Number(rowQty) };
+    } else {
+      updated = { catalogId: -1, item: ' - ', qty: Number(rowQty) };
+    }
+    setLines((arr) => arr.map((l, i) => (i === editingIdx ? updated : l)));
+    cancelEdit();
   };
 
   const removeLine = (idx: number) => {
@@ -665,6 +973,7 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
   };
 
   const canAdd = !!segment && (!segmentHasItems || !!selectedCatalogId) && Number(qty) > 0;
+  const canSaveRow = Number(rowQty) > 0 && (!segmentHasItems || !!rowItemId);
   const canSubmit = !!segment && lines.length > 0;
 
   return (
@@ -707,38 +1016,23 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
 
           <div>
             <Label>Item</Label>
-            <Select
-              value={selectedCatalogId ? String(selectedCatalogId) : undefined}
-              onValueChange={(value) => setSelectedCatalogId(value ? Number(value) : '')}
-              disabled={!segment || !segmentHasItems}
-            >
-              <SelectTrigger className="mt-1.5 h-10 w-full">
-                <SelectValue
-                  placeholder={
-                    !segment
-                      ? 'Elegí un segmento primero'
-                      : segmentHasItems
-                        ? 'Seleccionar item…'
-                        : 'Sin items (se agrega directo)'
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {itemsForSegment.map((c) => (
-                  <SelectItem key={c.ID} value={String(c.ID)}>
-                    <span className="flex w-full items-center gap-2">
-                      {c.Codigo && (
-                        <span className="rounded bg-wash-surface-2 px-1.5 py-0.5 text-[10.5px] font-semibold text-wash-text">
-                          {c.Codigo}
-                        </span>
-                      )}
-                      <span className="font-medium text-wash-text-strong">{c.Item}</span>
-                      {c.Marca && <span className="ml-auto text-xs text-wash-text-muted">{c.Marca}</span>}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="mt-1.5">
+              <Combobox
+                options={itemOptions}
+                value={selectedCatalogId ? String(selectedCatalogId) : null}
+                onChange={(value) => setSelectedCatalogId(value ? Number(value) : '')}
+                disabled={!segment || !segmentHasItems}
+                placeholder={
+                  !segment
+                    ? 'Elegí un segmento primero'
+                    : segmentHasItems
+                      ? 'Seleccionar item…'
+                      : 'Sin items (se agrega directo)'
+                }
+                searchPlaceholder="Buscar item o código…"
+                emptyText="Sin items para este segmento"
+              />
+            </div>
           </div>
 
           <div>
@@ -754,16 +1048,15 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
 
           <button
             type="button"
-            onClick={handleAddOrUpdate}
+            onClick={handleAdd}
             disabled={!canAdd}
-            title={editingIdx !== null ? 'Actualizar línea' : 'Agregar línea'}
+            title="Agregar línea"
             className={cn(
-              'mt-[22px] flex h-[42px] w-[42px] items-center justify-center rounded-lg text-white shadow-sm transition',
-              editingIdx !== null ? 'bg-amber-500 hover:bg-amber-600' : 'bg-wash-action hover:bg-wash-action-dark',
+              'mt-[22px] flex h-[42px] w-[42px] items-center justify-center rounded-lg bg-wash-action text-white shadow-sm transition hover:bg-wash-action-dark',
               !canAdd && 'cursor-not-allowed opacity-50'
             )}
           >
-            {editingIdx !== null ? <Pencil size={16} /> : <Plus size={18} />}
+            <Plus size={18} />
           </button>
         </div>
 
@@ -787,41 +1080,91 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
               <EmptyComposeList />
             ) : (
               <ul className="space-y-1.5">
-                {lines.map((l, idx) => (
-                  <li
-                    key={idx}
-                    className={cn(
-                      'flex items-center gap-3 rounded-lg bg-wash-surface px-3 py-2 ring-1 ring-wash-border transition',
-                      editingIdx === idx && 'ring-2 ring-amber-400'
-                    )}
-                  >
-                    <span className="flex h-8 min-w-[34px] items-center justify-center rounded-md bg-wash-action px-2 text-sm font-bold text-white shadow-sm tabular-nums">
-                      {l.qty}
-                    </span>
-                    <div className="min-w-0 flex-1 truncate text-[13px] font-semibold text-wash-text-strong">
-                      {l.item}
-                      {l.marca ? <span className="ml-2 text-[11px] font-normal text-wash-text-muted">{l.marca}</span> : ''}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => startEdit(idx)}
-                      title="Editar"
-                      aria-label="Editar línea"
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-wash-text-muted ring-1 ring-wash-border transition hover:bg-amber-500/10 hover:text-amber-600 hover:ring-amber-500"
+                {lines.map((l, idx) =>
+                  editingIdx === idx ? (
+                    // Editor INLINE sobre la propia fila (no en el form de arriba).
+                    <li
+                      key={idx}
+                      className="flex flex-wrap items-end gap-2 rounded-lg bg-wash-surface px-3 py-2.5 ring-2 ring-amber-400"
                     >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeLine(idx)}
-                      title="Eliminar"
-                      aria-label="Eliminar línea"
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-rose-600 ring-1 ring-rose-500/30 transition hover:bg-rose-500/10 hover:ring-rose-500"
+                      {segmentHasItems && (
+                        <div className="min-w-[200px] flex-1">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">Item</span>
+                          <div className="mt-1">
+                            <Combobox
+                              options={itemOptions}
+                              value={rowItemId ? String(rowItemId) : null}
+                              onChange={(value) => setRowItemId(value ? Number(value) : '')}
+                              placeholder="Seleccionar item…"
+                              searchPlaceholder="Buscar item o código…"
+                              emptyText="Sin items"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      <div className="w-[84px]">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">Cant.</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={rowQty}
+                          onChange={(e) => setRowQty(e.target.value)}
+                          className="mt-1 h-10 w-full rounded-lg border border-wash-border bg-wash-surface px-2 text-center text-sm font-bold tabular-nums outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={saveEdit}
+                        disabled={!canSaveRow}
+                        title="Guardar cambios"
+                        aria-label="Guardar cambios de la línea"
+                        className="flex h-10 w-9 items-center justify-center rounded-md bg-wash-action text-white transition hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Check size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        title="Cancelar"
+                        aria-label="Cancelar edición"
+                        className="flex h-10 w-9 items-center justify-center rounded-md text-wash-text-muted ring-1 ring-wash-border transition hover:bg-wash-surface-2"
+                      >
+                        <X size={16} />
+                      </button>
+                    </li>
+                  ) : (
+                    <li
+                      key={idx}
+                      className="flex items-center gap-3 rounded-lg bg-wash-surface px-3 py-2 ring-1 ring-wash-border transition"
                     >
-                      <Trash2 size={13} />
-                    </button>
-                  </li>
-                ))}
+                      <span className="flex h-8 min-w-[34px] items-center justify-center rounded-md bg-wash-action px-2 text-sm font-bold text-white shadow-sm tabular-nums">
+                        {l.qty}
+                      </span>
+                      <div className="min-w-0 flex-1 truncate text-[13px] font-semibold text-wash-text-strong">
+                        {l.item}
+                        {l.marca ? <span className="ml-2 text-[11px] font-normal text-wash-text-muted">{l.marca}</span> : ''}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(idx)}
+                        title="Editar"
+                        aria-label="Editar línea"
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-wash-text-muted ring-1 ring-wash-border transition hover:bg-amber-500/10 hover:text-amber-600 hover:ring-amber-500"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeLine(idx)}
+                        title="Eliminar"
+                        aria-label="Eliminar línea"
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-rose-600 ring-1 ring-rose-500/30 transition hover:bg-rose-500/10 hover:ring-rose-500"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </li>
+                  )
+                )}
               </ul>
             )}
           </div>

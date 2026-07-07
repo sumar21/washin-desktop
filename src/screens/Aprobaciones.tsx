@@ -18,11 +18,16 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
 import { PopoverClose } from '@/components/ui/popover';
+import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
 import { useAppStore } from '@/store/useAppStore';
+import { estadoOptions, last12MesesOptions } from '@/lib/filters';
 import { cn } from '@/lib/utils';
 import type { Aprobacion } from '@/types/domain';
 
 type TipoAprobacion = Aprobacion['TipoAprobacion_AP'];
+
+/** Orden canónico de los estados de una aprobación (para el filtro). */
+const ESTADO_ORDEN_AP = ['En Aprobacion', 'Aprobada', 'Rechazada'];
 
 const tipoMeta: Record<TipoAprobacion, { icon: typeof ShoppingCart; tone: string }> = {
   Compra: { icon: ShoppingCart, tone: 'bg-sky-100 text-sky-800 ring-sky-300/70' },
@@ -40,7 +45,10 @@ export function Aprobaciones() {
   const rejectAprobacion = useAppStore((s) => s.rejectAprobacion);
 
   const [query, setQuery] = useState('');
+  // Filtros multi-select: array vacío = "todos".
   const [filterTipos, setFilterTipos] = useState<TipoAprobacion[]>([]);
+  const [filterEstados, setFilterEstados] = useState<string[]>([]);
+  const [filterMesAnos, setFilterMesAnos] = useState<string[]>([]);
   const [viewing, setViewing] = useState<Aprobacion | null>(null);
   const [approving, setApproving] = useState<Aprobacion | null>(null);
   const [rejecting, setRejecting] = useState<Aprobacion | null>(null);
@@ -65,17 +73,29 @@ export function Aprobaciones() {
   const toggleTipo = (t: TipoAprobacion) =>
     setFilterTipos((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
 
+  // Estado canónico siempre presente + valores extra de los datos (nunca "Sin opciones").
+  const estadoOpts = useMemo(
+    () => estadoOptions([...ESTADO_ORDEN_AP, ...aprobaciones.map((a) => a.Status_AP)], ESTADO_ORDEN_AP),
+    [aprobaciones]
+  );
+  const mesAnoOpts = useMemo(() => last12MesesOptions(), []);
+
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return aprobaciones
-      .filter((a) => (filterTipos.length === 0 ? true : filterTipos.includes(a.TipoAprobacion_AP)))
+      .filter((a) => filterTipos.length === 0 || filterTipos.includes(a.TipoAprobacion_AP))
+      .filter((a) => filterEstados.length === 0 || filterEstados.includes(a.Status_AP))
+      .filter((a) => filterMesAnos.length === 0 || filterMesAnos.includes(a.FechaMesAnoGen_AP))
       .filter(
         (a) =>
           a.TipoAprobacion_AP.toLowerCase().includes(q) ||
           a.ConcatAprobacion_AP.toLowerCase().includes(q) ||
           a.Status_AP.toLowerCase().includes(q)
       );
-  }, [aprobaciones, query, filterTipos]);
+  }, [aprobaciones, query, filterTipos, filterEstados, filterMesAnos]);
+
+  const mesAnoLabel = (v: string) => mesAnoOpts.find((o) => o.value === v)?.label ?? v;
+  const activeFilters = filterTipos.length + filterEstados.length + filterMesAnos.length;
 
   const countByTipo = useMemo(() => {
     const map: Record<string, number> = {};
@@ -179,7 +199,20 @@ export function Aprobaciones() {
         title="Aprobaciones"
         subtitle="Solicitudes pendientes de revisión"
         search={{ value: query, onChange: setQuery, placeholder: 'Buscar tipo o descripción…' }}
-        filterPopover={<FilterContent tipos={filterTipos} onApply={setFilterTipos} />}
+        filterPopover={
+          <FilterContent
+            tipos={filterTipos}
+            estadoOpts={estadoOpts}
+            mesAnoOpts={mesAnoOpts}
+            estados={filterEstados}
+            mesAnos={filterMesAnos}
+            onApply={({ tipos, estados, mesAnos }) => {
+              setFilterTipos(tipos);
+              setFilterEstados(estados);
+              setFilterMesAnos(mesAnos);
+            }}
+          />
+        }
       />
       <LoadingOverlay visible={loading} label="Cargando aprobaciones…" />
 
@@ -188,7 +221,7 @@ export function Aprobaciones() {
       ) : (
         <>
           {/* KPI strip */}
-          <div className="grid grid-cols-4 gap-3 border-b border-wash-border bg-wash-surface px-6 py-4">
+          <div className="grid grid-cols-2 gap-3 border-b border-wash-border bg-wash-surface px-4 py-3 md:px-6 md:py-4 lg:grid-cols-4">
             <CounterCard
               icon={ClipboardList}
               label="Pendientes totales"
@@ -216,31 +249,35 @@ export function Aprobaciones() {
           </div>
 
           {/* Active filter chips */}
-          {filterTipos.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
+          {activeFilters > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-4 py-2 text-xs text-wash-text-muted md:px-6">
               <span className="font-semibold uppercase tracking-wider">
-                Filtro{filterTipos.length === 1 ? '' : 's'} activo{filterTipos.length === 1 ? '' : 's'}:
+                Filtro{activeFilters === 1 ? '' : 's'} activo{activeFilters === 1 ? '' : 's'}:
               </span>
               {filterTipos.map((t) => (
-                <span
-                  key={t}
-                  className="inline-flex items-center gap-1 rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand"
-                >
-                  {t}
-                  <button
-                    type="button"
-                    onClick={() => toggleTipo(t)}
-                    className="-mr-1 flex h-4 w-4 items-center justify-center rounded-full hover:bg-wash-brand/20"
-                    title={`Quitar ${t}`}
-                    aria-label={`Quitar filtro ${t}`}
-                  >
-                    <X size={10} strokeWidth={2.5} />
-                  </button>
-                </span>
+                <FilterChip key={`t-${t}`} label={t} onRemove={() => toggleTipo(t)} />
+              ))}
+              {filterEstados.map((e) => (
+                <FilterChip
+                  key={`e-${e}`}
+                  label={e}
+                  onRemove={() => setFilterEstados((prev) => prev.filter((x) => x !== e))}
+                />
+              ))}
+              {filterMesAnos.map((m) => (
+                <FilterChip
+                  key={`m-${m}`}
+                  label={mesAnoLabel(m)}
+                  onRemove={() => setFilterMesAnos((prev) => prev.filter((x) => x !== m))}
+                />
               ))}
               <button
                 type="button"
-                onClick={() => setFilterTipos([])}
+                onClick={() => {
+                  setFilterTipos([]);
+                  setFilterEstados([]);
+                  setFilterMesAnos([]);
+                }}
                 className="ml-auto text-wash-text-muted hover:text-wash-text-strong"
               >
                 Limpiar todo
@@ -248,11 +285,82 @@ export function Aprobaciones() {
             </div>
           )}
 
-          <div className="flex-1 overflow-hidden p-6">
+          <div className="flex-1 overflow-hidden p-3 md:p-6">
             <DataTable
               rows={filtered}
               rowKey={(r) => r.ID}
               columns={columns}
+              mobileCard={(a) => {
+                const meta = tipoMeta[a.TipoAprobacion_AP];
+                const Icon = meta.icon;
+                const canApprove =
+                  a.TipoAprobacion_AP === 'Compra' || a.TipoAprobacion_AP === 'Transferencia de Maquina';
+                return (
+                  <div className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
+                    {/* Fila 1: tipo + estado + acciones */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide ring-1',
+                            meta.tone
+                          )}
+                        >
+                          <Icon size={9} />
+                          <span className="truncate">{a.TipoAprobacion_AP}</span>
+                        </span>
+                        <StatusBadge status={a.Status_AP} />
+                      </div>
+                      <div className="flex shrink-0 gap-1.5">
+                        <ActionButton
+                          icon={Eye}
+                          tone="neutral"
+                          title="Ver detalle"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewing(a);
+                          }}
+                        />
+                        <ActionButton
+                          icon={Check}
+                          tone="approve"
+                          title={canApprove ? 'Aprobar' : 'Se gestiona desde el módulo de Incidentes'}
+                          disabled={!canApprove}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setApproving(a);
+                          }}
+                        />
+                        <ActionButton
+                          icon={X}
+                          tone="reject"
+                          title="Rechazar"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRejecting(a);
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {/* Fila 2: descripción */}
+                    <div className="mt-2 min-w-0">
+                      <p className="truncate text-[13.5px] font-semibold text-wash-text-strong">
+                        {a.ConcatAprobacion_AP}
+                      </p>
+                    </div>
+                    {/* Fila 3: fecha gen. + #ID */}
+                    <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-wash-divider/60 pt-2 text-[11.5px] text-wash-text-muted">
+                      <span className="inline-flex shrink-0 items-center gap-1">
+                        <Clock size={11} />
+                        {a.FechaGen_AP}
+                      </span>
+                      <span className="shrink-0 rounded bg-wash-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-wash-text">
+                        #{a.ID}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }}
               empty={
                 <div className="flex flex-col items-center justify-center text-center">
                   <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20">
@@ -260,9 +368,9 @@ export function Aprobaciones() {
                   </div>
                   <p className="text-sm font-semibold text-wash-text-strong">Sin aprobaciones pendientes</p>
                   <p className="mt-1 text-xs text-wash-text-muted">
-                    {filterTipos.length === 0
+                    {activeFilters === 0
                       ? 'Todas las solicitudes fueron resueltas.'
-                      : 'No hay solicitudes de los tipos seleccionados.'}
+                      : 'No hay solicitudes que coincidan con los filtros.'}
                   </p>
                 </div>
               }
@@ -548,26 +656,64 @@ function CompraDetail({
 
 // ----- filter popover -----
 
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="-mr-1 flex h-4 w-4 items-center justify-center rounded-full hover:bg-wash-brand/20"
+        title={`Quitar ${label}`}
+        aria-label={`Quitar filtro ${label}`}
+      >
+        <X size={10} strokeWidth={2.5} />
+      </button>
+    </span>
+  );
+}
+
 function FilterContent({
   tipos,
+  estadoOpts,
+  mesAnoOpts,
+  estados,
+  mesAnos,
   onApply,
 }: {
   tipos: TipoAprobacion[];
-  onApply: (tipos: TipoAprobacion[]) => void;
+  estadoOpts: MultiOption[];
+  mesAnoOpts: MultiOption[];
+  estados: string[];
+  mesAnos: string[];
+  onApply: (next: { tipos: TipoAprobacion[]; estados: string[]; mesAnos: string[] }) => void;
 }) {
-  const [pending, setPending] = useState<TipoAprobacion[]>(tipos);
-  const dirty = pending.length !== tipos.length || pending.some((t) => !tipos.includes(t));
-  const toggle = (t: TipoAprobacion) =>
-    setPending((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  const [pendingTipos, setPendingTipos] = useState<TipoAprobacion[]>(tipos);
+  const [pendingEstados, setPendingEstados] = useState<string[]>(estados);
+  const [pendingMesAnos, setPendingMesAnos] = useState<string[]>(mesAnos);
+
+  const sameSet = <T,>(a: T[], b: T[]) => a.length === b.length && a.every((v) => b.includes(v));
+  const dirty =
+    !sameSet(pendingTipos, tipos) || !sameSet(pendingEstados, estados) || !sameSet(pendingMesAnos, mesAnos);
+  const anySelected = pendingTipos.length > 0 || pendingEstados.length > 0 || pendingMesAnos.length > 0;
+
+  const toggleTipo = (t: TipoAprobacion) =>
+    setPendingTipos((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  const toggle = (setter: React.Dispatch<React.SetStateAction<string[]>>) => (v: string) =>
+    setter((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
 
   return (
     <div>
       <div className="mb-3 flex items-center justify-between border-b border-wash-border pb-2.5">
-        <h3 className="text-sm font-bold text-wash-text-strong">Filtrar por tipo</h3>
-        {pending.length > 0 && (
+        <h3 className="text-sm font-bold text-wash-text-strong">Filtrar</h3>
+        {anySelected && (
           <button
             type="button"
-            onClick={() => setPending([])}
+            onClick={() => {
+              setPendingTipos([]);
+              setPendingEstados([]);
+              setPendingMesAnos([]);
+            }}
             className="text-[11px] font-semibold text-wash-text-muted hover:text-wash-text-strong"
           >
             Limpiar
@@ -575,40 +721,29 @@ function FilterContent({
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        {TIPOS.map((t) => {
-          const meta = tipoMeta[t];
-          const Icon = meta.icon;
-          const active = pending.includes(t);
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => toggle(t)}
-              className={cn(
-                'group flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition',
-                active
-                  ? 'border-wash-brand bg-wash-brand/5 text-wash-brand ring-2 ring-wash-brand/20'
-                  : 'border-wash-border text-wash-text-strong hover:border-wash-brand/40 hover:bg-wash-surface-2'
-              )}
-            >
-              <span className={cn('flex h-7 w-7 items-center justify-center rounded-md ring-1', meta.tone)}>
-                <Icon size={13} />
-              </span>
-              <span className="flex-1 truncate">{t}</span>
-              <span
-                className={cn(
-                  'flex h-4 w-4 shrink-0 items-center justify-center rounded transition',
-                  active
-                    ? 'bg-wash-brand text-white ring-1 ring-wash-brand'
-                    : 'bg-wash-surface text-transparent ring-1 ring-wash-border group-hover:ring-wash-brand/40'
-                )}
-              >
-                <Check size={10} strokeWidth={3} />
-              </span>
-            </button>
-          );
-        })}
+      <div className="space-y-2">
+        <MultiSelect
+          label="Mes / Año"
+          options={mesAnoOpts}
+          selected={pendingMesAnos}
+          onToggle={toggle(setPendingMesAnos)}
+          onClear={() => setPendingMesAnos([])}
+          searchable={mesAnoOpts.length > 8}
+        />
+        <MultiSelect
+          label="Estado"
+          options={estadoOpts}
+          selected={pendingEstados}
+          onToggle={toggle(setPendingEstados)}
+          onClear={() => setPendingEstados([])}
+        />
+        <MultiSelect
+          label="Tipo"
+          options={TIPOS.map((t) => ({ value: t, label: t }))}
+          selected={pendingTipos}
+          onToggle={(v) => toggleTipo(v as TipoAprobacion)}
+          onClear={() => setPendingTipos([])}
+        />
       </div>
 
       <div className="mt-4 flex justify-end gap-2 border-t border-wash-border pt-3">
@@ -624,7 +759,7 @@ function FilterContent({
           <button
             type="button"
             disabled={!dirty}
-            onClick={() => onApply(pending)}
+            onClick={() => onApply({ tipos: pendingTipos, estados: pendingEstados, mesAnos: pendingMesAnos })}
             className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
             Aplicar

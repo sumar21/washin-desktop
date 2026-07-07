@@ -12,6 +12,7 @@ import { DetalleMaquina } from '@/screens/DetalleMaquina';
 import { Rutas } from '@/screens/Rutas';
 import { DetallePlanificacion } from '@/screens/DetallePlanificacion';
 import { Ventilaciones } from '@/screens/Ventilaciones';
+import { Metricas } from '@/screens/Metricas';
 import { Configuracion } from '@/screens/Configuracion';
 import { DetalleCircuito } from '@/screens/DetalleCircuito';
 
@@ -31,6 +32,7 @@ export const router = createBrowserRouter([
       { path: '/rutas', element: <Rutas /> },
       { path: '/planificacion/detalle', element: <DetallePlanificacion /> },
       { path: '/ventilaciones', element: <Ventilaciones /> },
+      { path: '/metricas', element: <Metricas /> },
       { path: '/configuracion', element: <Configuracion /> },
       { path: '/configuracion/circuito', element: <DetalleCircuito /> },
     ],

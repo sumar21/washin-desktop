@@ -1,35 +1,38 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Package,
-  ShoppingCart,
+  CalendarCheck,
+  Gauge,
   AlertOctagon,
   Wind,
-  Trash2,
+  Users,
+  Activity,
+  AlertTriangle,
   Building2,
-  CalendarDays,
   Clock,
   User,
   MapPin,
   Inbox,
-  Activity,
-  ClipboardList,
+  Trash2,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Pie,
   PieChart,
   XAxis,
   YAxis,
 } from 'recharts';
 import { useAppStore } from '@/store/useAppStore';
-import { proper, currentMonthName } from '@/lib/utils';
+import { proper, currentMonthName, cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/StatusBadge';
 import { PageHeader } from '@/components/PageHeader';
+import { parseDateString } from '@/components/ui/date-picker';
 import {
   ChartContainer,
   ChartTooltip,
@@ -39,22 +42,54 @@ import {
 import { ConfirmDialog } from '@/components/Modal';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
-import { KpiCard, SectionTitle } from '@/components/dashboard/widgets';
-import { chartColor, CHART_GRID, X_TICK, Y_TICK, AXIS, intFmt } from '@/components/dashboard/shared';
-import type { DetalleCompra, Registro, TipoStock } from '@/types/domain';
+import { KpiCard } from '@/components/dashboard/widgets';
+import { CHART_GRID, X_TICK, AXIS, intFmt } from '@/components/dashboard/shared';
+import type { Registro } from '@/types/domain';
+
+// Una visita cuenta como finalizada si arrancó (Progreso > 0). Fiel a la lógica
+// de la VisitaCard y de la PowerApp: <100 es parcial pero ya "trabajada".
+const visitaFinalizada = (r: Registro) =>
+  (r.Progreso ?? (r.Estado === 'Finalizado' ? 100 : 0)) > 0;
+
+/** Días desde hoy hasta una fecha dd/mm/yyyy (negativo = vencida). null si no parsea. */
+function diasHasta(ddmmyyyy: string): number | null {
+  const d = parseDateString(ddmmyyyy);
+  if (!d) return null;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - hoy.getTime()) / 86_400_000);
+}
+
+function saludo(): string {
+  const h = new Date().getHours();
+  if (h < 13) return 'Buenos días';
+  if (h < 20) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
+interface AttentionItem {
+  id: string;
+  kind: 'incidente' | 'ventilacion';
+  title: string;
+  edificio: string;
+  tag: string;
+  urgent: boolean;
+  sort: number;
+}
 
 export function Home() {
   const CollectResumen = useAppStore((s) => s.CollectResumen);
-  const CollectStock = useAppStore((s) => s.CollectStock);
-  const CollectCompras = useAppStore((s) => s.CollectCompras);
   const CollectIncidentes = useAppStore((s) => s.CollectIncidentes);
   const CollectVentilaciones = useAppStore((s) => s.CollectVentilaciones);
-  const CollectDetalleCompras = useAppStore((s) => s.CollectDetalleCompras);
+  const loggedUser = useAppStore((s) => s.loggedUser);
+  const VarUsuario = useAppStore((s) => s.VarUsuario);
   const removeRegistro = useAppStore((s) => s.removeRegistro);
   const fetchHome = useAppStore((s) => s.fetchHome);
   const fetchStock = useAppStore((s) => s.fetchStock);
   const fetchCompras = useAppStore((s) => s.fetchCompras);
   const fetchIncidentes = useAppStore((s) => s.fetchIncidentes);
+  const fetchVentilaciones = useAppStore((s) => s.fetchVentilaciones);
 
   const [deletingRegistro, setDeletingRegistro] = useState<Registro | null>(null);
   const [homeLoading, setHomeLoading] = useState(true);
@@ -63,16 +98,16 @@ export function Home() {
   const loadHome = useCallback(() => {
     setHomeLoading(true);
     setHomeError(null);
-    // fetchStock/Compras/Incidentes también: los KPIs dependen de esas colecciones y
-    // esta pantalla puede ser la primera en cargar.
-    return Promise.all([fetchHome(), fetchStock(), fetchCompras(), fetchIncidentes()])
+    // fetchStock/Compras/Incidentes/Ventilaciones también: los KPIs dependen de esas
+    // colecciones y esta pantalla puede ser la primera en cargar.
+    return Promise.all([fetchHome(), fetchStock(), fetchCompras(), fetchIncidentes(), fetchVentilaciones()])
       .catch((err) => {
         setHomeError(err instanceof Error ? err.message : 'No se pudo cargar el resumen.');
       })
       .finally(() => {
         setHomeLoading(false);
       });
-  }, [fetchHome, fetchStock, fetchCompras, fetchIncidentes]);
+  }, [fetchHome, fetchStock, fetchCompras, fetchIncidentes, fetchVentilaciones]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; `loadHome` también la dispara el botón "Reintentar".
@@ -80,46 +115,101 @@ export function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar; `loadHome` ya setea su propio loading.
   }, []);
 
-  // KPIs
-  const totalCompras = CollectCompras.length;
-  const totalStock = CollectStock.reduce((s, i) => s + i.Cantidad_ST, 0);
-  const incidentesAbiertos = CollectIncidentes.filter((i) => i.Resuelto_IN === 'NO').length;
-  const ventilacionesPendientes = CollectVentilaciones.filter(
-    (v) => v.Estado_VE !== 'Realizada'
-  ).length;
+  // ── Métricas de visitas del mes (el corazón operativo para el gerente) ──
+  const visitas = useMemo(() => {
+    const total = CollectResumen.length;
+    const finalizadas = CollectResumen.filter(visitaFinalizada).length;
+    const pendientes = total - finalizadas;
+    const tasa = total ? Math.round((finalizadas / total) * 100) : 0;
+    const edificios = new Set(CollectResumen.map((r) => r.Edificio).filter(Boolean)).size;
 
-  // Charts data
-  const comprasPorEstado = useMemo(() => {
-    const estados = ['Pendiente', 'En Aprobacion', 'Aprobada', 'Recibida', 'Rechazada'] as const;
-    return estados.map((e) => ({
-      estado: e,
-      cantidad: CollectDetalleCompras.filter((d) => d.Status_DC === e).length,
-    }));
-  }, [CollectDetalleCompras]);
+    const tecMap = new Map<string, { total: number; finalizadas: number }>();
+    for (const r of CollectResumen) {
+      const t = r.Usuario || '—';
+      const cur = tecMap.get(t) ?? { total: 0, finalizadas: 0 };
+      cur.total += 1;
+      if (visitaFinalizada(r)) cur.finalizadas += 1;
+      tecMap.set(t, cur);
+    }
+    const porTecnico = [...tecMap.entries()]
+      .map(([tecnico, s]) => ({ tecnico: proper(tecnico), total: s.total, finalizadas: s.finalizadas }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 7);
 
-  const stockPorTipo = useMemo(() => {
-    const tipos: TipoStock[] = [
-      'LAVADORA',
-      'SECADORA SIMPLE',
-      'SECADORA DOBLE',
-      'CARGADORA',
-      'EXPENDEDORA',
-      'ENCENDEDORA',
-      'REPUESTO',
-    ];
-    return tipos
-      .map((t) => ({
-        tipo: t,
-        cantidad: CollectStock.filter((s) => s.Tipo_ST === t).reduce(
-          (sum, i) => sum + i.Cantidad_ST,
-          0
-        ),
-      }))
-      .filter((x) => x.cantidad > 0);
-  }, [CollectStock]);
+    return {
+      total,
+      finalizadas,
+      pendientes,
+      tasa,
+      edificios,
+      tecnicos: tecMap.size,
+      porTecnico,
+      porEstado: [
+        { key: 'Finalizadas', value: finalizadas, color: 'var(--color-chart-3)' },
+        { key: 'Pendientes', value: pendientes, color: 'var(--color-chart-4)' },
+      ],
+    };
+  }, [CollectResumen]);
 
-  const comprasChartConfig: ChartConfig = {
-    cantidad: { label: 'Cantidad', color: 'var(--color-wash-brand)' },
+  // ── Incidentes / Ventilaciones que requieren acción ──
+  const incidentesAbiertos = useMemo(
+    () => CollectIncidentes.filter((i) => i.Resuelto_IN === 'NO'),
+    [CollectIncidentes]
+  );
+  const incidentesSinAsignar = useMemo(
+    () => incidentesAbiertos.filter((i) => !i.TecnicoAsignado_IN).length,
+    [incidentesAbiertos]
+  );
+  const ventPendientes = useMemo(
+    () => CollectVentilaciones.filter((v) => v.Estado_VE !== 'Realizada' && v.Estado_VE !== 'Eliminada'),
+    [CollectVentilaciones]
+  );
+  const ventVencidas = useMemo(
+    () =>
+      ventPendientes.filter((v) => {
+        const d = diasHasta(v.ProximaLimpieza_VE);
+        return d != null && d < 0;
+      }),
+    [ventPendientes]
+  );
+
+  const atencion = useMemo<AttentionItem[]>(() => {
+    const items: AttentionItem[] = [];
+    for (const i of incidentesAbiertos) {
+      const asignado = !!i.TecnicoAsignado_IN;
+      items.push({
+        id: `inc-${i.ID}`,
+        kind: 'incidente',
+        title: proper(i.NoResuelto_IN || i.Titulo_IN || 'Incidente'),
+        edificio: i.NombreEdificio_IN,
+        tag: asignado ? proper(i.TecnicoAsignado_IN!) : 'Sin asignar',
+        urgent: !asignado,
+        sort: asignado ? 40 : 10, // sin asignar pesa más
+      });
+    }
+    for (const v of ventVencidas) {
+      const d = Math.abs(diasHasta(v.ProximaLimpieza_VE) ?? 0);
+      items.push({
+        id: `ven-${v.ID}`,
+        kind: 'ventilacion',
+        title: 'Ventilación vencida',
+        edificio: v.Edificio_VE,
+        tag: `${d} d`,
+        urgent: true,
+        sort: -d, // cuanto más vencida, más arriba
+      });
+    }
+    return items.sort((a, b) => a.sort - b.sort).slice(0, 12);
+  }, [incidentesAbiertos, ventVencidas]);
+
+  const nombre = loggedUser?.Nombre?.trim() || (VarUsuario ? proper(VarUsuario) : '');
+
+  const tecnicoConfig: ChartConfig = {
+    total: { label: 'Visitas', color: 'var(--color-wash-brand)' },
+  };
+  const estadoConfig: ChartConfig = {
+    Finalizadas: { label: 'Finalizadas', color: 'var(--color-chart-3)' },
+    Pendientes: { label: 'Pendientes', color: 'var(--color-chart-4)' },
   };
 
   return (
@@ -130,152 +220,250 @@ export function Home() {
       {homeError ? (
         <ErrorState message={homeError} onRetry={loadHome} />
       ) : (
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="grid grid-cols-12 gap-4">
-          {/* KPIs */}
-          <div className="col-span-6 lg:col-span-3">
-            <KpiCard
-              icon={ShoppingCart}
-              label="Compras del mes"
-              value={intFmt(totalCompras)}
-              accent
-              sub={<span>{CollectDetalleCompras.length} items en órdenes</span>}
-            />
-          </div>
-          <div className="col-span-6 lg:col-span-3">
-            <KpiCard
-              icon={Package}
-              label="Stock total"
-              value={intFmt(totalStock)}
-              sub={<span>unidades en depósito</span>}
-            />
-          </div>
-          <div className="col-span-6 lg:col-span-3">
-            <KpiCard
-              icon={AlertOctagon}
-              label="Incidentes abiertos"
-              value={intFmt(incidentesAbiertos)}
-              sub={<span>sin resolver</span>}
-            />
-          </div>
-          <div className="col-span-6 lg:col-span-3">
-            <KpiCard
-              icon={Wind}
-              label="Ventilaciones pend."
-              value={intFmt(ventilacionesPendientes)}
-              sub={<span>por realizar</span>}
-            />
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {/* Bienvenida ejecutiva */}
+          <div className="mb-5 flex flex-col gap-1">
+            <h2 className="font-display text-xl font-bold text-wash-text-strong sm:text-2xl">
+              {saludo()}
+              {nombre ? `, ${nombre}` : ''}
+            </h2>
+            <p className="text-sm text-wash-text-muted">
+              Así viene{' '}
+              <span className="font-semibold capitalize text-wash-text-strong">{currentMonthName()}</span>:{' '}
+              <span className="font-semibold tabular-nums text-wash-text-strong">{intFmt(visitas.total)}</span> visitas ·{' '}
+              <span className="font-semibold tabular-nums text-wash-text-strong">{visitas.edificios}</span> edificios ·{' '}
+              <span className="font-semibold tabular-nums text-wash-text-strong">{visitas.tecnicos}</span> técnicos en campo
+            </p>
           </div>
 
-          {/* Charts */}
-          <Card className="col-span-12 ring-wash-border lg:col-span-7">
-            <CardHeader className="flex flex-row items-start justify-between gap-2">
-              <div>
-                <CardTitle>Compras por estado</CardTitle>
-                <p className="text-xs text-wash-text-muted">Detalle de compras del mes</p>
-              </div>
-              <Badge variant="outline" className="text-wash-text-muted">
-                {CollectDetalleCompras.length} items
-              </Badge>
-            </CardHeader>
-            <CardContent>
-              <ChartContainer config={comprasChartConfig} className="h-[160px] w-full">
-                <BarChart data={comprasPorEstado} margin={{ top: 4, left: 0, right: 0, bottom: 0 }}>
-                  <CartesianGrid vertical={false} {...CHART_GRID} />
-                  <XAxis dataKey="estado" {...AXIS} tick={X_TICK} />
-                  <YAxis {...AXIS} width={22} tick={Y_TICK} allowDecimals={false} />
-                  <ChartTooltip
-                    content={<ChartTooltipContent />}
-                    cursor={{ fill: 'var(--color-wash-brand)', fillOpacity: 0.06 }}
-                  />
-                  <Bar dataKey="cantidad" fill="var(--color-wash-brand)" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ChartContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="col-span-12 ring-wash-border lg:col-span-5">
-            <CardHeader>
-              <CardTitle>Stock por tipo</CardTitle>
-              <p className="text-xs text-wash-text-muted">Distribución del depósito</p>
-            </CardHeader>
-            <CardContent className="flex items-center gap-4">
-              <ChartContainer
-                config={{ cantidad: { label: 'Cantidad' } }}
-                className="aspect-square h-[160px]"
-              >
-                <PieChart>
-                  <ChartTooltip content={<ChartTooltipContent nameKey="tipo" />} />
-                  <Pie
-                    data={stockPorTipo}
-                    dataKey="cantidad"
-                    nameKey="tipo"
-                    innerRadius={42}
-                    outerRadius={68}
-                    paddingAngle={2}
-                    stroke="var(--color-wash-surface)"
-                    strokeWidth={2}
-                  >
-                    {stockPorTipo.map((_, i) => (
-                      <Cell key={i} fill={chartColor(i)} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ChartContainer>
-              <div className="flex flex-1 flex-col gap-1.5 text-[13px]">
-                {stockPorTipo.map((s, i) => (
-                  <div key={s.tipo} className="flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ background: chartColor(i) }}
-                    />
-                    <span className="truncate text-wash-text-muted">{s.tipo}</span>
-                    <span className="ml-auto font-semibold tabular-nums text-wash-text-strong">
-                      {s.cantidad}
+          <div className="grid grid-cols-12 gap-4">
+            {/* KPIs hero */}
+            <div className="col-span-6 lg:col-span-3">
+              <KpiCard
+                icon={CalendarCheck}
+                label="Visitas del mes"
+                value={intFmt(visitas.total)}
+                accent
+                sub={
+                  <span>
+                    {intFmt(visitas.finalizadas)} finalizadas · {intFmt(visitas.pendientes)} pendientes
+                  </span>
+                }
+              />
+            </div>
+            <div className="col-span-6 lg:col-span-3">
+              <KpiCard
+                icon={Gauge}
+                label="Tasa de finalización"
+                value={`${visitas.tasa}%`}
+                sub={
+                  <div className="flex w-full items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-wash-border/60">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-all"
+                        style={{ width: `${visitas.tasa}%` }}
+                      />
+                    </div>
+                    <span className="shrink-0 tabular-nums">
+                      {intFmt(visitas.finalizadas)}/{intFmt(visitas.total)}
                     </span>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Últimas visitas */}
-          <div className="col-span-12 lg:col-span-4">
-            <SectionTitle icon={Activity}>Últimas visitas</SectionTitle>
-            <div className="flex max-h-[440px] flex-col gap-2 overflow-y-auto pr-0.5">
-              {CollectResumen.length === 0 ? (
-                <EmptyState icon={Inbox} title="Sin visitas este mes" />
-              ) : (
-                CollectResumen.map((r) => (
-                  <VisitaCard key={r.ID} registro={r} onDelete={() => setDeletingRegistro(r)} />
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Órdenes de compra */}
-          <div className="col-span-12 lg:col-span-8">
-            <SectionTitle icon={ClipboardList}>Órdenes de compra</SectionTitle>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <OrdenesColumn
-                title="Aprobadas"
-                tone="emerald"
-                items={CollectDetalleCompras.filter((d) => d.Status_DC === 'Aprobada')}
-              />
-              <OrdenesColumn
-                title="Pendientes"
-                tone="amber"
-                items={CollectDetalleCompras.filter((d) => d.Status_DC === 'Pendiente')}
-              />
-              <OrdenesColumn
-                title="Recibidas"
-                tone="sky"
-                items={CollectDetalleCompras.filter((d) => d.Status_DC === 'Recibida')}
+                }
               />
             </div>
+            <div className="col-span-6 lg:col-span-3">
+              <KpiCard
+                icon={AlertOctagon}
+                label="Incidentes abiertos"
+                value={intFmt(incidentesAbiertos.length)}
+                sub={
+                  <span className={cn(incidentesSinAsignar > 0 && 'font-semibold text-rose-600')}>
+                    {incidentesSinAsignar > 0 ? `${incidentesSinAsignar} sin asignar` : 'todos asignados'}
+                  </span>
+                }
+              />
+            </div>
+            <div className="col-span-6 lg:col-span-3">
+              <KpiCard
+                icon={Wind}
+                label="Ventilaciones pend."
+                value={intFmt(ventPendientes.length)}
+                sub={
+                  <span className={cn(ventVencidas.length > 0 && 'font-semibold text-rose-600')}>
+                    {ventVencidas.length > 0 ? `${ventVencidas.length} vencidas` : 'ninguna vencida'}
+                  </span>
+                }
+              />
+            </div>
+
+            {/* Actividad por técnico — ranking */}
+            <Card className="col-span-12 ring-wash-border lg:col-span-8">
+              <CardHeader className="flex flex-row items-start justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users size={16} className="text-wash-brand" />
+                    Actividad por técnico
+                  </CardTitle>
+                  <p className="text-xs text-wash-text-muted">Visitas registradas este mes</p>
+                </div>
+                <Badge variant="outline" className="text-wash-text-muted">
+                  {visitas.tecnicos} técnicos
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {visitas.porTecnico.length ? (
+                  <ChartContainer config={tecnicoConfig} className="h-[240px] w-full">
+                    <BarChart
+                      data={visitas.porTecnico}
+                      layout="vertical"
+                      margin={{ top: 0, right: 32, left: 8, bottom: 0 }}
+                    >
+                      <CartesianGrid horizontal={false} {...CHART_GRID} />
+                      <XAxis type="number" {...AXIS} tick={X_TICK} allowDecimals={false} />
+                      <YAxis
+                        type="category"
+                        dataKey="tecnico"
+                        {...AXIS}
+                        width={116}
+                        tick={X_TICK}
+                      />
+                      <ChartTooltip
+                        content={<ChartTooltipContent />}
+                        cursor={{ fill: 'var(--color-wash-brand)', fillOpacity: 0.06 }}
+                      />
+                      <Bar dataKey="total" fill="var(--color-wash-brand)" radius={[0, 4, 4, 0]} barSize={18}>
+                        <LabelList
+                          dataKey="total"
+                          position="right"
+                          fill="var(--color-wash-text-muted)"
+                          fontSize={11}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
+                ) : (
+                  <p className="py-16 text-center text-sm text-wash-text-muted">Sin visitas este mes</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Estado de visitas — donut con total central */}
+            <Card className="col-span-12 ring-wash-border lg:col-span-4">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity size={16} className="text-wash-brand" />
+                  Estado de visitas
+                </CardTitle>
+                <p className="text-xs text-wash-text-muted">Finalizadas vs. pendientes</p>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center gap-4">
+                <div className="relative">
+                  <ChartContainer config={estadoConfig} className="aspect-square h-[168px]">
+                    <PieChart>
+                      <ChartTooltip content={<ChartTooltipContent nameKey="key" />} />
+                      <Pie
+                        data={visitas.porEstado}
+                        dataKey="value"
+                        nameKey="key"
+                        innerRadius={54}
+                        outerRadius={80}
+                        paddingAngle={2}
+                        stroke="var(--color-wash-surface)"
+                        strokeWidth={2}
+                      >
+                        {visitas.porEstado.map((s) => (
+                          <Cell key={s.key} fill={s.color} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ChartContainer>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="font-display text-3xl font-bold tabular-nums text-wash-text-strong">
+                      {intFmt(visitas.total)}
+                    </span>
+                    <span className="text-[11px] font-medium uppercase tracking-wider text-wash-text-muted">
+                      visitas
+                    </span>
+                  </div>
+                </div>
+                <div className="grid w-full grid-cols-2 gap-2">
+                  {visitas.porEstado.map((s) => (
+                    <div
+                      key={s.key}
+                      className="flex items-center gap-2 rounded-lg bg-wash-surface-2/60 px-3 py-2"
+                    >
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold tabular-nums text-wash-text-strong">{s.value}</div>
+                        <div className="truncate text-[11px] text-wash-text-muted">{s.key}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Requiere atención — reemplaza "compras recibidas" */}
+            <Card className="col-span-12 flex flex-col ring-wash-border lg:col-span-5">
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                    <AlertTriangle size={16} />
+                  </span>
+                  <div>
+                    <CardTitle>Requiere atención</CardTitle>
+                    <p className="text-xs text-wash-text-muted">Incidentes y ventilaciones vencidas</p>
+                  </div>
+                </div>
+                {atencion.length > 0 && (
+                  <span className="shrink-0 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-bold tabular-nums text-rose-600 ring-1 ring-rose-200">
+                    {atencion.length}
+                  </span>
+                )}
+              </CardHeader>
+              <CardContent className="flex-1">
+                {atencion.length === 0 ? (
+                  <EmptyState icon={CheckCircle2} title="Todo al día" />
+                ) : (
+                  <div className="flex max-h-[380px] flex-col gap-1.5 overflow-y-auto pr-0.5">
+                    {atencion.map((a) => (
+                      <AttentionRow key={a.id} item={a} />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Actividad reciente — últimas visitas */}
+            <Card className="col-span-12 flex flex-col ring-wash-border lg:col-span-7">
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand">
+                    <Activity size={16} />
+                  </span>
+                  <div>
+                    <CardTitle>Actividad reciente</CardTitle>
+                    <p className="text-xs text-wash-text-muted">Últimas visitas registradas</p>
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-wash-text-muted">
+                  {intFmt(visitas.total)} este mes
+                </Badge>
+              </CardHeader>
+              <CardContent className="flex-1">
+                {CollectResumen.length === 0 ? (
+                  <EmptyState icon={Inbox} title="Sin visitas este mes" />
+                ) : (
+                  <div className="grid max-h-[440px] grid-cols-1 gap-2 overflow-y-auto pr-0.5 md:grid-cols-2">
+                    {CollectResumen.slice(0, 12).map((r) => (
+                      <VisitaCard key={r.ID} registro={r} onDelete={() => setDeletingRegistro(r)} />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
-      </div>
       )}
 
       <ConfirmDialog
@@ -299,10 +487,46 @@ export function Home() {
   );
 }
 
+// ---- Attention row ----
+
+function AttentionRow({ item }: { item: AttentionItem }) {
+  const Icon = item.kind === 'incidente' ? AlertOctagon : Wind;
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 ring-1 ring-transparent transition-colors hover:bg-wash-surface-2/60 hover:ring-wash-border">
+      <span
+        className={cn(
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+          item.urgent ? 'bg-rose-100 text-rose-600' : 'bg-sky-100 text-sky-700'
+        )}
+      >
+        <Icon size={15} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13px] font-semibold text-wash-text-strong">{item.title}</div>
+        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-wash-text-muted">
+          <Building2 size={11} className="shrink-0" />
+          <span className="truncate">{item.edificio || '—'}</span>
+        </div>
+      </div>
+      <span
+        className={cn(
+          'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums',
+          item.urgent
+            ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-200'
+            : 'bg-wash-surface-2 text-wash-text-muted'
+        )}
+      >
+        {item.tag}
+      </span>
+    </div>
+  );
+}
+
 // ---- Visita card ----
 
 function VisitaCard({ registro, onDelete }: { registro: Registro; onDelete: () => void }) {
-  const progreso = registro.Progreso ?? (registro.Estado === 'Finalizado' ? 100 : 0);
+  // Clamp a [0,100]: la data real trae Progreso sucio (p. ej. 700) que rompía la barra.
+  const progreso = Math.max(0, Math.min(100, registro.Progreso ?? (registro.Estado === 'Finalizado' ? 100 : 0)));
   // Pendiente sólo si no empezó. Con progreso > 0 ya cuenta como Finalizado.
   const status = progreso === 0 ? 'Pendiente' : 'Finalizado';
 
@@ -377,88 +601,18 @@ function KV({
   );
 }
 
-// ---- Órdenes column ----
-
-type OrdenTone = 'emerald' | 'amber' | 'sky';
-
-const toneHeader: Record<OrdenTone, string> = {
-  emerald: 'text-emerald-700',
-  amber: 'text-amber-700',
-  sky: 'text-sky-700',
-};
-const toneCount: Record<OrdenTone, string> = {
-  emerald: 'bg-emerald-100 text-emerald-700',
-  amber: 'bg-amber-100 text-amber-700',
-  sky: 'bg-sky-100 text-sky-700',
-};
-
-function OrdenesColumn({ title, tone, items }: { title: string; tone: OrdenTone; items: DetalleCompra[] }) {
-  return (
-    <div className="flex min-h-[320px] flex-col rounded-lg bg-wash-surface ring-1 ring-wash-border">
-      <div className="flex items-center justify-between border-b border-wash-divider px-3 py-2.5">
-        <span className={`text-[11px] font-bold uppercase tracking-wider ${toneHeader[tone]}`}>
-          {title}
-        </span>
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${toneCount[tone]}`}>
-          {items.length}
-        </span>
-      </div>
-      <div className="flex flex-1 flex-col gap-1.5 p-2">
-        {items.length === 0 ? (
-          <EmptyState icon={Inbox} title="Sin órdenes" compact />
-        ) : (
-          [...items]
-            .sort((a, b) => b.ID - a.ID)
-            .slice(0, 8)
-            .map((it) => <OrdenItem key={it.ID} item={it} />)
-        )}
-      </div>
-    </div>
-  );
-}
-
-function OrdenItem({ item }: { item: DetalleCompra }) {
-  const qty = item.CantidadIngresada_DC ?? item.Cantidad_DC;
-
-  return (
-    <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-wash-surface-2/60">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-wash-surface-2 text-wash-text-muted">
-        <Package size={15} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-medium text-wash-text-strong">
-          {proper(item.Item_DC)}
-        </div>
-        <div className="mt-0.5 flex items-center gap-1 text-[10.5px] text-wash-text-muted">
-          <CalendarDays size={10} />
-          <span className="tabular-nums">{item.Fecha_DC}</span>
-        </div>
-      </div>
-      <span className="shrink-0 rounded-md bg-wash-brand/10 px-2 py-1 text-sm font-bold tabular-nums text-wash-brand-dark">
-        {qty}
-      </span>
-    </div>
-  );
-}
-
 // ---- Empty state ----
 
 function EmptyState({
   icon: Icon,
   title,
-  compact,
 }: {
   icon: typeof Inbox;
   title: string;
-  compact?: boolean;
 }) {
   return (
-    <div
-      className={`flex flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-wash-border text-center text-wash-text-muted ${
-        compact ? 'py-8' : 'py-10'
-      }`}
-    >
-      <Icon size={compact ? 24 : 28} strokeWidth={1.6} className="opacity-30" />
+    <div className="flex min-h-[180px] flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-wash-border py-10 text-center text-wash-text-muted">
+      <Icon size={28} strokeWidth={1.6} className="opacity-30" />
       <p className="mt-2 text-xs font-medium">{title}</p>
     </div>
   );

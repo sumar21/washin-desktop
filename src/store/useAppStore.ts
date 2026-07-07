@@ -18,6 +18,15 @@ import type {
   MesPlanificacion,
   EdificioVisitar,
   Ventilacion,
+  EdificioVent,
+  RutaAbm,
+  CircuitoAbm,
+  DetalleCircuitoAbm,
+  EdificioAbm,
+  PlanifMes,
+  PlanifRuta,
+  PlanifCircuito,
+  PlanifEdificio,
   ItemCompra,
   RutaCatalogo,
   ResumenCircuito,
@@ -33,13 +42,11 @@ import {
   mockEdificios,
   mockRegistros,
   mockStock,
-  mockStockTecnicos,
   mockMaquinas,
   mockMesesPlanificacion,
   mockResumenPlanif,
   mockDetallePlanif,
   mockEdificiosVisitar,
-  mockVentilaciones,
   mockItemsCompra,
   mockRutas,
   mockResumenCircuitos,
@@ -86,6 +93,28 @@ interface AppState {
   CollectDetallePlanificaciones: DetallePlanificacion[];
   CollectEdificiosVisitar: EdificioVisitar[];
   CollectVentilaciones: Ventilacion[];
+  /** ABM.Edificios ALTA (real) para el alta de ventilaciones + filtro de edificio. */
+  CollectEdificiosVent: EdificioVent[];
+  /** Frecuencias activas reales (días) para asignar/agregar ventilación. */
+  CollectFrecuenciasVent: string[];
+  /** Grupos de ventilación activos reales. */
+  CollectGruposVent: string[];
+  // ── ABMs reales de Configuración (Rutas / Circuitos / Edificios) ──
+  CollectAbmRutas: RutaAbm[];
+  CollectAbmCircuitos: CircuitoAbm[];
+  CollectAbmDetalles: DetalleCircuitoAbm[];
+  CollectAbmEdificios: EdificioAbm[];
+  AbmFrecuencias: string[];
+  AbmGrupos: string[];
+  AbmRoles: string[];
+  /** Pestañas visibles + si el rol puede editar (fuente: backend, gate real de writes). */
+  AbmAccess: api.AbmBundle['access'];
+  // ── Planificaciones (real: 17/15/16/18) ──
+  CollectPlanifMeses: PlanifMes[];
+  CollectPlanifResumen: PlanifRuta[]; // todas (para progreso de la lista)
+  CollectPlanifResumenMes: PlanifRuta[]; // rutas del mes en detalle
+  CollectPlanifDetalle: PlanifCircuito[]; // circuitos del mes en detalle
+  CollectPlanifEdificios: PlanifEdificio[]; // edificios a visitar del mes en detalle
   CollectItemsCompra: ItemCompra[];
   CollectRutasDisponibles: RutaCatalogo[];
   CollectResumenCircuito: ResumenCircuito[];
@@ -129,7 +158,7 @@ interface AppState {
   /** Real: GET /api/catalog — segmentos + items (11.Respuestos + 99.ABM_MaquinasCompra). */
   fetchCatalog: () => Promise<void>;
   /** Real: GET /api/compras — cabeceras activas del mes + sus líneas. */
-  fetchCompras: () => Promise<void>;
+  fetchCompras: (mes?: string) => Promise<void>;
   /** Real: GET /api/aprobaciones — pendientes del mes. */
   fetchAprobaciones: () => Promise<void>;
   /** Real: POST /api/stock/assign — mueve cantidad de 04.Stock a 99.ABMRepuestos_Tecnico. */
@@ -147,7 +176,7 @@ interface AppState {
   rejectAprobacion: (id: number, reason: string) => Promise<void>;
 
   // ── Incidentes (10 + 13) — API real ───────────────────────────────────
-  fetchIncidentes: () => Promise<void>;
+  fetchIncidentes: (resueltosMes?: string) => Promise<void>;
   createIncidente: (payload: api.NewIncidentePayload) => Promise<Incidente>;
   assignIncidente: (id: number, tecnico: string, fechaAsignada?: string) => Promise<void>;
   cambiarTecnicoIncidente: (id: number, tecnico: string) => Promise<void>;
@@ -167,7 +196,6 @@ interface AppState {
   // Patch (mock, salvo donde se indica)
   /** Stock: real (PATCH /api/stock/:id) — solo usa Cantidad_ST. */
   patchStock: (id: number, changes: Partial<StockItem>) => Promise<void>;
-  patchVentilacion: (id: number, changes: Partial<Ventilacion>) => void;
   /** Real: POST /api/stock (repuestos). Máquinas con serie/ID todavía no soportado — ver docs/backend.md. */
   addStock: (
     catalogItem: StockCatalogItem,
@@ -176,20 +204,40 @@ interface AppState {
   ) => Promise<void>;
   removeRegistro: (id: number) => void;
 
-  // Stock técnicos
-  patchStockTecnico: (id: number, changes: Partial<RepuestoTecnico>) => void;
-  /** Transfer some qty from a technician back to the main warehouse stock. */
-  reingressStockTecnico: (id: number, qty: number) => void;
-  /** Assign repuesto from one technician to another (creates or sums). */
-  assignStockTecnico: (
-    fromId: number,
-    toTecnico: string,
-    qty: number
-  ) => void;
+  // Stock técnicos (real: 99.ABMRepuestos_Tecnico)
+  fetchStockTecnicos: () => Promise<void>;
+  patchStockTecnico: (id: number, changes: Partial<RepuestoTecnico>) => Promise<void>;
+  /** Devuelve cantidad del técnico al depósito principal (04.Stock). */
+  reingressStockTecnico: (id: number, qty: number) => Promise<void>;
+  /** Transfiere un repuesto de un técnico a otro (suma o crea la fila destino). */
+  assignStockTecnico: (fromId: number, toTecnico: string, qty: number) => Promise<void>;
 
-  // Ventilaciones
-  addVentilacion: (v: Omit<Ventilacion, 'ID'>) => void;
-  removeVentilacion: (id: number) => void;
+  // Ventilaciones (real: 19.Ventilaciones + ABM.Edificios)
+  /** Sin `mes`: abiertas + catálogos. Con `mes` (mm/yyyy): reemplaza solo CollectVentilaciones. */
+  fetchVentilaciones: (mes?: string) => Promise<void>;
+  asignarVentilacion: (id: number, payload: api.AsignarVentilacionPayload) => Promise<void>;
+  addVentilacionEdificio: (payload: api.AddVentilacionEdificioPayload) => Promise<void>;
+  deleteVentilacion: (id: number) => Promise<void>;
+
+  // ── Planificaciones (real) ──
+  fetchPlanificaciones: () => Promise<void>;
+  fetchPlanificacionMes: (mes: string) => Promise<void>;
+  createPlanificacion: (payload: { mes: string; mesNombre: string; lines: { tecnico: string; nroRuta: string }[] }) => Promise<void>;
+  deletePlanificacion: (payload: { mesAno?: string; idUnivocoRuta?: string }) => Promise<void>;
+
+  // ── ABMs de Configuración (real). Cada acción refetchea el bundle (contadores
+  //    y relaciones cambian entre entidades → resync total es lo más seguro). ──
+  fetchAbm: () => Promise<void>;
+  createCircuito: (payload: { nroRuta: number; nroCircuito: number; observaciones?: string; edificioIds: number[] }) => Promise<void>;
+  deleteCircuito: (nroCircuito: number) => Promise<void>;
+  addEdificioCircuito: (nroCircuito: number, edificioId: number) => Promise<void>;
+  removeEdificioCircuito: (detalleId: number) => Promise<void>;
+  updateCircuitoObs: (nroCircuito: number, observaciones: string) => Promise<void>;
+  createRuta: (nroRuta: number) => Promise<void>;
+  deleteRuta: (nroRuta: number) => Promise<void>;
+  createEdificio: (payload: api.EdificioAbmInput) => Promise<void>;
+  updateEdificio: (id: number, payload: api.EdificioAbmInput) => Promise<void>;
+  bajaEdificio: (id: number) => Promise<void>;
 }
 
 const SIDEBAR_STORAGE_KEY = 'washin-sidebar-collapsed';
@@ -234,14 +282,31 @@ const initialState: Omit<
   | 'transferMaquina'
   | 'bajaMaquina'
   | 'patchStock'
-  | 'patchVentilacion'
   | 'addStock'
   | 'removeRegistro'
+  | 'fetchStockTecnicos'
   | 'patchStockTecnico'
   | 'reingressStockTecnico'
   | 'assignStockTecnico'
-  | 'addVentilacion'
-  | 'removeVentilacion'
+  | 'fetchVentilaciones'
+  | 'asignarVentilacion'
+  | 'addVentilacionEdificio'
+  | 'deleteVentilacion'
+  | 'fetchPlanificaciones'
+  | 'fetchPlanificacionMes'
+  | 'createPlanificacion'
+  | 'deletePlanificacion'
+  | 'fetchAbm'
+  | 'createCircuito'
+  | 'deleteCircuito'
+  | 'addEdificioCircuito'
+  | 'removeEdificioCircuito'
+  | 'updateCircuitoObs'
+  | 'createRuta'
+  | 'deleteRuta'
+  | 'createEdificio'
+  | 'updateEdificio'
+  | 'bajaEdificio'
 > = {
   sidebarCollapsed: readStoredCollapsed(),
   VarUsuario: null,
@@ -253,7 +318,7 @@ const initialState: Omit<
   CollectEdificios: mockEdificios,
   CollectResumen: mockRegistros,
   CollectStock: mockStock,
-  CollectStockTecnicos: mockStockTecnicos,
+  CollectStockTecnicos: [],
   CollectCompras: [],
   CollectDetalleCompras: [],
   CollectAprobaciones: [],
@@ -266,7 +331,23 @@ const initialState: Omit<
   CollectResumenPlanificaciones: mockResumenPlanif,
   CollectDetallePlanificaciones: mockDetallePlanif,
   CollectEdificiosVisitar: mockEdificiosVisitar,
-  CollectVentilaciones: mockVentilaciones,
+  CollectVentilaciones: [],
+  CollectEdificiosVent: [],
+  CollectFrecuenciasVent: [],
+  CollectGruposVent: [],
+  CollectAbmRutas: [],
+  CollectAbmCircuitos: [],
+  CollectAbmDetalles: [],
+  CollectAbmEdificios: [],
+  AbmFrecuencias: [],
+  AbmGrupos: [],
+  AbmRoles: [],
+  AbmAccess: { tabs: [], canEdit: false },
+  CollectPlanifMeses: [],
+  CollectPlanifResumen: [],
+  CollectPlanifResumenMes: [],
+  CollectPlanifDetalle: [],
+  CollectPlanifEdificios: [],
   CollectItemsCompra: mockItemsCompra,
   CollectRutasDisponibles: mockRutas,
   CollectResumenCircuito: mockResumenCircuitos,
@@ -286,9 +367,6 @@ const initialState: Omit<
   MesDetail: null,
   loading: false,
 };
-
-const nextId = <T extends { ID: number }>(arr: T[]) =>
-  arr.reduce((max, item) => Math.max(max, item.ID), 0) + 1;
 
 /**
  * 401 en cualquier llamada autenticada = sesión inválida/vencida (o la cookie
@@ -435,9 +513,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchCompras: async () => {
+  fetchCompras: async (mes) => {
     try {
-      const { pedidos, detalles } = await api.getCompras();
+      const { pedidos, detalles } = await api.getCompras(mes);
       set({ CollectCompras: pedidos, CollectDetalleCompras: detalles });
     } catch (err) {
       handleAuthError(err, set);
@@ -585,9 +663,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchIncidentes: async () => {
+  fetchIncidentes: async (resueltosMes) => {
     try {
-      const { incidentes, repuestos } = await api.getIncidentes();
+      const { incidentes, repuestos } = await api.getIncidentes(resueltosMes);
       set({ CollectIncidentes: incidentes, CollectRepuestosIncidente: repuestos });
     } catch (err) {
       handleAuthError(err, set);
@@ -653,118 +731,297 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  patchVentilacion: (id, changes) =>
-    set((s) => ({
-      CollectVentilaciones: s.CollectVentilaciones.map((it) =>
-        it.ID === id ? { ...it, ...changes } : it
-      ),
-    })),
+  fetchVentilaciones: async (mes) => {
+    try {
+      const data = await api.getVentilaciones(mes);
+      if (mes) {
+        // Vista por mes: reemplaza solo la lista (los catálogos ya están cargados).
+        set({ CollectVentilaciones: data.ventilaciones });
+      } else {
+        const full = data as api.VentilacionesResponse;
+        set({
+          CollectVentilaciones: full.ventilaciones,
+          CollectEdificiosVent: full.edificios,
+          CollectFrecuenciasVent: full.frecuencias,
+          CollectGruposVent: full.grupos,
+        });
+      }
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  asignarVentilacion: async (id, payload) => {
+    try {
+      await api.asignarVentilacion(id, payload);
+      // Update optimista: no refetch para no resetear el filtro por mes activo.
+      // No tocamos Frecuencia_VE: el backend (como la PowerApp) solo ajusta la
+      // frecuencia del EDIFICIO cuando fue adelantada, nunca la de la ventilación.
+      set((s) => ({
+        CollectVentilaciones: s.CollectVentilaciones.map((v) =>
+          v.ID === id
+            ? {
+                ...v,
+                Estado_VE: 'Asignada' as const,
+                Asignado_VE: payload.tecnico,
+                IDAsignado_VE: payload.idTecnico,
+                ProximaLimpieza_VE: payload.proximaLimpieza,
+                FechaProgramada_VE: '', // obsoleta al re-asignar (ver backend)
+                Orden_VE: 3,
+              }
+            : v
+        ),
+      }));
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  addVentilacionEdificio: async (payload) => {
+    try {
+      const created = await api.addVentilacionEdificio(payload);
+      set((s) => ({
+        CollectVentilaciones: [created, ...s.CollectVentilaciones],
+        CollectEdificiosVent: s.CollectEdificiosVent.map((e) =>
+          e.ID === payload.idEdificio
+            ? { ...e, EnCircuito: true, Grupo: payload.grupo, Frecuencia: payload.frecuencia }
+            : e
+        ),
+      }));
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  deleteVentilacion: async (id) => {
+    try {
+      await api.deleteVentilacion(id);
+      set((s) => ({ CollectVentilaciones: s.CollectVentilaciones.filter((v) => v.ID !== id) }));
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  // ── Planificaciones ─────────────────────────────────────────────────────
+  fetchPlanificaciones: async () => {
+    try {
+      const b = await api.getPlanificaciones();
+      set({
+        CollectPlanifMeses: b.meses,
+        CollectPlanifResumen: b.resumen,
+        CollectTecnicosDisponibles: b.tecnicos,
+        CollectAbmRutas: b.rutas,
+      });
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  fetchPlanificacionMes: async (mes) => {
+    try {
+      const b = await api.getPlanificacionMes(mes);
+      set({ CollectPlanifResumenMes: b.resumen, CollectPlanifDetalle: b.detalle, CollectPlanifEdificios: b.edificios });
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  createPlanificacion: async (payload) => {
+    try {
+      await api.createPlanificacion(payload);
+      await get().fetchPlanificaciones();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  deletePlanificacion: async (payload) => {
+    try {
+      await api.deletePlanificacion(payload);
+      await get().fetchPlanificaciones();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  // ── ABMs de Configuración ──────────────────────────────────────────────
+  fetchAbm: async () => {
+    try {
+      const b = await api.getAbm();
+      set({
+        CollectAbmRutas: b.rutas,
+        CollectAbmCircuitos: b.circuitos,
+        CollectAbmDetalles: b.detalles,
+        CollectAbmEdificios: b.edificios,
+        AbmFrecuencias: b.frecuencias,
+        AbmGrupos: b.grupos,
+        AbmRoles: b.roles,
+        AbmAccess: b.access,
+      });
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  createCircuito: async (payload) => {
+    try {
+      await api.createCircuito(payload);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  deleteCircuito: async (nroCircuito) => {
+    try {
+      await api.deleteCircuito(nroCircuito);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  addEdificioCircuito: async (nroCircuito, edificioId) => {
+    try {
+      await api.addEdificioCircuito(nroCircuito, edificioId);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  removeEdificioCircuito: async (detalleId) => {
+    try {
+      await api.removeEdificioCircuito(detalleId);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  updateCircuitoObs: async (nroCircuito, observaciones) => {
+    try {
+      await api.updateCircuitoObs(nroCircuito, observaciones);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  createRuta: async (nroRuta) => {
+    try {
+      await api.createRuta(nroRuta);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  deleteRuta: async (nroRuta) => {
+    try {
+      await api.deleteRuta(nroRuta);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  createEdificio: async (payload) => {
+    try {
+      await api.createEdificio(payload);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  updateEdificio: async (id, payload) => {
+    try {
+      await api.updateEdificio(id, payload);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  bajaEdificio: async (id) => {
+    try {
+      await api.bajaEdificio(id);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
 
   removeRegistro: (id) =>
     set((s) => ({
       CollectResumen: s.CollectResumen.filter((r) => r.ID !== id),
     })),
 
-  patchStockTecnico: (id, changes) =>
-    set((s) => ({
-      CollectStockTecnicos: s.CollectStockTecnicos.map((it) =>
-        it.ID === id ? { ...it, ...changes } : it
-      ),
-    })),
+  fetchStockTecnicos: async () => {
+    try {
+      const { stockTecnicos, tecnicos } = await api.getStockTecnicos();
+      set({ CollectStockTecnicos: stockTecnicos, CollectTecnicosDisponibles: tecnicos });
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
 
-  reingressStockTecnico: (id, qty) =>
-    set((s) => {
-      const source = s.CollectStockTecnicos.find((it) => it.ID === id);
-      if (!source) return s;
-      const taken = Math.min(qty, source.Cantidad_RT);
-      // Reduce from técnico
-      const newTecStock = s.CollectStockTecnicos.map((it) =>
-        it.ID === id ? { ...it, Cantidad_RT: it.Cantidad_RT - taken } : it
-      );
-      // Add back to main warehouse stock (match by Codigo if possible, else by name)
-      const existingMain = s.CollectStock.find(
-        (st) =>
-          st.Status_ST === 'Activo' &&
-          (st.Nro_ST === source.Codigo_RT ||
-            st.Item_ST.toLowerCase() === source.Concat_RT.toLowerCase())
-      );
-      let newMain: typeof s.CollectStock;
-      if (existingMain) {
-        newMain = s.CollectStock.map((st) =>
-          st.ID === existingMain.ID
-            ? { ...st, Cantidad_ST: st.Cantidad_ST + taken }
-            : st
-        );
-      } else {
-        const newId =
-          s.CollectStock.reduce((max, it) => Math.max(max, it.ID), 0) + 1;
-        newMain = [
-          ...s.CollectStock,
-          {
-            ID: newId,
-            Item_ST: source.Concat_RT,
-            Tipo_ST: 'REPUESTO',
-            Nro_ST: source.Codigo_RT,
-            Cantidad_ST: taken,
-            Status_ST: 'Activo',
-          },
-        ];
-      }
-      return { CollectStockTecnicos: newTecStock, CollectStock: newMain };
-    }),
+  patchStockTecnico: async (id, changes) => {
+    try {
+      const cantidad = Number(changes.Cantidad_RT ?? 0);
+      await api.editStockTecnico(id, cantidad);
+      set((s) => ({
+        CollectStockTecnicos: s.CollectStockTecnicos.map((it) => (it.ID === id ? { ...it, Cantidad_RT: cantidad } : it)),
+      }));
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
 
-  addVentilacion: (v) =>
-    set((s) => {
-      const id = nextId(s.CollectVentilaciones);
-      return {
-        CollectVentilaciones: [...s.CollectVentilaciones, { ...v, ID: id }],
-      };
-    }),
+  reingressStockTecnico: async (id, qty) => {
+    try {
+      const { restante } = await api.reingresoStockTecnico(id, qty);
+      set((s) => ({
+        CollectStockTecnicos: s.CollectStockTecnicos.map((it) => (it.ID === id ? { ...it, Cantidad_RT: restante } : it)),
+      }));
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
 
-  removeVentilacion: (id) =>
-    set((s) => ({
-      CollectVentilaciones: s.CollectVentilaciones.filter((v) => v.ID !== id),
-    })),
-
-  assignStockTecnico: (fromId, toTecnico, qty) =>
-    set((s) => {
-      const source = s.CollectStockTecnicos.find((it) => it.ID === fromId);
-      if (!source || !toTecnico || source.Tecnico_RT === toTecnico) return s;
-      const taken = Math.min(qty, source.Cantidad_RT);
-      // Reduce from source técnico
-      const reduced = s.CollectStockTecnicos.map((it) =>
-        it.ID === fromId ? { ...it, Cantidad_RT: it.Cantidad_RT - taken } : it
-      );
-      // Add to destination técnico — sum if exists, otherwise new entry
-      const existingDest = reduced.find(
-        (it) =>
-          it.Tecnico_RT === toTecnico &&
-          it.Codigo_RT === source.Codigo_RT
-      );
-      let result: typeof s.CollectStockTecnicos;
-      if (existingDest) {
-        result = reduced.map((it) =>
-          it.ID === existingDest.ID
-            ? { ...it, Cantidad_RT: it.Cantidad_RT + taken }
-            : it
-        );
-      } else {
-        const newId =
-          reduced.reduce((max, it) => Math.max(max, it.ID), 0) + 1;
-        result = [
-          ...reduced,
-          {
-            ID: newId,
-            Tecnico_RT: toTecnico,
-            Concat_RT: source.Concat_RT,
-            Codigo_RT: source.Codigo_RT,
-            Cantidad_RT: taken,
-            Status_RT: 'Activo',
-          },
-        ];
-      }
-      return { CollectStockTecnicos: result };
-    }),
+  assignStockTecnico: async (fromId, toTecnico, qty) => {
+    try {
+      await api.transferStockTecnico(fromId, toTecnico, qty);
+      // La transferencia toca 2 filas (origen + destino, que puede ser nueva) → refetch.
+      await get().fetchStockTecnicos();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
 
   addStock: async (catalogItem, cantidad, extras) => {
     try {

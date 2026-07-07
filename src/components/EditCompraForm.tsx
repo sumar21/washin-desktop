@@ -1,13 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Trash2, Plus, HelpCircle } from 'lucide-react';
 import { ModalActions } from '@/components/Modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { tipoLabel } from '@/lib/utils';
 import type {
   DetalleCompra,
@@ -215,35 +209,18 @@ export function EditCompraForm({
           Agregar item
         </label>
         <div className="mt-1.5 grid grid-cols-[1fr_110px_auto] items-end gap-2">
-          <Select
-            value={newCatalogId ? String(newCatalogId) : undefined}
-            onValueChange={(v) => setNewCatalogId(v ? Number(v) : '')}
-          >
-            <SelectTrigger className="h-10 w-full bg-wash-surface">
-              <SelectValue placeholder="Seleccionar item…" />
-            </SelectTrigger>
-            <SelectContent>
-              {itemsForSegment.map((c) => (
-                <SelectItem key={c.ID} value={String(c.ID)}>
-                  <span className="flex w-full items-center gap-2">
-                    {c.Codigo && (
-                      <span className="rounded bg-wash-surface-2 px-1.5 py-0.5 text-[10.5px] font-semibold text-wash-text">
-                        {c.Codigo}
-                      </span>
-                    )}
-                    <span className="font-medium text-wash-text-strong">
-                      {c.Item}
-                    </span>
-                    {c.Marca && (
-                      <span className="ml-auto text-xs text-wash-text-muted">
-                        {c.Marca}
-                      </span>
-                    )}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            options={itemsForSegment.map((c) => ({
+              value: String(c.ID),
+              label: c.Item,
+              sublabel: [c.Codigo, c.Marca].filter(Boolean).join(' · ') || undefined,
+            }))}
+            value={newCatalogId ? String(newCatalogId) : null}
+            onChange={(v) => setNewCatalogId(v ? Number(v) : '')}
+            placeholder="Seleccionar item…"
+            searchPlaceholder="Buscar item o código…"
+            emptyText="Sin items para este segmento"
+          />
           <div className="flex h-10 items-stretch overflow-hidden rounded-lg border border-wash-border bg-wash-surface focus-within:border-wash-brand focus-within:ring-2 focus-within:ring-wash-brand/15">
             <button
               type="button"

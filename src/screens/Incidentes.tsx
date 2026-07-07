@@ -20,15 +20,12 @@ import { Modal, ModalActions } from '@/components/Modal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
+import { last12MesesOptions, estadoOptions } from '@/lib/filters';
 import { cn, proper } from '@/lib/utils';
 import type { Incidente } from '@/types/domain';
 
@@ -52,6 +49,13 @@ const toneFor = (t: string) =>
 
 const GRID = '130px 100px 150px minmax(220px,1.6fr) minmax(150px,1fr) 140px 132px';
 
+// Estados de un incidente SIN resolver (esta pantalla filtra Resuelto_IN='NO'). Se muestran
+// SIEMPRE como opciones de filtro aunque los datos cargados solo tengan algunos.
+// ('Resuelto'/'Aprobada' son estados ya resueltos → no aparecen en esta vista.)
+const ESTADOS_IN = ['A Revisar', 'Pendiente', 'Asignado', 'En Aprobacion'];
+// Estados de un incidente YA resuelto (vista "Resueltos · mes").
+const ESTADOS_IN_RESUELTOS = ['Resuelto', 'Aprobada', 'Rechazada'];
+
 export function Incidentes() {
   const incidentes = useAppStore((s) => s.CollectIncidentes);
   const repuestos = useAppStore((s) => s.CollectRepuestosIncidente);
@@ -70,8 +74,13 @@ export function Incidentes() {
   const generarCompraIncidente = useAppStore((s) => s.generarCompraIncidente);
 
   const [query, setQuery] = useState('');
-  const [filterTipo, setFilterTipo] = useState('Todos');
-  const [filterEstado, setFilterEstado] = useState('Todos');
+  // Scope de la vista: 'abiertos' (sin resolver) o 'MM/YYYY' (resueltos de ese mes). Vive en el header.
+  const [scope, setScope] = useState<string>('abiertos');
+  const scopeResueltos = scope !== 'abiertos';
+  const [filterMesAno, setFilterMesAno] = useState<string[]>([]);
+  const [filterEstado, setFilterEstado] = useState<string[]>([]);
+  const [filterEdificio, setFilterEdificio] = useState<string[]>([]);
+  const [filterTipo, setFilterTipo] = useState<string[]>([]);
 
   const [detail, setDetail] = useState<Incidente | null>(null);
   const [assigning, setAssigning] = useState<Incidente | null>(null);
@@ -84,13 +93,22 @@ export function Incidentes() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = useCallback(() => {
+  const load = useCallback((sc?: string) => {
     setLoading(true);
     setLoadError(null);
-    return Promise.all([fetchIncidentes(), fetchStock(), fetchMaquinas(), fetchTecnicos()])
+    const resueltosMes = sc && sc !== 'abiertos' ? sc : undefined;
+    return Promise.all([fetchIncidentes(resueltosMes), fetchStock(), fetchMaquinas(), fetchTecnicos()])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar los incidentes.'))
       .finally(() => setLoading(false));
   }, [fetchIncidentes, fetchStock, fetchMaquinas, fetchTecnicos]);
+
+  // Cambio de scope (sin resolver ↔ resueltos de un mes): recarga y limpia el filtro de estado
+  // (las opciones de estado cambian según el scope).
+  const onScopeChange = (v: string) => {
+    setScope(v);
+    setFilterEstado([]);
+    load(v);
+  };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; "Reintentar" también dispara load().
@@ -115,14 +133,55 @@ export function Incidentes() {
     [repuestosDe, stock]
   );
 
-  const tipos = useMemo(() => ['Todos', ...new Set(incidentes.map((i) => i.NoResuelto_IN).filter(Boolean))], [incidentes]);
-  const estados = useMemo(() => ['Todos', ...new Set(incidentes.map((i) => i.Status_IN).filter(Boolean))], [incidentes]);
+  const mesAnoOpts = useMemo(() => last12MesesOptions(), []);
+  const estadoOpts = useMemo(
+    () => {
+      const canon = scopeResueltos ? ESTADOS_IN_RESUELTOS : ESTADOS_IN;
+      return estadoOptions([...canon, ...incidentes.map((i) => i.Status_IN)], canon);
+    },
+    [incidentes, scopeResueltos]
+  );
+  const edificioOpts = useMemo<MultiOption[]>(
+    () =>
+      [...new Set(incidentes.map((i) => i.NombreEdificio_IN).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, 'es'))
+        .map((e) => ({ value: e, label: e })),
+    [incidentes]
+  );
+  const tipoOpts = useMemo<MultiOption[]>(
+    () =>
+      [...new Set(incidentes.map((i) => i.NoResuelto_IN).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, 'es'))
+        .map((t) => ({ value: t, label: t })),
+    [incidentes]
+  );
+  const mesAnoLabel = useMemo(() => new Map(mesAnoOpts.map((o) => [o.value, o.label])), [mesAnoOpts]);
+
+  const activeChips = useMemo<{ cat: string; label: string }[]>(() => {
+    const chips: { cat: string; label: string }[] = [];
+    filterMesAno.forEach((v) => chips.push({ cat: 'Mes', label: mesAnoLabel.get(v) ?? v }));
+    filterEstado.forEach((v) => chips.push({ cat: 'Estado', label: v }));
+    filterEdificio.forEach((v) => chips.push({ cat: 'Edificio', label: v }));
+    filterTipo.forEach((v) => chips.push({ cat: 'Tipo', label: v }));
+    return chips;
+  }, [filterMesAno, filterEstado, filterEdificio, filterTipo, mesAnoLabel]);
+
+  const hasFilters = activeChips.length > 0;
+  const clearFilters = () => {
+    setFilterMesAno([]);
+    setFilterEstado([]);
+    setFilterEdificio([]);
+    setFilterTipo([]);
+  };
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
+    const pass = (arr: string[], v: string) => arr.length === 0 || arr.includes(v);
     return incidentes
-      .filter((i) => (filterTipo === 'Todos' ? true : i.NoResuelto_IN === filterTipo))
-      .filter((i) => (filterEstado === 'Todos' ? true : i.Status_IN === filterEstado))
+      .filter((i) => pass(filterMesAno, i.FechaMesAno_IN))
+      .filter((i) => pass(filterEstado, i.Status_IN))
+      .filter((i) => pass(filterEdificio, i.NombreEdificio_IN))
+      .filter((i) => pass(filterTipo, i.NoResuelto_IN))
       .filter(
         (i) =>
           i.NombreEdificio_IN.toLowerCase().includes(q) ||
@@ -131,28 +190,65 @@ export function Incidentes() {
           (i.TecnicoAsignado_IN ?? '').toLowerCase().includes(q) ||
           String(i.ID).includes(q)
       );
-  }, [incidentes, query, filterTipo, filterEstado]);
+  }, [incidentes, query, filterMesAno, filterEstado, filterEdificio, filterTipo]);
 
   const abrirAsignar = (i: Incidente, esReasignar: boolean) => {
     setReassign(esReasignar);
     setAssigning(i);
   };
 
+  // Acción contextual de una fila/card según tipo + estado + stock (reusada en tabla y cards).
+  const primaryAction = (i: Incidente) => {
+    // En la vista de resueltos no hay acciones de mutación (son incidentes cerrados): solo ver detalle.
+    if (scopeResueltos) return null;
+    const reps = repuestosDe(i.ID);
+    const sinStock = requiereRepuesto(i) && reps.length > 0 && !hasStock(i);
+    const asignado = !!i.TecnicoAsignado_IN && i.Status_IN === 'Asignado';
+    if (i.Status_IN === 'En Aprobacion')
+      return <IconBtn icon={AlertCircle} tone="violet" title="En aprobación de cambio de máquina" onClick={() => setDetail(i)} />;
+    if (sinStock) return <IconBtn icon={ShoppingCart} tone="warning" title="Sin stock — Generar compra" onClick={() => setComprar(i)} />;
+    if (esCambioMaquina(i)) return <IconBtn icon={ArrowLeftRight} tone="violet" title="Gestionar cambio de máquina" onClick={() => setCambioMaq(i)} />;
+    if (asignado) return <IconBtn icon={RefreshCw} tone="brand" title="Cambiar técnico" onClick={() => abrirAsignar(i, true)} />;
+    return <IconBtn icon={UserCog} tone="brand" title="Asignar técnico" onClick={() => abrirAsignar(i, false)} />;
+  };
+
   return (
     <div className="relative flex h-full w-full flex-col">
       <PageHeader
         title="Incidentes"
-        subtitle="Reportes sin resolver — repuestos y cambios de máquina"
+        subtitle={scopeResueltos ? `Incidentes resueltos · ${scope}` : 'Reportes sin resolver — repuestos y cambios de máquina'}
         search={{ value: query, onChange: setQuery, placeholder: 'Edificio, máquina, tipo, técnico…' }}
+        toolbarExtra={
+          <Select value={scope} onValueChange={onScopeChange} disabled={loading}>
+            <SelectTrigger className="h-9 w-[150px] shrink-0 bg-wash-canvas text-[13px] ring-wash-border sm:w-[180px]">
+              <Calendar size={13} className="shrink-0 text-wash-text-muted" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-[320px]">
+              <SelectItem value="abiertos">Sin resolver</SelectItem>
+              {mesAnoOpts.map((p) => (
+                <SelectItem key={p.value} value={p.value}>
+                  Resueltos · {p.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
         filterPopover={
           <FilterContent
-            tipo={filterTipo}
+            mesAno={filterMesAno}
             estado={filterEstado}
-            tipos={tipos}
-            estados={estados}
-            onApply={(t, e) => {
-              setFilterTipo(t);
-              setFilterEstado(e);
+            edificio={filterEdificio}
+            tipo={filterTipo}
+            mesAnoOpts={mesAnoOpts}
+            estadoOpts={estadoOpts}
+            edificioOpts={edificioOpts}
+            tipoOpts={tipoOpts}
+            onApply={(f) => {
+              setFilterMesAno(f.mesAno);
+              setFilterEstado(f.estado);
+              setFilterEdificio(f.edificio);
+              setFilterTipo(f.tipo);
             }}
           />
         }
@@ -165,26 +261,84 @@ export function Incidentes() {
         <ErrorState message={loadError} onRetry={load} />
       ) : (
         <>
-          {(filterTipo !== 'Todos' || filterEstado !== 'Todos') && (
-            <div className="flex items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
+          {hasFilters && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-4 py-2 text-xs text-wash-text-muted md:px-6">
               <span className="font-semibold uppercase tracking-wider">Filtros:</span>
-              {filterTipo !== 'Todos' && <Chip>{filterTipo}</Chip>}
-              {filterEstado !== 'Todos' && <Chip>{filterEstado}</Chip>}
-              <button
-                type="button"
-                onClick={() => {
-                  setFilterTipo('Todos');
-                  setFilterEstado('Todos');
-                }}
-                className="ml-auto hover:text-wash-text-strong"
-              >
+              {activeChips.map((c, idx) => (
+                <Chip key={`${c.cat}-${c.label}-${idx}`}>
+                  <span className="text-wash-brand/70">{c.cat}:</span> {c.label}
+                </Chip>
+              ))}
+              <button type="button" onClick={clearFilters} className="ml-auto hover:text-wash-text-strong">
                 Limpiar
               </button>
             </div>
           )}
 
-          <div className="flex-1 overflow-hidden p-6">
-            <div className="flex h-full flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-sm ring-1 ring-wash-border">
+          <div className="flex-1 overflow-hidden p-3 md:p-6">
+            {/* MOBILE (<lg): una card por incidente (DESIGN.md §5.4) */}
+            <div className="flex h-full flex-col gap-2 overflow-y-auto lg:hidden">
+              {filtered.length === 0 ? (
+                <div className="flex h-[200px] items-center justify-center text-sm text-wash-text-muted">
+                  No hay incidentes pendientes.
+                </div>
+              ) : (
+                filtered.map((i) => {
+                  const reps = repuestosDe(i.ID);
+                  return (
+                    <div key={i.ID} className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                          <StatusBadge status={i.Status_IN} />
+                          <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-semibold ring-1', toneFor(i.NoResuelto_IN))}>
+                            <Wrench size={8} />
+                            <span className="truncate">{i.NoResuelto_IN || '—'}</span>
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 gap-1.5">
+                          <IconBtn icon={Eye} tone="neutral" title="Ver detalle" onClick={() => setDetail(i)} />
+                          {primaryAction(i)}
+                        </div>
+                      </div>
+                      <div className="mt-2 min-w-0">
+                        <p className="truncate text-[13.5px] font-semibold text-wash-text-strong">
+                          {i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : <span className="italic text-wash-text-muted">Sin máquina</span>}
+                        </p>
+                        <p className="mt-0.5 flex items-center gap-1 truncate text-[11.5px] text-wash-text-muted">
+                          <Building2 size={11} className="shrink-0" />
+                          <span className="truncate">{i.NombreEdificio_IN}</span>
+                          {i.IDMaquina_IN && <span className="ml-0.5 shrink-0 rounded bg-wash-surface-2 px-1 font-mono text-[9.5px]">#{i.IDMaquina_IN}</span>}
+                        </p>
+                      </div>
+                      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-wash-divider/60 pt-2 text-[11.5px]">
+                        <span className="inline-flex shrink-0 items-center gap-1 text-wash-text-muted">
+                          <Calendar size={11} />
+                          {i.Fecha_IN}
+                        </span>
+                        {i.TecnicoAsignado_IN ? (
+                          <span className="min-w-0 flex-1 truncate text-center font-medium text-wash-text-strong">{i.TecnicoAsignado_IN}</span>
+                        ) : (
+                          <span className="inline-flex flex-1 items-center justify-center gap-1 font-medium text-amber-700">
+                            <UserCircle2 size={12} /> Sin asignar
+                          </span>
+                        )}
+                        {i.CantidadRepuestos_IN > 0 || reps.length > 0 ? (
+                          <button type="button" onClick={() => setVerRepuestos(i)} className="inline-flex shrink-0 items-center gap-1 font-semibold text-wash-brand">
+                            Rep. ({reps.length || i.CantidadRepuestos_IN})
+                            <ExternalLink size={9} />
+                          </button>
+                        ) : (
+                          <span className="shrink-0 text-wash-text-faint">—</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* DESKTOP (≥lg): tabla */}
+            <div className="hidden h-full flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-sm ring-1 ring-wash-border lg:flex">
               <div
                 className="grid shrink-0 border-b border-wash-border bg-wash-canvas px-5 py-2.5 text-[11px] font-bold uppercase tracking-wider text-wash-text-muted"
                 style={{ gridTemplateColumns: GRID }}
@@ -206,9 +360,6 @@ export function Incidentes() {
                 ) : (
                   filtered.map((i) => {
                     const reps = repuestosDe(i.ID);
-                    const sinStock = requiereRepuesto(i) && reps.length > 0 && !hasStock(i);
-                    const asignado = !!i.TecnicoAsignado_IN && i.Status_IN === 'Asignado';
-                    const enAprobacion = i.Status_IN === 'En Aprobacion';
                     return (
                       <div
                         key={i.ID}
@@ -263,17 +414,7 @@ export function Incidentes() {
                         </div>
                         <div className="flex items-center justify-end gap-1.5">
                           <IconBtn icon={Eye} tone="neutral" title="Ver detalle" onClick={() => setDetail(i)} />
-                          {enAprobacion ? (
-                            <IconBtn icon={AlertCircle} tone="violet" title="En aprobación de cambio de máquina" onClick={() => setDetail(i)} />
-                          ) : sinStock ? (
-                            <IconBtn icon={ShoppingCart} tone="warning" title="Sin stock — Generar compra" onClick={() => setComprar(i)} />
-                          ) : esCambioMaquina(i) ? (
-                            <IconBtn icon={ArrowLeftRight} tone="violet" title="Gestionar cambio de máquina" onClick={() => setCambioMaq(i)} />
-                          ) : asignado ? (
-                            <IconBtn icon={RefreshCw} tone="brand" title="Cambiar técnico" onClick={() => abrirAsignar(i, true)} />
-                          ) : (
-                            <IconBtn icon={UserCog} tone="brand" title="Asignar técnico" onClick={() => abrirAsignar(i, false)} />
-                          )}
+                          {primaryAction(i)}
                         </div>
                       </div>
                     );
@@ -374,18 +515,27 @@ function AsignarModal({
   onClose: () => void;
   onConfirm: (tecnico: string) => Promise<void>;
 }) {
-  const [tecnico, setTecnico] = useState('');
+  const [tecId, setTecId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const tecnicoOpts = useMemo<MultiOption[]>(
+    () => tecnicos.map((t) => ({ value: String(t.ID), label: t.Nombre_Tecnico })),
+    [tecnicos]
+  );
+
   useEffect(() => {
     if (!incidente) return;
+    const actual = reassign
+      ? tecnicos.find((t) => t.Nombre_Tecnico === incidente.TecnicoAsignado_IN)
+      : undefined;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reinicia al abrir.
-    setTecnico(reassign ? incidente.TecnicoAsignado_IN ?? '' : '');
+    setTecId(actual ? String(actual.ID) : '');
     setError(null);
-  }, [incidente, reassign]);
+  }, [incidente, reassign, tecnicos]);
 
   if (!incidente) return null;
+  const tecnico = tecnicos.find((t) => String(t.ID) === tecId)?.Nombre_Tecnico ?? '';
   return (
     <Modal open={!!incidente} onClose={onClose} title={reassign ? 'Cambiar técnico' : 'Asignar técnico'} width={520}>
       {error && (
@@ -397,18 +547,14 @@ function AsignarModal({
       <div className="mt-5">
         <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">Técnico</label>
         <div className="mt-2">
-          <Select value={tecnico || undefined} onValueChange={setTecnico}>
-            <SelectTrigger className="h-10 w-full">
-              <SelectValue placeholder="Elegir técnico…" />
-            </SelectTrigger>
-            <SelectContent>
-              {tecnicos.map((t) => (
-                <SelectItem key={t.ID} value={t.Nombre_Tecnico}>
-                  {t.Nombre_Tecnico}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            options={tecnicoOpts}
+            value={tecId || null}
+            onChange={setTecId}
+            placeholder="Elegir técnico…"
+            searchPlaceholder="Buscar técnico…"
+            emptyText="Sin técnicos"
+          />
         </div>
         {!reassign && tieneRepuestos && (
           <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] text-amber-800 ring-1 ring-amber-200">
@@ -495,18 +641,17 @@ function CambioMaquinaModal({
             Máquina de reemplazo en depósito ({segmento})
           </label>
           <div className="mt-2">
-            <Select value={sel || undefined} onValueChange={setSel}>
-              <SelectTrigger className="h-10 w-full">
-                <SelectValue placeholder="Elegir máquina disponible…" />
-              </SelectTrigger>
-              <SelectContent>
-                {disponibles.map((m) => (
-                  <SelectItem key={m.ID} value={String(m.ID)}>
-                    {m.IDMaquina_DM} — {proper(m.ConcatMaquina_DM)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              options={disponibles.map((m) => ({
+                value: String(m.ID),
+                label: `${m.IDMaquina_DM} — ${proper(m.ConcatMaquina_DM)}`,
+              }))}
+              value={sel || null}
+              onChange={setSel}
+              placeholder="Elegir máquina disponible…"
+              searchPlaceholder="Buscar máquina…"
+              emptyText="Sin máquinas"
+            />
           </div>
           <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-violet-50 px-3 py-2 text-[11.5px] text-violet-900 ring-1 ring-violet-200">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />
@@ -754,7 +899,7 @@ function NuevoIncidenteModal({
   const [edificio, setEdificio] = useState('');
   const [maqId, setMaqId] = useState('');
   const [desc, setDesc] = useState('');
-  const [tecnico, setTecnico] = useState('');
+  const [tecId, setTecId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -764,13 +909,25 @@ function NuevoIncidenteModal({
     setEdificio('');
     setMaqId('');
     setDesc('');
-    setTecnico('');
+    setTecId('');
     setError(null);
   }, [open]);
 
+  const edificioOpts = useMemo<ComboboxOption[]>(
+    () => edificios.map((e) => ({ value: e.edificio, label: e.edificio, sublabel: e.codigo })),
+    [edificios]
+  );
   const maqsDelEdificio = useMemo(
     () => maquinas.filter((m) => m.Status_DM !== 'ELIMINADA' && (!edificio || m.Edificio_DM === edificio)),
     [maquinas, edificio]
+  );
+  const maquinaOpts = useMemo<ComboboxOption[]>(
+    () => maqsDelEdificio.map((m) => ({ value: String(m.ID), label: `${m.IDMaquina_DM} — ${proper(m.ConcatMaquinaIncidente_DM)}` })),
+    [maqsDelEdificio]
+  );
+  const tecnicoOpts = useMemo<ComboboxOption[]>(
+    () => tecnicos.map((t) => ({ value: String(t.ID), label: t.Nombre_Tecnico })),
+    [tecnicos]
   );
   const codigo = edificios.find((e) => e.edificio === edificio)?.codigo;
 
@@ -787,43 +944,42 @@ function NuevoIncidenteModal({
           <div>
             <Lbl req>Edificio</Lbl>
             <div className="mt-1.5">
-              <Select value={edificio || undefined} onValueChange={(v) => { setEdificio(v); setMaqId(''); }}>
-                <SelectTrigger className="h-10 w-full"><SelectValue placeholder="Elegir edificio…" /></SelectTrigger>
-                <SelectContent>
-                  {edificios.map((e) => (
-                    <SelectItem key={e.edificio} value={e.edificio}>{e.edificio}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={edificioOpts}
+                value={edificio || null}
+                onChange={(v) => { setEdificio(v); setMaqId(''); }}
+                placeholder="Elegir edificio…"
+                searchPlaceholder="Buscar edificio o código…"
+                emptyText="Sin edificios"
+              />
             </div>
           </div>
           <div>
             <Lbl>Máquina</Lbl>
             <div className="mt-1.5">
-              <Select value={maqId || undefined} onValueChange={setMaqId} disabled={!edificio}>
-                <SelectTrigger className="h-10 w-full">
-                  <SelectValue placeholder={edificio ? 'Sin asignar' : 'Elegí edificio primero'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {maqsDelEdificio.map((m) => (
-                    <SelectItem key={m.ID} value={String(m.ID)}>{m.IDMaquina_DM} — {proper(m.ConcatMaquinaIncidente_DM)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={maquinaOpts}
+                value={maqId || null}
+                onChange={setMaqId}
+                disabled={!edificio}
+                placeholder={edificio ? 'Sin asignar' : 'Elegí edificio primero'}
+                searchPlaceholder="Buscar máquina…"
+                emptyText="Sin máquinas"
+              />
             </div>
           </div>
         </div>
         <div>
           <Lbl>Asignar a técnico</Lbl>
           <div className="mt-1.5">
-            <Select value={tecnico || undefined} onValueChange={setTecnico}>
-              <SelectTrigger className="h-10 w-full"><SelectValue placeholder="Dejar sin asignar" /></SelectTrigger>
-              <SelectContent>
-                {tecnicos.map((t) => (
-                  <SelectItem key={t.ID} value={t.Nombre_Tecnico}>{t.Nombre_Tecnico}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              options={tecnicoOpts}
+              value={tecId || null}
+              onChange={setTecId}
+              placeholder="Dejar sin asignar"
+              searchPlaceholder="Buscar técnico…"
+              emptyText="Sin técnicos"
+            />
           </div>
         </div>
         <div>
@@ -849,6 +1005,8 @@ function NuevoIncidenteModal({
             setError(null);
             try {
               const maq = maqsDelEdificio.find((m) => String(m.ID) === maqId);
+              const tec = tecnicos.find((t) => String(t.ID) === tecId);
+              const tecnico = tec?.Nombre_Tecnico;
               const created = await onCreate({
                 edificio,
                 codigoEdificio: codigo,
@@ -858,7 +1016,7 @@ function NuevoIncidenteModal({
                 tecnico: tecnico || undefined,
               });
               // WhatsApp deep-link al técnico (si hay).
-              const tel = tecnicos.find((t) => t.Nombre_Tecnico === tecnico)?.Telefono;
+              const tel = tec?.Telefono;
               if (tecnico) {
                 const msg = `INCIDENTE N: ${created.ID}\nEDIFICIO: ${edificio}${maq ? `\nMAQUINA: ${maq.ConcatMaquinaIncidente_DM}` : ''}\nOBSERVACIONES: ${desc.trim()}`;
                 const url = `https://wa.me/${tel ? '54' + tel.replace(/\D/g, '') : ''}?text=${encodeURIComponent(msg)}`;
@@ -943,62 +1101,78 @@ function Lbl({ children, req }: { children: React.ReactNode; req?: boolean }) {
   );
 }
 
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((v) => b.includes(v));
+
 function FilterContent({
-  tipo,
+  mesAno,
   estado,
-  tipos,
-  estados,
+  edificio,
+  tipo,
+  mesAnoOpts,
+  estadoOpts,
+  edificioOpts,
+  tipoOpts,
   onApply,
 }: {
-  tipo: string;
-  estado: string;
-  tipos: string[];
-  estados: string[];
-  onApply: (tipo: string, estado: string) => void;
+  mesAno: string[];
+  estado: string[];
+  edificio: string[];
+  tipo: string[];
+  mesAnoOpts: MultiOption[];
+  estadoOpts: MultiOption[];
+  edificioOpts: MultiOption[];
+  tipoOpts: MultiOption[];
+  onApply: (f: { mesAno: string[]; estado: string[]; edificio: string[]; tipo: string[] }) => void;
 }) {
-  const [pt, setPt] = useState(tipo);
-  const [pe, setPe] = useState(estado);
-  const dirty = pt !== tipo || pe !== estado;
+  const [pMesAno, setPMesAno] = useState<string[]>(mesAno);
+  const [pEstado, setPEstado] = useState<string[]>(estado);
+  const [pEdificio, setPEdificio] = useState<string[]>(edificio);
+  const [pTipo, setPTipo] = useState<string[]>(tipo);
+
+  const toggle = (set: React.Dispatch<React.SetStateAction<string[]>>) => (v: string) =>
+    set((arr) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]));
+
+  const total = pMesAno.length + pEstado.length + pEdificio.length + pTipo.length;
+  const dirty =
+    !sameSet(pMesAno, mesAno) ||
+    !sameSet(pEstado, estado) ||
+    !sameSet(pEdificio, edificio) ||
+    !sameSet(pTipo, tipo);
+
+  const limpiar = () => {
+    setPMesAno([]);
+    setPEstado([]);
+    setPEdificio([]);
+    setPTipo([]);
+  };
+
   return (
     <div>
       <div className="mb-3 flex items-center justify-between border-b border-wash-border pb-2.5">
         <h3 className="text-sm font-bold text-wash-text-strong">Filtrar</h3>
-        {(pt !== 'Todos' || pe !== 'Todos') && (
-          <button type="button" onClick={() => { setPt('Todos'); setPe('Todos'); }} className="text-[11px] font-semibold text-wash-text-muted hover:text-wash-text-strong">
-            Limpiar
+        {total > 0 && (
+          <button type="button" onClick={limpiar} className="text-[11px] font-semibold text-wash-text-muted hover:text-wash-text-strong">
+            Limpiar todo
           </button>
         )}
       </div>
       <div className="space-y-3">
-        <div>
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">Tipo</label>
-          <div className="mt-1.5">
-            <Select value={pt} onValueChange={setPt}>
-              <SelectTrigger className="h-9 w-full text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {tipos.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div>
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">Estado</label>
-          <div className="mt-1.5">
-            <Select value={pe} onValueChange={setPe}>
-              <SelectTrigger className="h-9 w-full text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {estados.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <MultiSelect label="Mes / Año" options={mesAnoOpts} selected={pMesAno} onToggle={toggle(setPMesAno)} onClear={() => setPMesAno([])} />
+        <MultiSelect label="Estado" options={estadoOpts} selected={pEstado} onToggle={toggle(setPEstado)} onClear={() => setPEstado([])} />
+        <MultiSelect label="Edificio" options={edificioOpts} selected={pEdificio} onToggle={toggle(setPEdificio)} onClear={() => setPEdificio([])} searchable />
+        <MultiSelect label="Tipo" options={tipoOpts} selected={pTipo} onToggle={toggle(setPTipo)} onClear={() => setPTipo([])} />
       </div>
       <div className="mt-4 flex justify-end gap-2 border-t border-wash-border pt-3">
         <PopoverClose asChild>
           <button type="button" className="rounded-lg border border-wash-border px-4 py-2 text-[12.5px] font-medium text-wash-text-strong hover:bg-wash-surface-2">Cancelar</button>
         </PopoverClose>
         <PopoverClose asChild>
-          <button type="button" disabled={!dirty} onClick={() => onApply(pt, pe)} className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50">
+          <button
+            type="button"
+            disabled={!dirty}
+            onClick={() => onApply({ mesAno: pMesAno, estado: pEstado, edificio: pEdificio, tipo: pTipo })}
+            className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          >
             Aplicar
           </button>
         </PopoverClose>

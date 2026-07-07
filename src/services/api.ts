@@ -1,15 +1,27 @@
 import type {
   Aprobacion,
+  CircuitoAbm,
+  DetalleCircuitoAbm,
   DetalleCompra,
   DetalleMaquina,
+  EdificioAbm,
+  EdificioVent,
   Incidente,
   PedidoCompra,
   PermisoModulo,
+  PlanifCircuito,
+  PlanifEdificio,
+  PlanifMes,
+  PlanifRuta,
   Registro,
   RepuestoIncidente,
+  RepuestoTecnico,
+  RutaAbm,
   StockItem,
   UserRole,
+  Ventilacion,
 } from '@/types/domain';
+import type { AbmTab } from '@/lib/abmAccess';
 
 /** Cliente del backend real (`/api/*`, ver ../../api). Login/Home/Stock por ahora. */
 
@@ -164,8 +176,9 @@ export interface ComprasResponse {
   detalles: DetalleCompra[];
 }
 
-export function getCompras(): Promise<ComprasResponse> {
-  return request('/compras');
+/** Sin `mes`: mes actual. Con `mes` (mm/yyyy): ese mes. Devuelve todos los estados del mes. */
+export function getCompras(mes?: string): Promise<ComprasResponse> {
+  return request(mes ? `/compras?mes=${encodeURIComponent(mes)}` : '/compras');
 }
 
 export interface NewCompraPayload {
@@ -284,8 +297,9 @@ export interface IncidentesResponse {
   repuestos: RepuestoIncidente[];
 }
 
-export function getIncidentes(): Promise<IncidentesResponse> {
-  return request('/incidentes');
+/** Sin arg: incidentes sin resolver. Con `resueltosMes` (mm/yyyy): los resueltos de ese mes. */
+export function getIncidentes(resueltosMes?: string): Promise<IncidentesResponse> {
+  return request(resueltosMes ? `/incidentes?resueltos=${encodeURIComponent(resueltosMes)}` : '/incidentes');
 }
 
 export interface NewIncidentePayload {
@@ -321,4 +335,183 @@ export function generarCompraIncidente(
   payload: { tipoCompra: 'repuesto' | 'maquina'; item: string; segmento: string }
 ): Promise<{ ID: number; compra: string }> {
   return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'generar-compra', ...payload }) });
+}
+
+// ── Ventilaciones (19.Ventilaciones + ABM.Edificios + catálogos) ─────────
+export interface VentilacionesResponse {
+  ventilaciones: Ventilacion[];
+  edificios: EdificioVent[];
+  frecuencias: string[]; // días, ascendente
+  grupos: string[];
+}
+
+/** Sin `mes`: abiertas (Pendiente/Asignada/Programada) + catálogos. Con `mes` (mm/yyyy): ese mes, sin catálogos. */
+export function getVentilaciones(mes?: string): Promise<VentilacionesResponse | { ventilaciones: Ventilacion[] }> {
+  return request(mes ? `/ventilaciones?mes=${encodeURIComponent(mes)}` : '/ventilaciones');
+}
+
+export interface AsignarVentilacionPayload {
+  tecnico: string;
+  idTecnico: number;
+  proximaLimpieza: string; // dd/mm/yyyy
+  frecuencia: string; // días
+  idEdificio: number;
+  esIncidente: 'SI' | 'NO';
+  frecuenciaChanged: boolean;
+}
+
+export function asignarVentilacion(
+  id: number,
+  payload: AsignarVentilacionPayload
+): Promise<{ ID: number; Estado_VE: string; Asignado_VE: string }> {
+  return request(`/ventilaciones/${id}`, { method: 'POST', body: JSON.stringify({ action: 'assign', ...payload }) });
+}
+
+export interface AddVentilacionEdificioPayload {
+  idEdificio: number;
+  edificio: string;
+  direccion: string;
+  grupo: string;
+  frecuencia: string; // días
+  proximaLimpieza: string; // dd/mm/yyyy
+}
+
+export function addVentilacionEdificio(payload: AddVentilacionEdificioPayload): Promise<Ventilacion> {
+  return request('/ventilaciones', { method: 'POST', body: JSON.stringify({ action: 'add-edificio', ...payload }) });
+}
+
+export function deleteVentilacion(id: number): Promise<{ ID: number; Estado_VE: string }> {
+  return request(`/ventilaciones/${id}`, { method: 'POST', body: JSON.stringify({ action: 'delete' }) });
+}
+
+// ── ABMs de Configuración (Rutas / Circuitos / Edificios) ────────────────
+export interface AbmBundle {
+  rutas: RutaAbm[];
+  circuitos: CircuitoAbm[];
+  detalles: DetalleCircuitoAbm[];
+  edificios: EdificioAbm[];
+  frecuencias: string[];
+  grupos: string[];
+  roles: string[];
+  access: { tabs: AbmTab[]; canEdit: boolean };
+}
+
+export function getAbm(): Promise<AbmBundle> {
+  return request('/abm');
+}
+
+// Circuitos
+export function createCircuito(payload: {
+  nroRuta: number;
+  nroCircuito: number;
+  observaciones?: string;
+  edificioIds: number[];
+}): Promise<{ nroCircuito: number; edificios: number }> {
+  return request('/abm/circuitos', { method: 'POST', body: JSON.stringify({ action: 'create', ...payload }) });
+}
+
+export function deleteCircuito(nroCircuito: number): Promise<{ nroCircuito: number; deleted: boolean }> {
+  return request('/abm/circuitos', { method: 'POST', body: JSON.stringify({ action: 'delete', nroCircuito }) });
+}
+
+export function addEdificioCircuito(nroCircuito: number, edificioId: number): Promise<{ nroCircuito: number; edificio: string }> {
+  return request('/abm/circuitos', { method: 'POST', body: JSON.stringify({ action: 'add-edificio', nroCircuito, edificioId }) });
+}
+
+export function removeEdificioCircuito(detalleId: number): Promise<{ detalleId: number; removed: boolean }> {
+  return request('/abm/circuitos', { method: 'POST', body: JSON.stringify({ action: 'remove-edificio', detalleId }) });
+}
+
+export function updateCircuitoObs(nroCircuito: number, observaciones: string): Promise<{ nroCircuito: number; updated: boolean }> {
+  return request('/abm/circuitos', { method: 'POST', body: JSON.stringify({ action: 'update-obs', nroCircuito, observaciones }) });
+}
+
+// Rutas
+export function createRuta(nroRuta: number): Promise<{ nroRuta: number }> {
+  return request('/abm/rutas', { method: 'POST', body: JSON.stringify({ action: 'create', nroRuta }) });
+}
+
+export function deleteRuta(nroRuta: number): Promise<{ nroRuta: number; circuitosEliminados: number; edificiosLiberados: number }> {
+  return request('/abm/rutas', { method: 'POST', body: JSON.stringify({ action: 'delete', nroRuta }) });
+}
+
+// Edificios
+export interface EdificioAbmInput {
+  edificio?: string;
+  codigo?: string;
+  direccion?: string;
+  horario?: string;
+  encargado?: string;
+  celular?: string;
+  correo?: string;
+  observaciones?: string;
+  grupo?: string;
+  frecuencia?: string;
+}
+
+export function createEdificio(payload: EdificioAbmInput): Promise<EdificioAbm> {
+  return request('/abm/edificios', { method: 'POST', body: JSON.stringify({ action: 'create', ...payload }) });
+}
+
+export function updateEdificio(id: number, payload: EdificioAbmInput): Promise<EdificioAbm> {
+  return request('/abm/edificios', { method: 'POST', body: JSON.stringify({ action: 'update', id, ...payload }) });
+}
+
+export function bajaEdificio(id: number): Promise<{ ID: number; Status: string }> {
+  return request('/abm/edificios', { method: 'POST', body: JSON.stringify({ action: 'baja', id }) });
+}
+
+// ── Stock Técnico (99.ABMRepuestos_Tecnico) ──────────────────────────────
+export interface StockTecnicosResponse {
+  stockTecnicos: RepuestoTecnico[];
+  tecnicos: TecnicoOption[];
+}
+
+export function getStockTecnicos(): Promise<StockTecnicosResponse> {
+  return request('/stock-tecnicos');
+}
+
+export function editStockTecnico(id: number, cantidad: number): Promise<{ ID: number; Cantidad_RT: number }> {
+  return request('/stock-tecnicos', { method: 'POST', body: JSON.stringify({ action: 'edit', id, cantidad }) });
+}
+
+export function transferStockTecnico(id: number, toTecnico: string, cantidad: number): Promise<{ ID: number; restante: number; toTecnico: string }> {
+  return request('/stock-tecnicos', { method: 'POST', body: JSON.stringify({ action: 'transfer', id, toTecnico, cantidad }) });
+}
+
+export function reingresoStockTecnico(id: number, cantidad: number): Promise<{ ID: number; restante: number }> {
+  return request('/stock-tecnicos', { method: 'POST', body: JSON.stringify({ action: 'reingreso', id, cantidad }) });
+}
+
+// ── Planificaciones (17/15/16/18) ────────────────────────────────────────
+export interface PlanificacionesResponse {
+  meses: PlanifMes[];
+  resumen: PlanifRuta[];
+  tecnicos: TecnicoOption[];
+  rutas: RutaAbm[];
+}
+export interface PlanificacionMesResponse {
+  resumen: PlanifRuta[];
+  detalle: PlanifCircuito[];
+  edificios: PlanifEdificio[];
+}
+
+export function getPlanificaciones(): Promise<PlanificacionesResponse> {
+  return request('/planificaciones');
+}
+
+export function getPlanificacionMes(mes: string): Promise<PlanificacionMesResponse> {
+  return request(`/planificaciones?mes=${encodeURIComponent(mes)}`);
+}
+
+export function createPlanificacion(payload: {
+  mes: string;
+  mesNombre: string;
+  lines: { tecnico: string; nroRuta: string }[];
+}): Promise<{ mesAno: string; rutasCreadas: number }> {
+  return request('/planificaciones', { method: 'POST', body: JSON.stringify({ action: 'create', ...payload }) });
+}
+
+export function deletePlanificacion(payload: { mesAno?: string; idUnivocoRuta?: string }): Promise<{ anuladas: number; circuitos: number; edificios: number }> {
+  return request('/planificaciones', { method: 'POST', body: JSON.stringify({ action: 'delete', ...payload }) });
 }

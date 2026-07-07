@@ -1,93 +1,83 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Eye,
-  Pencil,
   Trash2,
   Map as MapIcon,
   Building2,
   MapPin,
-  Plus,
-  X,
-  ClipboardEdit,
-  CheckCircle2,
   Hash,
   GitBranch,
 } from 'lucide-react';
 import { DataTable, type Column } from '@/components/DataTable';
-import { Modal, ModalActions } from '@/components/Modal';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
-import type { RutaCatalogo } from '@/types/domain';
+import type { RutaAbm, CircuitoAbm, DetalleCircuitoAbm } from '@/types/domain';
 
 interface ConfigRutasProps {
   query: string;
   addOpen: boolean;
   setAddOpen: (v: boolean) => void;
+  canEdit?: boolean;
 }
 
-export function ConfigRutas({ query, addOpen, setAddOpen }: ConfigRutasProps) {
-  const rutas = useAppStore((s) => s.CollectRutasDisponibles);
-  const circuitos = useAppStore((s) => s.CollectResumenCircuito);
-  const detalles = useAppStore((s) => s.CollectDetalleCircuito);
-  const edificios = useAppStore((s) => s.CollectEdificios);
+export function ConfigRutas({ query, addOpen, setAddOpen, canEdit = false }: ConfigRutasProps) {
+  const rutas = useAppStore((s) => s.CollectAbmRutas);
+  const circuitos = useAppStore((s) => s.CollectAbmCircuitos);
+  const detalles = useAppStore((s) => s.CollectAbmDetalles);
+  const createRuta = useAppStore((s) => s.createRuta);
+  const deleteRuta = useAppStore((s) => s.deleteRuta);
 
-  const [viewing, setViewing] = useState<RutaCatalogo | null>(null);
-  const [editing, setEditing] = useState<RutaCatalogo | null>(null);
-  const [deleting, setDeleting] = useState<RutaCatalogo | null>(null);
+  const [viewing, setViewing] = useState<RutaAbm | null>(null);
+  const [deleting, setDeleting] = useState<RutaAbm | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const rows = useMemo(() => {
     const q = query.toLowerCase();
     return rutas
-      .filter((r) => r.Status_RT === 'Activo')
-      .filter((r) => r.NroRuta_RT.toLowerCase().includes(q))
-      .sort((a, b) => Number(a.NroRuta_RT) - Number(b.NroRuta_RT));
+      .filter((r) => String(r.NroRuta).includes(q))
+      .sort((a, b) => a.NroRuta - b.NroRuta);
   }, [rutas, query]);
 
-  const codeFor = (name: string) =>
-    edificios.find((e) => e.Edificio === name)?.Codigo;
-
+  // Circuitos reales por ruta (para chips + conteos, autoritativo sobre el contador denormalizado).
   const circuitsByRuta = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const map = new Map<number, CircuitoAbm[]>();
     for (const c of circuitos) {
-      if (!map.has(c.NroRuta_RC)) map.set(c.NroRuta_RC, []);
-      map.get(c.NroRuta_RC)!.push(c.NroCircuito_RC);
+      if (!map.has(c.NroRuta)) map.set(c.NroRuta, []);
+      map.get(c.NroRuta)!.push(c);
     }
-    for (const [k, arr] of map) {
-      arr.sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
-      map.set(k, arr);
-    }
+    for (const arr of map.values()) arr.sort((a, b) => a.NroCircuito - b.NroCircuito);
     return map;
   }, [circuitos]);
 
   const edificiosByCircuito = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const d of detalles) {
-      map.set(d.NroCircuito_DC, (map.get(d.NroCircuito_DC) ?? 0) + 1);
-    }
+    const map = new Map<number, number>();
+    for (const d of detalles) map.set(d.NroCircuito, (map.get(d.NroCircuito) ?? 0) + 1);
     return map;
   }, [detalles]);
 
-  const totalCircuitos = useMemo(
-    () => rows.reduce((acc, r) => acc + (circuitsByRuta.get(r.NroRuta_RT)?.length ?? 0), 0),
-    [rows, circuitsByRuta]
-  );
+  const totalCircuitos = useMemo(() => rows.reduce((acc, r) => acc + (circuitsByRuta.get(r.NroRuta)?.length ?? 0), 0), [rows, circuitsByRuta]);
   const totalEdificios = useMemo(
-    () =>
-      rows.reduce((acc, r) => {
-        const cs = circuitsByRuta.get(r.NroRuta_RT) ?? [];
-        return acc + cs.reduce((s, c) => s + (edificiosByCircuito.get(c) ?? 0), 0);
-      }, 0),
+    () => rows.reduce((acc, r) => acc + (circuitsByRuta.get(r.NroRuta) ?? []).reduce((s, c) => s + (edificiosByCircuito.get(c.NroCircuito) ?? 0), 0), 0),
     [rows, circuitsByRuta, edificiosByCircuito]
   );
 
-  const columns: Column<RutaCatalogo>[] = [
+  const handleDelete = async () => {
+    if (!deleting || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await deleteRuta(deleting.NroRuta);
+      setDeleting(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'No se pudo eliminar la ruta.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const columns: Column<RutaAbm>[] = [
     {
       key: 'ruta',
       header: 'Ruta',
@@ -96,12 +86,10 @@ export function ConfigRutas({ query, addOpen, setAddOpen }: ConfigRutasProps) {
       render: (r) => (
         <div className="flex items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-wash-brand to-wash-brand-dark text-[12px] font-black text-white tabular-nums shadow-sm shadow-wash-brand/30">
-            {r.NroRuta_RT.padStart(2, '0')}
+            {String(r.NroRuta).padStart(2, '0')}
           </span>
           <div className="min-w-0">
-            <p className="font-display text-[13.5px] font-black text-wash-accent">
-              Ruta {r.NroRuta_RT}
-            </p>
+            <p className="font-display text-[13.5px] font-black text-wash-accent">Ruta {r.NroRuta}</p>
             <p className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-600">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Activa
@@ -113,28 +101,24 @@ export function ConfigRutas({ query, addOpen, setAddOpen }: ConfigRutasProps) {
     {
       key: 'circuitos',
       header: 'Circuitos',
-      width: '130px',
+      width: '120px',
       align: 'center',
       truncate: false,
-      render: (r) => {
-        const cs = circuitsByRuta.get(r.NroRuta_RT) ?? [];
-        return (
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2.5 py-1 text-[12.5px] font-bold text-wash-text-strong tabular-nums">
-            <GitBranch size={11} className="text-wash-brand" />
-            {cs.length}
-          </span>
-        );
-      },
+      render: (r) => (
+        <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2.5 py-1 text-[12.5px] font-bold text-wash-text-strong tabular-nums">
+          <GitBranch size={11} className="text-wash-brand" />
+          {circuitsByRuta.get(r.NroRuta)?.length ?? 0}
+        </span>
+      ),
     },
     {
       key: 'edificios',
       header: 'Edificios',
-      width: '130px',
+      width: '120px',
       align: 'center',
       truncate: false,
       render: (r) => {
-        const cs = circuitsByRuta.get(r.NroRuta_RT) ?? [];
-        const n = cs.reduce((s, c) => s + (edificiosByCircuito.get(c) ?? 0), 0);
+        const n = (circuitsByRuta.get(r.NroRuta) ?? []).reduce((s, c) => s + (edificiosByCircuito.get(c.NroCircuito) ?? 0), 0);
         return (
           <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2.5 py-1 text-[12.5px] font-bold text-wash-text-strong tabular-nums">
             <Building2 size={11} className="text-emerald-600" />
@@ -149,32 +133,19 @@ export function ConfigRutas({ query, addOpen, setAddOpen }: ConfigRutasProps) {
       width: 'minmax(0, 1.6fr)',
       truncate: false,
       render: (r) => {
-        const cs = circuitsByRuta.get(r.NroRuta_RT) ?? [];
-        if (cs.length === 0) {
-          return (
-            <span className="text-[11.5px] italic text-wash-text-muted">
-              Sin circuitos
-            </span>
-          );
-        }
+        const cs = circuitsByRuta.get(r.NroRuta) ?? [];
+        if (cs.length === 0) return <span className="text-[11.5px] italic text-wash-text-muted">Sin circuitos</span>;
         const visible = cs.slice(0, 8);
         const extra = cs.length - visible.length;
         return (
           <div className="flex flex-wrap items-center gap-1">
             {visible.map((c) => (
-              <span
-                key={c}
-                className="inline-flex items-center gap-0.5 rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand ring-1 ring-wash-brand/20"
-              >
+              <span key={c.ID} className="inline-flex items-center gap-0.5 rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand ring-1 ring-wash-brand/20">
                 <MapPin size={8} />
-                {c}
+                {c.NroCircuito}
               </span>
             ))}
-            {extra > 0 && (
-              <span className="inline-flex items-center rounded bg-wash-brand/15 px-1.5 py-0.5 text-[10px] font-bold text-wash-brand">
-                +{extra}
-              </span>
-            )}
+            {extra > 0 && <span className="inline-flex items-center rounded bg-wash-brand/15 px-1.5 py-0.5 text-[10px] font-bold text-wash-brand">+{extra}</span>}
           </div>
         );
       },
@@ -182,38 +153,15 @@ export function ConfigRutas({ query, addOpen, setAddOpen }: ConfigRutasProps) {
     {
       key: 'actions',
       header: 'Acciones',
-      width: '140px',
+      width: '110px',
       align: 'right',
       truncate: false,
       render: (r) => (
         <div className="flex items-center justify-end gap-1.5">
-          <ActionBtn
-            icon={Eye}
-            tone="brand"
-            title="Ver detalle"
-            onClick={(e) => {
-              e.stopPropagation();
-              setViewing(r);
-            }}
-          />
-          <ActionBtn
-            icon={Pencil}
-            tone="neutral"
-            title="Editar"
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditing(r);
-            }}
-          />
-          <ActionBtn
-            icon={Trash2}
-            tone="danger"
-            title="Eliminar"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDeleting(r);
-            }}
-          />
+          <ActionBtn icon={Eye} tone="brand" title="Ver detalle" onClick={(e) => { e.stopPropagation(); setViewing(r); }} />
+          {canEdit && (
+            <ActionBtn icon={Trash2} tone="danger" title="Eliminar" onClick={(e) => { e.stopPropagation(); setDeleting(r); setDeleteError(null); }} />
+          )}
         </div>
       ),
     },
@@ -222,89 +170,52 @@ export function ConfigRutas({ query, addOpen, setAddOpen }: ConfigRutasProps) {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.04)_1px,transparent_0)] bg-[size:22px_22px]">
       <div className="flex min-h-0 flex-1 flex-col p-6">
-        {/* KPI strip */}
         <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-3">
-          <KpiCard
-            icon={MapIcon}
-            tone="brand"
-            label="Rutas activas"
-            value={rows.length}
-          />
-          <KpiCard
-            icon={GitBranch}
-            tone="emerald"
-            label="Circuitos totales"
-            value={totalCircuitos}
-          />
-          <KpiCard
-            icon={Building2}
-            tone="violet"
-            label="Edificios totales"
-            value={totalEdificios}
-          />
+          <KpiCard icon={MapIcon} tone="brand" label="Rutas activas" value={rows.length} />
+          <KpiCard icon={GitBranch} tone="emerald" label="Circuitos totales" value={totalCircuitos} />
+          <KpiCard icon={Building2} tone="violet" label="Edificios totales" value={totalEdificios} />
         </div>
 
-        {/* Section header */}
         <div className="mt-5 flex shrink-0 items-end justify-between">
           <div>
-            <p className="font-display text-[13px] font-black uppercase tracking-wider text-wash-text-strong">
-              Catálogo de rutas
-            </p>
+            <p className="font-display text-[13px] font-black uppercase tracking-wider text-wash-text-strong">Catálogo de rutas</p>
             <p className="mt-0.5 text-[11.5px] text-wash-text-muted">
-              {rows.length === 0
-                ? 'Sin rutas registradas todavía'
-                : `${rows.length} ruta${rows.length === 1 ? '' : 's'} configurada${rows.length === 1 ? '' : 's'}`}
+              {rows.length === 0 ? 'Sin rutas registradas todavía' : `${rows.length} ruta${rows.length === 1 ? '' : 's'} configurada${rows.length === 1 ? '' : 's'}`}
             </p>
           </div>
         </div>
 
-        {/* Table */}
         <div className="mt-3 min-h-0 flex-1">
-          <DataTable
-            rows={rows}
-            rowKey={(r) => r.ID}
-            columns={columns}
-            empty="Sin rutas registradas."
-            onRowClick={(r) => setViewing(r)}
-          />
+          <DataTable rows={rows} rowKey={(r) => r.ID} columns={columns} empty="Sin rutas registradas." onRowClick={(r) => setViewing(r)} />
         </div>
       </div>
 
-      {/* Detalle */}
-      <DetalleRutaModal
-        ruta={viewing}
-        circuitos={circuitos}
-        detalles={detalles}
-        codeFor={codeFor}
-        onClose={() => setViewing(null)}
-      />
+      <DetalleRutaModal ruta={viewing} circuitos={circuitos} detalles={detalles} onClose={() => setViewing(null)} />
 
-      {/* Agregar */}
-      <RutaFormModal
+      <AddRutaModal
         open={addOpen}
-        mode="create"
-        circuitos={circuitos}
-        detalles={detalles}
+        rutas={rutas}
         onClose={() => setAddOpen(false)}
-        onSave={() => setAddOpen(false)}
+        onCreate={async (nroRuta) => {
+          await createRuta(nroRuta);
+          setAddOpen(false);
+        }}
       />
 
-      {/* Editar */}
-      <RutaFormModal
-        open={!!editing}
-        mode="edit"
-        defaultNroRuta={editing?.NroRuta_RT}
-        circuitos={circuitos}
-        detalles={detalles}
-        onClose={() => setEditing(null)}
-        onSave={() => setEditing(null)}
-      />
-
-      {/* Eliminar */}
-      <EliminarRutaModal
-        ruta={deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={() => setDeleting(null)}
+      <ConfirmDialog
+        open={!!deleting}
+        tone="danger"
+        title="Eliminar ruta"
+        message={
+          deleting
+            ? `¿Eliminar la Ruta ${deleting.NroRuta}? Se eliminan también sus ${circuitsByRuta.get(deleting.NroRuta)?.length ?? 0} circuito(s) y se liberan sus edificios. Esta acción no se puede deshacer.`
+            : ''
+        }
+        confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => { setDeleting(null); setDeleteError(null); }}
+        onConfirm={handleDelete}
       />
     </div>
   );
@@ -316,37 +227,21 @@ function DetalleRutaModal({
   ruta,
   circuitos,
   detalles,
-  codeFor,
   onClose,
 }: {
-  ruta: RutaCatalogo | null;
-  circuitos: ReturnType<typeof useAppStore.getState>['CollectResumenCircuito'];
-  detalles: ReturnType<typeof useAppStore.getState>['CollectDetalleCircuito'];
-  codeFor: (name: string) => string | undefined;
+  ruta: RutaAbm | null;
+  circuitos: CircuitoAbm[];
+  detalles: DetalleCircuitoAbm[];
   onClose: () => void;
 }) {
   if (!ruta) return null;
-
-  const circuitosRuta = circuitos.filter((c) => c.NroRuta_RC === ruta.NroRuta_RT);
-  const totalEdificios = circuitosRuta.reduce(
-    (acc, c) => acc + detalles.filter((d) => d.NroCircuito_DC === c.NroCircuito_RC).length,
-    0
-  );
+  const circuitosRuta = circuitos.filter((c) => c.NroRuta === ruta.NroRuta).sort((a, b) => a.NroCircuito - b.NroCircuito);
+  const totalEdificios = circuitosRuta.reduce((acc, c) => acc + detalles.filter((d) => d.NroCircuito === c.NroCircuito).length, 0);
 
   return (
-    <Modal
-      open={!!ruta}
-      onClose={onClose}
-      title={`Detalle de Ruta ${ruta.NroRuta_RT}`}
-      width={1180}
-    >
-      {/* Header card */}
+    <Modal open={!!ruta} onClose={onClose} title={`Detalle de Ruta ${ruta.NroRuta}`} width={1180}>
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-wash-brand/[0.08] via-wash-surface to-wash-surface-2/30 p-5 ring-1 ring-wash-border">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-wash-brand/10 blur-3xl"
-        />
-
+        <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-wash-brand/10 blur-3xl" />
         <div className="relative flex items-start gap-4">
           <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-wash-brand to-wash-brand-dark text-white shadow-md shadow-wash-brand/25 ring-2 ring-wash-surface">
             <MapIcon size={22} />
@@ -354,46 +249,25 @@ function DetalleRutaModal({
           <div className="min-w-0 flex-1">
             <span className="inline-flex items-center gap-1 rounded-md bg-wash-brand/10 px-2 py-0.5 text-[11.5px] font-bold text-wash-brand tabular-nums ring-1 ring-wash-brand/20">
               <Hash size={10} />
-              Ruta {ruta.NroRuta_RT}
+              Ruta {ruta.NroRuta}
             </span>
-            <h3 className="mt-1.5 font-display text-[17px] font-black leading-tight text-wash-accent">
-              Catálogo de circuitos y edificios
-            </h3>
-            <p className="mt-1 text-[11.5px] text-wash-text-muted">
-              Asignaciones permanentes que componen esta ruta.
-            </p>
+            <h3 className="mt-1.5 font-display text-[17px] font-black leading-tight text-wash-accent">Catálogo de circuitos y edificios</h3>
+            <p className="mt-1 text-[11.5px] text-wash-text-muted">Asignaciones permanentes que componen esta ruta.</p>
           </div>
         </div>
-
         <div className="relative mt-4 grid grid-cols-2 divide-x divide-wash-border rounded-xl bg-wash-surface/80 ring-1 ring-wash-border">
-          <StatStrip
-            icon={MapIcon}
-            label="Circuitos"
-            value={String(circuitosRuta.length)}
-            tone="brand"
-          />
-          <StatStrip
-            icon={Building2}
-            label="Edificios"
-            value={String(totalEdificios)}
-            tone="brand"
-          />
+          <StatStrip icon={MapIcon} label="Circuitos" value={String(circuitosRuta.length)} />
+          <StatStrip icon={Building2} label="Edificios" value={String(totalEdificios)} />
         </div>
       </div>
 
-      {/* Circuitos section header */}
       <div className="mt-5 flex items-end justify-between">
         <div>
-          <p className="font-display text-[13px] font-black uppercase tracking-wider text-wash-text-strong">
-            Circuitos asignados
-          </p>
-          <p className="mt-0.5 text-[11px] text-wash-text-muted">
-            Edificios por circuito
-          </p>
+          <p className="font-display text-[13px] font-black uppercase tracking-wider text-wash-text-strong">Circuitos asignados</p>
+          <p className="mt-0.5 text-[11px] text-wash-text-muted">Edificios por circuito</p>
         </div>
       </div>
 
-      {/* Circuitos grid */}
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {circuitosRuta.length === 0 ? (
           <div className="col-span-full rounded-xl border border-dashed border-wash-border bg-wash-surface-2/30 p-8 text-center text-sm text-wash-text-muted">
@@ -401,23 +275,16 @@ function DetalleRutaModal({
           </div>
         ) : (
           circuitosRuta.map((c) => {
-            const edifs = detalles.filter(
-              (d) => d.NroCircuito_DC === c.NroCircuito_RC
-            );
+            const edifs = detalles.filter((d) => d.NroCircuito === c.NroCircuito);
             return (
-              <div
-                key={c.ID}
-                className="overflow-hidden rounded-xl bg-wash-surface ring-1 ring-wash-border transition hover:shadow-sm hover:ring-wash-brand/40"
-              >
+              <div key={c.ID} className="overflow-hidden rounded-xl bg-wash-surface ring-1 ring-wash-border transition hover:shadow-sm hover:ring-wash-brand/40">
                 <div className="border-b border-wash-border bg-wash-surface-2/40 px-3.5 py-2.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
                         <MapPin size={12} />
                       </span>
-                      <p className="font-display text-[13px] font-black leading-none text-wash-accent">
-                        Circuito {c.NroCircuito_RC}
-                      </p>
+                      <p className="font-display text-[13px] font-black leading-none text-wash-accent">Circuito {c.NroCircuito}</p>
                     </div>
                     <span className="inline-flex items-center gap-1 rounded-md bg-wash-surface px-1.5 py-1 text-[10.5px] font-bold text-wash-text-strong tabular-nums ring-1 ring-wash-border">
                       <Building2 size={10} />
@@ -427,28 +294,16 @@ function DetalleRutaModal({
                 </div>
                 <ul>
                   {edifs.length === 0 ? (
-                    <li className="px-3 py-3 text-xs italic text-wash-text-muted">
-                      Sin edificios cargados.
-                    </li>
+                    <li className="px-3 py-3 text-xs italic text-wash-text-muted">Sin edificios cargados.</li>
                   ) : (
-                    edifs.map((e) => {
-                      const code = codeFor(e.NombreEdificio_DC);
-                      return (
-                        <li
-                          key={e.ID}
-                          className="group flex items-center gap-2 border-l-2 border-transparent px-3 py-1.5 text-[12px] transition hover:border-wash-brand/40 hover:bg-wash-surface-2/40"
-                        >
-                          {code && (
-                            <span className="shrink-0 rounded bg-wash-surface-2 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-wash-text-muted tabular-nums">
-                              {code}
-                            </span>
-                          )}
-                          <span className="truncate font-medium text-wash-text-strong">
-                            {e.NombreEdificio_DC}
-                          </span>
-                        </li>
-                      );
-                    })
+                    edifs.map((e) => (
+                      <li key={e.ID} className="group flex items-center gap-2 border-l-2 border-transparent px-3 py-1.5 text-[12px] transition hover:border-wash-brand/40 hover:bg-wash-surface-2/40">
+                        {e.CodigoEdificio && (
+                          <span className="shrink-0 rounded bg-wash-surface-2 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-wash-text-muted tabular-nums">{e.CodigoEdificio}</span>
+                        )}
+                        <span className="truncate font-medium text-wash-text-strong">{e.Edificio}</span>
+                      </li>
+                    ))
                   )}
                 </ul>
               </div>
@@ -458,11 +313,7 @@ function DetalleRutaModal({
       </div>
 
       <ModalActions>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark"
-        >
+        <button type="button" onClick={onClose} className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark">
           Cerrar
         </button>
       </ModalActions>
@@ -470,331 +321,82 @@ function DetalleRutaModal({
   );
 }
 
-// ----- Agregar / Editar Ruta modal -----
+// ----- Agregar Ruta modal (solo número; los circuitos se crean en la pestaña Circuitos) -----
 
-interface FormCircuito {
-  nroCircuito: string;
-  edificios: number;
-}
-
-function RutaFormModal({
+function AddRutaModal({
   open,
-  mode,
-  defaultNroRuta,
-  circuitos,
-  detalles,
+  rutas,
   onClose,
-  onSave,
+  onCreate,
 }: {
   open: boolean;
-  mode: 'create' | 'edit';
-  defaultNroRuta?: string;
-  circuitos: ReturnType<typeof useAppStore.getState>['CollectResumenCircuito'];
-  detalles: ReturnType<typeof useAppStore.getState>['CollectDetalleCircuito'];
+  rutas: RutaAbm[];
   onClose: () => void;
-  onSave: () => void;
+  onCreate: (nroRuta: number) => Promise<void>;
 }) {
-  const [nroRuta, setNroRuta] = useState(defaultNroRuta ?? '');
-  const [pickedCircuito, setPickedCircuito] = useState('');
-  const [items, setItems] = useState<FormCircuito[]>([]);
+  const [nroRuta, setNroRuta] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    setNroRuta(defaultNroRuta ?? '');
-    setPickedCircuito('');
-    if (mode === 'edit' && defaultNroRuta) {
-      const existing = circuitos
-        .filter((c) => c.NroRuta_RC === defaultNroRuta)
-        .map((c) => ({
-          nroCircuito: c.NroCircuito_RC,
-          edificios: detalles.filter((d) => d.NroCircuito_DC === c.NroCircuito_RC).length,
-        }));
-      setItems(existing);
-    } else {
-      setItems([]);
-    }
-  }, [open, defaultNroRuta, mode, circuitos, detalles]);
+  const nro = Number(nroRuta);
+  const duplicada = !!nroRuta && rutas.some((r) => r.NroRuta === nro);
+  const invalida = !!nroRuta && (!Number.isInteger(nro) || nro <= 0);
+  const ready = !!nroRuta && !duplicada && !invalida;
 
-  const availableCircuitos = useMemo(() => {
-    const used = new Set(items.map((i) => i.nroCircuito));
-    return Array.from(new Set(circuitos.map((c) => c.NroCircuito_RC))).filter(
-      (c) => !used.has(c)
-    );
-  }, [circuitos, items]);
-
-  const canAdd = !!nroRuta && !!pickedCircuito;
-
-  const addItem = () => {
-    if (!canAdd) return;
-    const edif = detalles.filter((d) => d.NroCircuito_DC === pickedCircuito).length;
-    setItems((arr) => [...arr, { nroCircuito: pickedCircuito, edificios: edif }]);
-    setPickedCircuito('');
-  };
-
-  const removeItem = (idx: number) => {
-    setItems((arr) => arr.filter((_, i) => i !== idx));
-  };
-
-  const totalCircuitos = items.length;
-  const totalEdificios = items.reduce((acc, i) => acc + i.edificios, 0);
+  const reset = () => { setNroRuta(''); setError(null); };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={mode === 'create' ? 'Agregar Ruta' : `Editar Ruta ${defaultNroRuta ?? ''}`}
-      width={760}
-    >
-      {/* Intro */}
+    <Modal open={open} onClose={() => { reset(); onClose(); }} title="Agregar Ruta" width={480}>
       <div className="flex items-start gap-3 rounded-xl bg-wash-brand/[0.06] p-3.5 ring-1 ring-wash-brand/15">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-wash-brand/15 text-wash-brand ring-1 ring-wash-brand/25">
           <MapIcon size={14} />
         </span>
         <div>
-          <p className="font-display text-[13px] font-bold text-wash-accent">
-            {mode === 'create' ? 'Nueva ruta' : 'Editar ruta'}
-          </p>
+          <p className="font-display text-[13px] font-bold text-wash-accent">Nueva ruta</p>
           <p className="mt-0.5 text-[11.5px] leading-relaxed text-wash-text-muted">
-            Definí el número de ruta y los circuitos que la componen.
+            Creá el número de ruta. Después, en la pestaña <strong>Circuitos</strong>, agregás circuitos a esta ruta.
           </p>
         </div>
       </div>
 
-      {/* Form section */}
-      <div className="mt-4 rounded-xl border border-wash-border bg-wash-surface-2/40 p-4">
-        <div className="grid grid-cols-[180px_1fr_auto] items-end gap-3">
-          <div>
-            <Label>Nro de Ruta</Label>
-            <div className="mt-1.5">
-              <input
-                type="number"
-                min="1"
-                value={nroRuta}
-                onChange={(e) => setNroRuta(e.target.value)}
-                disabled={mode === 'edit'}
-                placeholder="1"
-                className="h-10 w-full rounded-md border border-wash-border bg-wash-surface px-3 text-[13px] font-semibold text-wash-text-strong outline-none ring-0 focus:border-wash-brand disabled:cursor-not-allowed disabled:bg-wash-surface-2/60 disabled:text-wash-text-muted"
-              />
-            </div>
-          </div>
-          <div>
-            <Label>Circuito</Label>
-            <div className="mt-1.5">
-              <Select
-                value={pickedCircuito || undefined}
-                onValueChange={setPickedCircuito}
-              >
-                <SelectTrigger className="h-10 w-full bg-wash-surface">
-                  <SelectValue placeholder="Buscar elementos" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableCircuitos.length === 0 ? (
-                    <div className="px-2 py-1.5 text-xs italic text-wash-text-muted">
-                      Sin circuitos disponibles
-                    </div>
-                  ) : (
-                    availableCircuitos.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        Circuito {c}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={addItem}
-            disabled={!canAdd}
-            title="Agregar circuito"
-            className="flex h-10 items-center gap-1.5 rounded-lg bg-wash-action px-3.5 text-[12.5px] font-semibold text-white shadow-sm shadow-wash-action/30 transition hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:bg-wash-surface-2 disabled:text-wash-text-faint disabled:shadow-none"
-          >
-            <Plus size={15} />
-            Agregar
-          </button>
-        </div>
+      <div className="mt-4">
+        <Label>Nro de Ruta</Label>
+        <input
+          type="number"
+          min="1"
+          value={nroRuta}
+          onChange={(e) => setNroRuta(e.target.value)}
+          placeholder="Ej. 9"
+          className="mt-1.5 h-10 w-full rounded-md border border-wash-border bg-wash-surface px-3 text-[13px] font-semibold text-wash-text-strong outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+        />
+        {duplicada && <p className="mt-1.5 text-[11px] font-medium text-rose-600">Ya existe la ruta {nro}.</p>}
+        {invalida && <p className="mt-1.5 text-[11px] font-medium text-rose-600">Tiene que ser un entero positivo.</p>}
       </div>
 
-      {/* Items list */}
-      <div className="mt-5">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
-            Circuitos agregados
-          </p>
-          {items.length > 0 && (
-            <span className="rounded-full bg-wash-brand/10 px-2 py-0.5 text-[10.5px] font-bold text-wash-brand">
-              {items.length} circuito{items.length === 1 ? '' : 's'}
-            </span>
-          )}
-        </div>
-        <div
-          className={cn(
-            'rounded-xl border transition-colors',
-            items.length === 0
-              ? 'min-h-[200px] border-dashed border-wash-border bg-wash-surface-2/30'
-              : 'border-wash-border bg-wash-surface'
-          )}
-        >
-          {items.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <ul className="divide-y divide-wash-divider/60">
-              {items.map((it, i) => (
-                <li
-                  key={i}
-                  className="group flex items-center gap-3 px-3.5 py-2.5 transition hover:bg-wash-surface-2/40"
-                >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-wash-surface-2 text-[10.5px] font-bold text-wash-text-muted tabular-nums ring-1 ring-wash-border">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-md bg-wash-brand/10 px-2 py-1 font-display text-[12px] font-black uppercase text-wash-brand tabular-nums ring-1 ring-wash-brand/20">
-                    <MapPin size={11} />
-                    Circuito {it.nroCircuito}
-                  </span>
-                  <div className="flex-1" />
-                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-wash-surface-2 px-2 py-1 text-[11.5px] font-bold text-wash-text-strong tabular-nums ring-1 ring-wash-border">
-                    <Building2 size={11} className="text-wash-text-muted" />
-                    {it.edificios}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeItem(i)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-rose-600 ring-1 ring-rose-500/30 transition hover:bg-rose-500/10 hover:ring-rose-500"
-                    title="Quitar"
-                  >
-                    <X size={13} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-
-      {/* Totals */}
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <TotalCard
-          icon={MapIcon}
-          label="Circuitos totales"
-          value={totalCircuitos}
-        />
-        <TotalCard
-          icon={Building2}
-          label="Edificios totales"
-          value={totalEdificios}
-        />
-      </div>
+      {error && <p className="mt-3 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">{error}</p>}
 
       <ModalActions>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
-        >
+        <button type="button" onClick={() => { reset(); onClose(); }} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2">
           Cancelar
         </button>
         <button
           type="button"
-          disabled={!nroRuta || items.length === 0}
-          onClick={onSave}
+          disabled={!ready || saving}
+          onClick={async () => {
+            setSaving(true);
+            setError(null);
+            try {
+              await onCreate(nro);
+              reset();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'No se pudo crear la ruta.');
+            } finally {
+              setSaving(false);
+            }
+          }}
           className="rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Guardar
-        </button>
-      </ModalActions>
-    </Modal>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex h-full min-h-[200px] flex-col items-center justify-center px-6 text-center">
-      <div className="relative mb-3">
-        <span className="absolute inset-0 animate-ping rounded-2xl bg-wash-brand/15" />
-        <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/25">
-          <ClipboardEdit size={24} strokeWidth={1.6} />
-        </div>
-      </div>
-      <p className="font-display text-[14px] font-bold text-wash-text-strong">
-        Sin circuitos agregados
-      </p>
-      <p className="mt-1 max-w-[280px] text-[11.5px] leading-relaxed text-wash-text-muted">
-        Elegí un circuito del catálogo y tocá <strong>+ Agregar</strong> para
-        sumarlo a la ruta.
-      </p>
-    </div>
-  );
-}
-
-function TotalCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof MapIcon;
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg bg-wash-surface-2/60 px-3.5 py-2.5 ring-1 ring-wash-border">
-      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
-        <Icon size={14} />
-      </span>
-      <div className="min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
-          {label}
-        </p>
-        <p className="font-display text-[18px] font-black leading-none text-wash-text-strong tabular-nums">
-          {value}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ----- Eliminar -----
-
-function EliminarRutaModal({
-  ruta,
-  onClose,
-  onConfirm,
-}: {
-  ruta: RutaCatalogo | null;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Modal open={!!ruta} onClose={onClose} width={520}>
-      <div className="flex items-start gap-4">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-rose-200">
-          <Trash2 size={20} />
-        </span>
-        <div className="flex-1">
-          <h2 className="font-display text-lg font-black text-wash-text-strong">
-            Eliminar ruta
-          </h2>
-          <p className="mt-1 text-sm text-wash-text-muted">
-            ¿Eliminar la <span className="font-semibold">Ruta {ruta?.NroRuta_RT}</span>{' '}
-            del catálogo? Esta acción no se puede deshacer.
-          </p>
-        </div>
-      </div>
-      <ModalActions>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="flex items-center gap-2 rounded-lg bg-rose-600 px-5 py-2.5 font-semibold text-white hover:bg-rose-700"
-        >
-          <CheckCircle2 size={15} />
-          Eliminar
+          {saving ? 'Creando…' : 'Crear ruta'}
         </button>
       </ModalActions>
     </Modal>
@@ -803,148 +405,59 @@ function EliminarRutaModal({
 
 // ----- Shared bits -----
 
-function ActionBtn({
-  icon: Icon,
-  tone,
-  title,
-  onClick,
-}: {
-  icon: typeof Eye;
-  tone: 'neutral' | 'brand' | 'danger';
-  title: string;
-  onClick: (e: React.MouseEvent) => void;
-}) {
+function ActionBtn({ icon: Icon, tone, title, onClick }: { icon: typeof Eye; tone: 'neutral' | 'brand' | 'danger'; title: string; onClick: (e: React.MouseEvent) => void }) {
   const cls = {
-    neutral:
-      'text-wash-text-muted ring-wash-border hover:bg-wash-surface-2 hover:text-wash-text-strong hover:ring-wash-text-muted/40',
-    brand:
-      'text-wash-brand ring-wash-brand/30 hover:bg-wash-brand/10 hover:ring-wash-brand',
-    danger:
-      'text-rose-600 ring-rose-500/30 hover:bg-rose-500/10 hover:ring-rose-500',
+    neutral: 'text-wash-text-muted ring-wash-border hover:bg-wash-surface-2 hover:text-wash-text-strong hover:ring-wash-text-muted/40',
+    brand: 'text-wash-brand ring-wash-brand/30 hover:bg-wash-brand/10 hover:ring-wash-brand',
+    danger: 'text-rose-600 ring-rose-500/30 hover:bg-rose-500/10 hover:ring-rose-500',
   }[tone];
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className={cn(
-        'flex h-8 w-8 items-center justify-center rounded-lg ring-1 transition',
-        cls
-      )}
-    >
+    <button type="button" onClick={onClick} title={title} className={cn('flex h-8 w-8 items-center justify-center rounded-lg ring-1 transition', cls)}>
       <Icon size={15} />
     </button>
   );
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
-      {children}
-    </label>
-  );
+  return <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">{children}</label>;
 }
 
-function StatStrip({
-  icon: Icon,
-  label,
-  value,
-  tone = 'brand',
-}: {
-  icon: typeof MapIcon;
-  label: string;
-  value: string;
-  tone?: 'brand' | 'emerald';
-}) {
-  const toneCls =
-    tone === 'emerald'
-      ? 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/20'
-      : 'bg-wash-brand/10 text-wash-brand ring-wash-brand/20';
+function StatStrip({ icon: Icon, label, value }: { icon: typeof MapIcon; label: string; value: string }) {
   return (
     <div className="flex items-center gap-2.5 px-4 py-3">
-      <span
-        className={cn(
-          'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1',
-          toneCls
-        )}
-      >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
         <Icon size={14} />
       </span>
       <div className="min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
-          {label}
-        </p>
-        <p className="font-display text-[19px] font-black leading-none text-wash-text-strong tabular-nums">
-          {value}
-        </p>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">{label}</p>
+        <p className="font-display text-[19px] font-black leading-none text-wash-text-strong tabular-nums">{value}</p>
       </div>
     </div>
   );
 }
 
-// ----- KPI strip + card grid -----
-
 type KpiTone = 'brand' | 'emerald' | 'violet';
 
-function KpiCard({
-  icon: Icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: typeof MapIcon;
-  label: string;
-  value: number;
-  tone: KpiTone;
-}) {
-  const bgGradient: Record<KpiTone, string> = {
-    brand: 'from-wash-brand/[0.07]',
-    emerald: 'from-emerald-500/[0.07]',
-    violet: 'from-violet-500/[0.07]',
-  };
+function KpiCard({ icon: Icon, label, value, tone }: { icon: typeof MapIcon; label: string; value: number; tone: KpiTone }) {
+  const bgGradient: Record<KpiTone, string> = { brand: 'from-wash-brand/[0.07]', emerald: 'from-emerald-500/[0.07]', violet: 'from-violet-500/[0.07]' };
   const iconCls: Record<KpiTone, string> = {
     brand: 'bg-wash-brand/10 text-wash-brand ring-wash-brand/25',
     emerald: 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/25',
     violet: 'bg-violet-500/10 text-violet-600 ring-violet-500/25',
   };
-  const blobCls: Record<KpiTone, string> = {
-    brand: 'bg-wash-brand/15',
-    emerald: 'bg-emerald-500/15',
-    violet: 'bg-violet-500/15',
-  };
+  const blobCls: Record<KpiTone, string> = { brand: 'bg-wash-brand/15', emerald: 'bg-emerald-500/15', violet: 'bg-violet-500/15' };
   return (
-    <div
-      className={cn(
-        'relative overflow-hidden rounded-2xl bg-gradient-to-br to-wash-surface p-4 ring-1 ring-wash-border',
-        bgGradient[tone]
-      )}
-    >
-      <div
-        aria-hidden
-        className={cn(
-          'pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-3xl',
-          blobCls[tone]
-        )}
-      />
+    <div className={cn('relative overflow-hidden rounded-2xl bg-gradient-to-br to-wash-surface p-4 ring-1 ring-wash-border', bgGradient[tone])}>
+      <div aria-hidden className={cn('pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-3xl', blobCls[tone])} />
       <div className="relative flex items-center gap-3">
-        <span
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1',
-            iconCls[tone]
-          )}
-        >
+        <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1', iconCls[tone])}>
           <Icon size={18} />
         </span>
         <div className="min-w-0">
-          <p className="text-[10.5px] font-bold uppercase tracking-wider text-wash-text-muted">
-            {label}
-          </p>
-          <p className="font-display text-[22px] font-black leading-none text-wash-text-strong tabular-nums">
-            {value}
-          </p>
+          <p className="text-[10.5px] font-bold uppercase tracking-wider text-wash-text-muted">{label}</p>
+          <p className="font-display text-[22px] font-black leading-none text-wash-text-strong tabular-nums">{value}</p>
         </div>
       </div>
     </div>
   );
 }
-

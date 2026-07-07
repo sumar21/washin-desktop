@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Eye,
-  Pencil,
   Trash2,
   CalendarDays,
   MapPin,
@@ -13,7 +12,9 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
-import { Modal, ModalActions } from '@/components/Modal';
+import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
+import { ErrorState } from '@/components/ErrorState';
 import {
   Select,
   SelectContent,
@@ -23,83 +24,158 @@ import {
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
-import type { MesPlanificacion } from '@/types/domain';
+import type { PlanifMes, PlanifRuta } from '@/types/domain';
+
+const MONTHS_ES = [
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
+];
+
+interface MesOption {
+  value: string; // 'mm/yyyy'
+  nombre: string; // 'Julio'
+  label: string; // 'Julio 2026'
+}
+
+function generateMonthOptions(): MesOption[] {
+  const out: MesOption[] = [];
+  const now = new Date();
+  for (let offset = -6; offset <= 6; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const nombre = MONTHS_ES[d.getMonth()];
+    out.push({
+      value: `${mm}/${d.getFullYear()}`,
+      nombre,
+      label: `${nombre} ${d.getFullYear()}`,
+    });
+  }
+  return out;
+}
 
 export function Rutas() {
   const navigate = useNavigate();
-  const meses = useAppStore((s) => s.CollectMesesPlanificados);
-  const resumen = useAppStore((s) => s.CollectResumenPlanificaciones);
-  const usuarios = useAppStore((s) => s.CollectUser);
-  const rutasCatalog = useAppStore((s) => s.CollectRutasDisponibles);
+  const meses = useAppStore((s) => s.CollectPlanifMeses);
+  const resumen = useAppStore((s) => s.CollectPlanifResumen);
+  const tecnicos = useAppStore((s) => s.CollectTecnicosDisponibles);
+  const rutasCatalog = useAppStore((s) => s.CollectAbmRutas);
+  const fetchPlanificaciones = useAppStore((s) => s.fetchPlanificaciones);
+  const createPlanificacion = useAppStore((s) => s.createPlanificacion);
+  const deletePlanificacion = useAppStore((s) => s.deletePlanificacion);
   const setMesPlanif = useAppStore((s) => s.setMesPlanificacionDetail);
 
   const [query, setQuery] = useState('');
-  const [deleting, setDeleting] = useState<MesPlanificacion | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [editing, setEditing] = useState<MesPlanificacion | null>(null);
+  const [deleting, setDeleting] = useState<PlanifMes | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const loadData = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    return fetchPlanificaciones()
+      .catch((err) => {
+        setError(
+          err instanceof Error ? err.message : 'No se pudieron cargar las planificaciones.'
+        );
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [fetchPlanificaciones]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; `loadData` también la dispara el botón "Reintentar".
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar; `loadData` ya setea su propio loading.
+  }, []);
+
+  const monthOrder = (mesAno: string) => {
+    const [mm, yyyy] = mesAno.split('/').map(Number);
+    return yyyy * 100 + mm;
+  };
 
   const filteredMeses = useMemo(() => {
     const q = query.toLowerCase();
-    const monthOrder = (mesAno: string) => {
-      const [mm, yyyy] = mesAno.split('/').map(Number);
-      return yyyy * 100 + mm;
-    };
     return [...meses]
-      .filter((m) => m.Status_MP === 'Activo')
-      .sort((a, b) => monthOrder(b.MesAnoPlanificado_MP) - monthOrder(a.MesAnoPlanificado_MP))
+      .sort((a, b) => monthOrder(b.MesAno) - monthOrder(a.MesAno))
       .filter(
         (m) =>
-          m.MesAnoPlanificado_MP.toLowerCase().includes(q) ||
-          m.MesPlanificado_MP.toLowerCase().includes(q)
+          m.MesAno.toLowerCase().includes(q) || m.Mes.toLowerCase().includes(q)
       );
   }, [meses, query]);
 
-  const rutasDelMes = (mesAno: string) =>
-    resumen.filter((r) => r.MesAnoPlanificado_RP === mesAno);
-
-  const goDetail = (m: MesPlanificacion) => {
-    setMesPlanif(m.MesAnoPlanificado_MP, m.MesPlanificado_MP);
-    navigate('/planificacion/detalle');
-  };
-
-  const tecnicos = useMemo(
-    () =>
-      usuarios.filter(
-        (u) => u.Status === 'ALTA' && (u.Rol === 'Tecnico' || u.Rol === 'Jefe Taller')
-      ),
-    [usuarios]
+  const rutasDelMes = useCallback(
+    (mesAno: string): PlanifRuta[] => resumen.filter((r) => r.MesAno === mesAno),
+    [resumen]
   );
 
-  const rutasOptions = useMemo(
-    () => rutasCatalog.filter((r) => r.Status_RT === 'Activo'),
-    [rutasCatalog]
+  const progresoMes = useCallback(
+    (mesAno: string) => {
+      const rutas = rutasDelMes(mesAno);
+      const cerradas = rutas.filter((r) => r.Status === 'Cerrada').length;
+      const total = rutas.length;
+      const pct = total === 0 ? 0 : Math.round((cerradas / total) * 100);
+      return { cerradas, total, pct };
+    },
+    [rutasDelMes]
   );
 
   const mesesOptions = useMemo(() => generateMonthOptions(), []);
 
-  const columns: Column<MesPlanificacion>[] = [
+  const goDetail = (m: PlanifMes) => {
+    setMesPlanif(m.MesAno, m.Mes);
+    navigate('/planificacion/detalle');
+  };
+
+  const handleDelete = async () => {
+    if (!deleting || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await deletePlanificacion({ mesAno: deleting.MesAno });
+      setDeleting(null);
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : 'No se pudo eliminar la planificación.'
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const yearOf = (mesAno: string) => mesAno.split('/')[1] ?? '';
+
+  const columns: Column<PlanifMes>[] = [
     {
       key: 'mes',
       header: 'Mes',
       width: 'minmax(280px, 1fr)',
-      render: (m) => {
-        const [, year] = m.MesAnoPlanificado_MP.split('/');
-        return (
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
-              <CalendarDays size={15} />
-            </span>
-            <div>
-              <p className="font-display text-[14px] font-black capitalize text-wash-accent">
-                {m.MesPlanificado_MP} {year}
-              </p>
-              <p className="mt-0.5 text-[11px] text-wash-text-muted">
-                Planificación mensual
-              </p>
-            </div>
+      render: (m) => (
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+            <CalendarDays size={15} />
+          </span>
+          <div>
+            <p className="font-display text-[14px] font-black capitalize text-wash-accent">
+              {m.Mes} {yearOf(m.MesAno)}
+            </p>
+            <p className="mt-0.5 text-[11px] text-wash-text-muted">Planificación mensual</p>
           </div>
-        );
-      },
+        </div>
+      ),
     },
     {
       key: 'rutas',
@@ -110,7 +186,7 @@ export function Rutas() {
       render: (m) => (
         <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2.5 py-1 text-[12.5px] font-bold text-wash-text-strong tabular-nums">
           <MapPin size={11} className="text-wash-brand" />
-          {m.RutasTotales_MP}
+          {m.RutasTotales}
         </span>
       ),
     },
@@ -123,7 +199,7 @@ export function Rutas() {
       render: (m) => (
         <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2.5 py-1 text-[12.5px] font-bold text-wash-text-strong tabular-nums">
           <Users size={11} className="text-wash-brand" />
-          {m.TecnicosTotales_MP}
+          {m.TecnicosTotales}
         </span>
       ),
     },
@@ -133,10 +209,7 @@ export function Rutas() {
       width: '180px',
       truncate: false,
       render: (m) => {
-        const rutas = rutasDelMes(m.MesAnoPlanificado_MP);
-        const cerradas = rutas.filter((r) => r.Status_RP === 'Cerrada').length;
-        const total = rutas.length;
-        const pct = total === 0 ? 0 : Math.round((cerradas / total) * 100);
+        const { pct } = progresoMes(m.MesAno);
         return (
           <div className="flex w-full items-center gap-2">
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-wash-surface-2">
@@ -155,7 +228,7 @@ export function Rutas() {
     {
       key: 'actions',
       header: 'Acciones',
-      width: '140px',
+      width: '110px',
       align: 'right',
       truncate: false,
       render: (m) => (
@@ -170,21 +243,13 @@ export function Rutas() {
             }}
           />
           <ActionBtn
-            icon={Pencil}
-            tone="neutral"
-            title="Editar"
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditing(m);
-            }}
-          />
-          <ActionBtn
             icon={Trash2}
             tone="danger"
             title="Eliminar"
             onClick={(e) => {
               e.stopPropagation();
               setDeleting(m);
+              setDeleteError(null);
             }}
           />
         </div>
@@ -193,7 +258,7 @@ export function Rutas() {
   ];
 
   return (
-    <div className="flex h-full w-full flex-col">
+    <div className="relative flex h-full w-full flex-col">
       <PageHeader
         title="Planificación de rutas"
         subtitle="Cronograma mensual de visitas"
@@ -201,63 +266,124 @@ export function Rutas() {
         onAdd={() => setCreateOpen(true)}
         addLabel="Crear planificación"
       />
+      <LoadingOverlay visible={loading} label="Cargando planificaciones…" />
 
-      <div className="flex-1 overflow-hidden p-6">
-        <DataTable
-          rows={filteredMeses}
-          rowKey={(r) => r.ID}
-          columns={columns}
-          empty="Sin planificaciones registradas."
-          onRowClick={(m) => goDetail(m)}
-        />
-      </div>
+      {error ? (
+        <ErrorState message={error} onRetry={loadData} />
+      ) : (
+        <div className="flex-1 overflow-hidden p-6">
+          <DataTable
+            rows={filteredMeses}
+            rowKey={(r) => r.ID}
+            columns={columns}
+            empty="Sin planificaciones registradas."
+            onRowClick={(m) => goDetail(m)}
+            mobileCard={(m) => {
+              const { pct } = progresoMes(m.MesAno);
+              return (
+                <div className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
+                  {/* Fila 1: mes + acciones */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+                        <CalendarDays size={15} />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-display text-[14px] font-black capitalize text-wash-accent">
+                          {m.Mes} {yearOf(m.MesAno)}
+                        </p>
+                        <p className="text-[11px] text-wash-text-muted">Planificación mensual</p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-1.5">
+                      <ActionBtn
+                        icon={Eye}
+                        tone="brand"
+                        title="Ver planificación"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          goDetail(m);
+                        }}
+                      />
+                      <ActionBtn
+                        icon={Trash2}
+                        tone="danger"
+                        title="Eliminar"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleting(m);
+                          setDeleteError(null);
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {/* Fila 2: rutas / técnicos */}
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2.5 py-1 text-[12px] font-bold text-wash-text-strong tabular-nums">
+                      <MapPin size={11} className="text-wash-brand" />
+                      {m.RutasTotales} rutas
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2.5 py-1 text-[12px] font-bold text-wash-text-strong tabular-nums">
+                      <Users size={11} className="text-wash-brand" />
+                      {m.TecnicosTotales} técnicos
+                    </span>
+                  </div>
+                  {/* Fila 3: progreso */}
+                  <div className="mt-3 flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-wash-surface-2">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-wash-brand-light to-wash-brand transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[11.5px] font-semibold text-wash-text-muted tabular-nums">
+                      {pct}%
+                    </span>
+                  </div>
+                </div>
+              );
+            }}
+          />
+        </div>
+      )}
 
       {/* Nueva planificación */}
-      <PlanificacionFormModal
+      <CreatePlanificacionModal
         open={createOpen}
-        mode="create"
-        tecnicos={tecnicos.map((t) => t.Concat_Nombre_Apellido)}
-        rutas={rutasOptions.map((r) => r.NroRuta_RT)}
+        tecnicos={tecnicos.map((t) => t.Nombre_Tecnico)}
+        rutas={rutasCatalog.map((r) => String(r.NroRuta))}
         meses={mesesOptions}
         onClose={() => setCreateOpen(false)}
-        onSave={() => setCreateOpen(false)}
+        onCreate={async (mes, mesNombre, lines) => {
+          await createPlanificacion({ mes, mesNombre, lines });
+          setCreateOpen(false);
+        }}
       />
 
-      {/* Editar planificación */}
-      <PlanificacionFormModal
-        open={!!editing}
-        mode="edit"
-        defaultMes={editing?.MesAnoPlanificado_MP}
-        tecnicos={tecnicos.map((t) => t.Concat_Nombre_Apellido)}
-        rutas={rutasOptions.map((r) => r.NroRuta_RT)}
-        meses={mesesOptions}
-        onClose={() => setEditing(null)}
-        onSave={() => setEditing(null)}
-      />
-
-      {/* Delete confirm (icon-hero layout) */}
-      <DeletePlanificacionModal
-        planif={deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={() => setDeleting(null)}
+      {/* Eliminar planificación */}
+      <ConfirmDialog
+        open={!!deleting}
+        tone="danger"
+        title="Eliminar planificación"
+        message={
+          deleting
+            ? `¿Eliminar la planificación de ${deleting.Mes} ${yearOf(deleting.MesAno)}? Se eliminan sus ${deleting.RutasTotales} ruta(s) asignada(s). Esta acción no se puede deshacer.`
+            : ''
+        }
+        confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => {
+          setDeleting(null);
+          setDeleteError(null);
+        }}
+        onConfirm={handleDelete}
       />
     </div>
   );
 }
 
-// ----- Helpers -----
-
-function generateMonthOptions(): string[] {
-  const out: string[] = [];
-  const now = new Date();
-  // Last 6 months + current + next 6 months
-  for (let offset = -6; offset <= 6; offset++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    out.push(`${mm}/${d.getFullYear()}`);
-  }
-  return out;
-}
+// ----- Shared bits -----
 
 function ActionBtn({
   icon: Icon,
@@ -293,123 +419,113 @@ function ActionBtn({
   );
 }
 
-// ----- Delete modal -----
-
-function DeletePlanificacionModal({
-  planif,
-  onClose,
-  onConfirm,
-}: {
-  planif: MesPlanificacion | null;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
+function Label({ children }: { children: React.ReactNode }) {
   return (
-    <Modal open={!!planif} onClose={onClose} title="" width={520}>
-      <div className="flex items-start gap-4">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-rose-200">
-          <Trash2 size={20} />
-        </span>
-        <div className="flex-1">
-          <h2 className="font-display text-lg font-black text-wash-text-strong">
-            Eliminar Planificación
-          </h2>
-          <p className="mt-1 text-sm text-wash-text-muted">
-            ¿Está seguro de que desea eliminar esta Planificación? No podrás
-            recuperarla.
-          </p>
-        </div>
-      </div>
-      <ModalActions>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-muted hover:bg-wash-surface-2"
-        >
-          Cerrar
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark"
-        >
-          Aceptar
-        </button>
-      </ModalActions>
-    </Modal>
+    <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+      {children}
+    </label>
   );
 }
 
-// ----- Form modal (create / edit) -----
+// ----- Crear planificación modal -----
 
 interface FormLine {
   tecnico: string;
-  ruta: string;
-  mes: string;
+  nroRuta: string;
 }
 
-function PlanificacionFormModal({
+function CreatePlanificacionModal({
   open,
-  mode,
-  defaultMes,
   tecnicos,
   rutas,
   meses,
   onClose,
-  onSave,
+  onCreate,
 }: {
   open: boolean;
-  mode: 'create' | 'edit';
-  defaultMes?: string;
   tecnicos: string[];
   rutas: string[];
-  meses: string[];
+  meses: MesOption[];
   onClose: () => void;
-  onSave: (lines: FormLine[]) => void;
+  onCreate: (mes: string, mesNombre: string, lines: FormLine[]) => Promise<void>;
 }) {
+  const [mes, setMes] = useState('');
   const [tecnico, setTecnico] = useState('');
   const [ruta, setRuta] = useState('');
-  const [mes, setMes] = useState(defaultMes ?? '');
   const [lines, setLines] = useState<FormLine[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Reset state when modal opens
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset del formulario al abrir el modal.
+      setMes('');
       setTecnico('');
       setRuta('');
-      setMes(defaultMes ?? '');
       setLines([]);
+      setSaving(false);
+      setError(null);
     }
-  }, [open, defaultMes]);
+  }, [open]);
 
-  const canAddLine = !!tecnico && !!ruta && !!mes;
+  const canAddLine = !!tecnico && !!ruta;
+  const canCreate = !!mes && lines.length > 0;
 
   const addLine = () => {
     if (!canAddLine) return;
-    setLines((arr) => [...arr, { tecnico, ruta, mes }]);
+    setLines((arr) => [...arr, { tecnico, nroRuta: ruta }]);
     setTecnico('');
     setRuta('');
-    // Keep mes selected for convenience
   };
 
   const removeLine = (idx: number) => {
     setLines((arr) => arr.filter((_, i) => i !== idx));
   };
 
+  const handleCreate = async () => {
+    if (!canCreate || saving) return;
+    const opt = meses.find((m) => m.value === mes);
+    setSaving(true);
+    setError(null);
+    try {
+      await onCreate(mes, opt?.nombre ?? '', lines);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'No se pudo crear la planificación.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={mode === 'create' ? 'Nueva planificación' : 'Editar planificación'}
-      width={720}
-    >
+    <Modal open={open} onClose={onClose} title="Nueva planificación" width={720}>
       <p className="text-sm text-wash-text-muted">
-        Asigná técnicos a rutas mensuales. Podés sumar varias líneas antes de guardar.
+        Elegí el mes y asigná técnicos a rutas. Podés sumar varias líneas antes de crear.
       </p>
 
-      {/* Form section */}
+      {/* Mes de la planificación */}
+      <div className="mt-5">
+        <Label>Mes de la planificación</Label>
+        <div className="mt-1.5 max-w-[280px]">
+          <Select value={mes || undefined} onValueChange={setMes}>
+            <SelectTrigger className="h-10 w-full bg-wash-surface">
+              <SelectValue placeholder="Seleccionar mes" />
+            </SelectTrigger>
+            <SelectContent>
+              {meses.map((m) => (
+                <SelectItem key={m.value} value={m.value}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Alta de líneas técnico + ruta */}
       <div className="mt-5 rounded-xl border border-wash-border bg-wash-surface-2/40 p-4">
-        <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-3">
+        <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-3">
           <div>
             <Label>Técnico</Label>
             <div className="mt-1.5">
@@ -444,23 +560,6 @@ function PlanificacionFormModal({
               </Select>
             </div>
           </div>
-          <div>
-            <Label>Mes</Label>
-            <div className="mt-1.5">
-              <Select value={mes || undefined} onValueChange={setMes}>
-                <SelectTrigger className="h-10 w-full bg-wash-surface">
-                  <SelectValue placeholder="Seleccionar" />
-                </SelectTrigger>
-                <SelectContent>
-                  {meses.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
           <button
             type="button"
             onClick={addLine}
@@ -473,7 +572,7 @@ function PlanificacionFormModal({
         </div>
       </div>
 
-      {/* Items list */}
+      {/* Lista de líneas */}
       <div className="mt-5">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
@@ -498,21 +597,16 @@ function PlanificacionFormModal({
           ) : (
             <ul className="divide-y divide-wash-divider/60">
               {lines.map((l, i) => (
-                <li
-                  key={i}
-                  className="group flex items-center gap-3 px-4 py-2.5"
-                >
+                <li key={i} className="group flex items-center gap-3 px-4 py-2.5">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
                     <MapPin size={14} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-display text-[13px] font-bold text-wash-accent">
-                      Ruta {l.ruta}
+                      Ruta {l.nroRuta}
                     </p>
                     <p className="mt-0.5 truncate text-[11px] text-wash-text-muted">
                       <span className="font-semibold text-wash-text">{l.tecnico}</span>
-                      <span className="mx-1.5 text-wash-text-faint">·</span>
-                      <span className="font-mono">{l.mes}</span>
                     </p>
                   </div>
                   <button
@@ -530,6 +624,12 @@ function PlanificacionFormModal({
         </div>
       </div>
 
+      {error && (
+        <p className="mt-3 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">
+          {error}
+        </p>
+      )}
+
       <ModalActions>
         <button
           type="button"
@@ -540,11 +640,11 @@ function PlanificacionFormModal({
         </button>
         <button
           type="button"
-          disabled={lines.length === 0}
-          onClick={() => onSave(lines)}
+          disabled={!canCreate || saving}
+          onClick={handleCreate}
           className="rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Guardar
+          {saving ? 'Creando…' : 'Crear planificación'}
         </button>
       </ModalActions>
     </Modal>
@@ -568,13 +668,5 @@ function EmptyState() {
         ruta a la planificación.
       </p>
     </div>
-  );
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <label className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
-      {children}
-    </label>
   );
 }

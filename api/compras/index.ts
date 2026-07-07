@@ -33,7 +33,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ── Listar compras del mes (cabeceras activas + sus líneas) ──────────────
   if (req.method === 'GET') {
-    const mesAno = currentMesAno();
+    // `?mes=MM/YYYY` para ver un mes puntual (default: mes actual). Devolvemos TODOS
+    // los estados del mes (incl. Recibida/Anulado/Rechazada) para que el filtro de
+    // estado del front funcione; antes se excluían las Filtrar_PC="SI" y no se veían.
+    const mesParam = typeof req.query.mes === 'string' ? req.query.mes : undefined;
+    const mesAno = mesParam && /^\d{2}\/\d{4}$/.test(mesParam) ? mesParam : currentMesAno();
     try {
       const [pedidoRows, detalleRows] = await Promise.all([
         listItems(LIST_IDS.pedidoCompras, {
@@ -45,9 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           filter: `fields/FechaMesAno_DC eq '${mesAno}'`,
         }),
       ]);
-      // Filtro compuesto en memoria: SharePoint rechaza $filter con `and` sobre
-      // dos columnas no indexadas. Cabeceras: Filtrar_PC="NO"; líneas: no rechazadas.
-      const pedidos = pedidoRows.map(mapPedidoCompra).filter((p) => p.Filtrar_PC === 'NO');
+      const pedidos = pedidoRows.map(mapPedidoCompra);
       const detalles = detalleRows.map(mapDetalleCompra).filter((d) => d.Rechazada_DC !== 'SI');
       return res.status(200).json({ pedidos, detalles });
     } catch (err) {

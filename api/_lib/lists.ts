@@ -21,6 +21,19 @@ export const LIST_IDS = {
   maquinasCompra: '2e4dadb2-eb41-4421-a2da-9a1be9b76aa0',
   permisosDesktop: '60ed777c-2330-4c47-83ca-2a1f8a031143',
   repuestosTecnico: 'ccede13f-55cc-453f-b1bf-fac99d13b68a',
+  ventilaciones: 'a4e28738-1007-4218-aec0-9f8cda7e10ee',
+  edificios: 'd57217b1-54a0-40eb-8193-60915d9e66a7',
+  frecuencias: '226a290e-e505-4dd8-be1f-ee2d4e75839a',
+  gruposVent: '4d54b06b-59c2-4dc2-b6a9-cfa87d2bd1e7',
+  rutas: 'd16a7a8f-c21d-4c20-96a9-0a27c088f636',
+  resumenCircuito: '3ed8507c-6f16-4a3a-b256-0fb20acea0f2',
+  detalleCircuito: '13186fc6-1b8c-453e-8183-7ee760e09e6f',
+  tipoABM: '2f9975a6-b910-41f3-965d-44867e306d00',
+  roles: '748fd460-68dc-4194-8ad9-67499f5db42f',
+  mesesPlanif: 'e3e8a011-90dd-43e1-adf4-d9d9ac2d261e',
+  resumenPlanif: '1a5986e8-9367-4350-ae2a-5b3755a7098e',
+  detallePlanif: 'bf4452b0-50b8-406c-8988-3c57b393a195',
+  edificiosVisitar: '717028c9-9949-494b-9ee8-a1a7089f6f5b',
 } as const;
 
 /**
@@ -753,4 +766,436 @@ export function modulosPermitidos(rows: SharePointItem[], rol: string): PermisoM
     .filter((r) => r.Status_LPP === 'Activo' && r[column] === 'SI')
     .map(mapPermiso)
     .sort((a, b) => a.Orden_LPP - b.Orden_LPP);
+}
+
+// ── 19.Ventilaciones ──────────────────────────────────────────────────────
+// Tipos SharePoint: IDEdificio_VE / Frecuencia_VE / IDAsignado_VE son NUMBER;
+// el resto es text. Al escribir hay que respetar eso (Number(...) vs String(...)).
+export interface VentilacionRow {
+  ID: number;
+  Edificio_VE: string;
+  IDEdificio_VE: number;
+  DireccionEdificio_VE: string;
+  Grupo_VE: string;
+  Frecuencia_VE: string;
+  Asignado_VE: string;
+  IDAsignado_VE: number | null;
+  Estado_VE: string;
+  EsIncidente_VE: 'SI' | 'NO';
+  Orden_VE: number;
+  FechaUltima_VE: string;
+  ProximaLimpieza_VE: string;
+  FechaProgramada_VE: string;
+  FechaMesAnoProxima_VE: string;
+  FechaAnoProxima_VE: string;
+  FechaMesAnoFinalizacion_VE: string;
+  FechaFinalizacion_VE: string;
+  FechaAsignado_VE: string;
+  ObservacionResuelto_VE: string;
+  ObservacionAdelanto_VE: string;
+}
+
+const VENTILACION_SELECT = [
+  'Estado_VE', 'Edificio_VE', 'IDEdificio_VE', 'DireccionEdificio_VE', 'Grupo_VE',
+  'Frecuencia_VE', 'Asignado_VE', 'IDAsignado_VE', 'EsIncidente_VE', 'Orden_VE',
+  'FechaUltima_VE', 'ProximaLimpieza_VE', 'FechaProgramada_VE', 'FechaMesAnoProxima_VE',
+  'FechaAnoProxima_VE', 'FechaMesAnoFinalizacion_VE', 'FechaFinalizacion_VE',
+  'FechaAsignado_VE', 'ObservacionResuelto_VE', 'ObservacionAdelanto_VE',
+];
+
+export function ventilacionSelectFields(): string[] {
+  return VENTILACION_SELECT;
+}
+
+export function mapVentilacion(item: SharePointItem): VentilacionRow {
+  const idAsig = item.IDAsignado_VE;
+  return {
+    ID: Number(item.id),
+    Edificio_VE: String(item.Edificio_VE ?? '').trim(),
+    IDEdificio_VE: Number(item.IDEdificio_VE ?? 0) || 0,
+    DireccionEdificio_VE: String(item.DireccionEdificio_VE ?? '').trim(),
+    Grupo_VE: String(item.Grupo_VE ?? '').trim(),
+    Frecuencia_VE: item.Frecuencia_VE != null ? String(item.Frecuencia_VE) : '',
+    Asignado_VE: String(item.Asignado_VE ?? '').trim(),
+    IDAsignado_VE: idAsig != null && idAsig !== '' ? Number(idAsig) : null,
+    Estado_VE: String(item.Estado_VE ?? '').trim(),
+    EsIncidente_VE: item.EsIncidente_VE === 'SI' ? 'SI' : 'NO',
+    Orden_VE: Number(item.Orden_VE) || 99,
+    FechaUltima_VE: String(item.FechaUltima_VE ?? '').trim(),
+    ProximaLimpieza_VE: String(item.ProximaLimpieza_VE ?? '').trim(),
+    FechaProgramada_VE: String(item.FechaProgramada_VE ?? '').trim(),
+    FechaMesAnoProxima_VE: String(item.FechaMesAnoProxima_VE ?? '').trim(),
+    FechaAnoProxima_VE: String(item.FechaAnoProxima_VE ?? '').trim(),
+    FechaMesAnoFinalizacion_VE: String(item.FechaMesAnoFinalizacion_VE ?? '').trim(),
+    FechaFinalizacion_VE: String(item.FechaFinalizacion_VE ?? '').trim(),
+    FechaAsignado_VE: String(item.FechaAsignado_VE ?? '').trim(),
+    ObservacionResuelto_VE: String(item.ObservacionResuelto_VE ?? '').trim(),
+    ObservacionAdelanto_VE: String(item.ObservacionAdelanto_VE ?? '').trim(),
+  };
+}
+
+// ── ABM.Edificios (proyección para ventilaciones) ─────────────────────────
+// Nombre del edificio = columna interna `Micasa`; código = `C_x00f3_digo`;
+// Frecuencia_ED es NUMBER.
+export interface EdificioVentRow {
+  ID: number;
+  Edificio: string;
+  Direccion: string;
+  Codigo: string;
+  Frecuencia: string;
+  Grupo: string;
+  EnCircuito: boolean;
+}
+
+const EDIFICIO_VENT_SELECT = [
+  'Micasa', 'Direccion', 'C_x00f3_digo', 'Frecuencia_ED', 'GrupoVentilacion_ED',
+  'Ventilaciones_ED', 'Status',
+];
+
+export function edificioVentSelectFields(): string[] {
+  return EDIFICIO_VENT_SELECT;
+}
+
+export function mapEdificioVent(item: SharePointItem): EdificioVentRow {
+  return {
+    ID: Number(item.id),
+    Edificio: String(item.Micasa ?? '').trim(),
+    Direccion: String(item.Direccion ?? '').trim(),
+    Codigo: String(item.C_x00f3_digo ?? '').trim(),
+    Frecuencia: item.Frecuencia_ED != null ? String(item.Frecuencia_ED) : '',
+    Grupo: String(item.GrupoVentilacion_ED ?? '').trim(),
+    EnCircuito: item.Ventilaciones_ED === 'SI',
+  };
+}
+
+// ── 99.ABM_Frecuencias / 99.ABM_GruposVent (catálogos) ────────────────────
+/** Frecuencias activas (días), ordenadas ascendente. Frecuencia_FE es NUMBER. */
+export function mapFrecuencias(rows: SharePointItem[]): string[] {
+  return rows
+    .filter((r) => r.Status_FE === 'Activo' && r.Frecuencia_FE != null)
+    .map((r) => String(r.Frecuencia_FE))
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .sort((a, b) => Number(a) - Number(b));
+}
+
+/** Grupos de ventilación activos (Grupo_GVE trae espacios → trim), ordenados. */
+export function mapGruposVent(rows: SharePointItem[]): string[] {
+  return rows
+    .filter((r) => r.Status_VE === 'Activo')
+    .map((r) => String(r.Grupo_GVE ?? '').trim())
+    .filter((v) => v !== '')
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .sort((a, b) => (Number(a) || 0) - (Number(b) || 0) || a.localeCompare(b));
+}
+
+/** Desglosa una fecha dd/mm/yyyy en {mesAno:'mm/yyyy', ano:'yyyy'} para las columnas auxiliares. */
+export function desglosarFechaDDMMYYYY(ddmmyyyy: string): { mesAno: string; ano: string } {
+  const parts = ddmmyyyy.trim().split('/');
+  if (parts.length !== 3) return { mesAno: '', ano: '' };
+  const [, mm, yyyy] = parts;
+  return { mesAno: `${mm}/${yyyy}`, ano: yyyy };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ABMs de Configuración: Rutas ⟶ Circuitos ⟶ Edificios
+// Relación: 99.ABM_Rutas (NroRuta) 1─N 99.ABM_ResumenCircuito (NroCircuito)
+//           1─N 99.ABM_DetalleCircuito (una fila por edificio-en-circuito).
+// La pertenencia edificio↔circuito vive SOLO en DetalleCircuito (Status_DC="Activo").
+// Columnas NUMBER: NroRuta_RT, CantidadCircuitos_RT, CantEdificios_RT,
+// NroRuta_RC, NroCircuito_RC, CantidadEdificio_RC, NroCircuito_DC. El resto text.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Control de acceso por rol a los ABMs (fiel a cmbox_tipo_CR + DisplayMode) ──
+export type AbmTab = 'Rutas' | 'Circuitos' | 'Edificios';
+
+const ABM_EDIT_ROLES = new Set(['Admin', 'Supervisor Mantenimiento', 'Supervisor Lider']);
+const ABM_READONLY_EDIFICIOS_ROLES = new Set(['Supervisor Ventilaciones', 'Atencion Al Cliente']);
+
+/** Pestañas ABM visibles + si el rol puede editar (o es solo-lectura). */
+export function abmAccess(rol: string | undefined): { tabs: AbmTab[]; canEdit: boolean } {
+  if (rol && ABM_EDIT_ROLES.has(rol)) return { tabs: ['Rutas', 'Circuitos', 'Edificios'], canEdit: true };
+  if (rol && ABM_READONLY_EDIFICIOS_ROLES.has(rol)) return { tabs: ['Edificios'], canEdit: false };
+  return { tabs: [], canEdit: false };
+}
+
+/** ¿El rol puede EDITAR el ABM `tab`? Gate server-side de los writes. */
+export function canEditAbm(rol: string | undefined, tab: AbmTab): boolean {
+  const a = abmAccess(rol);
+  return a.canEdit && a.tabs.includes(tab);
+}
+
+// ── 99.ABM_Rutas ──
+export interface RutaRow {
+  ID: number;
+  NroRuta: number;
+  CantidadCircuitos: number;
+  CantidadEdificios: number;
+  Status: string;
+}
+const RUTA_SELECT = ['NroRuta_RT', 'CantidadCircuitos_RT', 'CantEdificios_RT', 'Status_RT'];
+export function rutaSelectFields(): string[] {
+  return RUTA_SELECT;
+}
+export function mapRuta(item: SharePointItem): RutaRow {
+  return {
+    ID: Number(item.id),
+    NroRuta: Number(item.NroRuta_RT ?? 0) || 0,
+    CantidadCircuitos: Number(item.CantidadCircuitos_RT ?? 0) || 0,
+    CantidadEdificios: Number(item.CantEdificios_RT ?? 0) || 0,
+    Status: String(item.Status_RT ?? '').trim(),
+  };
+}
+
+// ── 99.ABM_ResumenCircuito (un circuito dentro de una ruta) ──
+export interface ResumenCircuitoRow {
+  ID: number;
+  NroRuta: number;
+  NroCircuito: number;
+  CantidadEdificios: number;
+  Observaciones: string;
+  Status: string;
+}
+const RESUMEN_CIRCUITO_SELECT = ['NroRuta_RC', 'NroCircuito_RC', 'CantidadEdificio_RC', 'DetalleCircuito_RC', 'Status_RC'];
+export function resumenCircuitoSelectFields(): string[] {
+  return RESUMEN_CIRCUITO_SELECT;
+}
+export function mapResumenCircuito(item: SharePointItem): ResumenCircuitoRow {
+  return {
+    ID: Number(item.id),
+    NroRuta: Number(item.NroRuta_RC ?? 0) || 0,
+    NroCircuito: Number(item.NroCircuito_RC ?? 0) || 0,
+    CantidadEdificios: Number(item.CantidadEdificio_RC ?? 0) || 0,
+    Observaciones: String(item.DetalleCircuito_RC ?? '').trim(),
+    Status: String(item.Status_RC ?? '').trim(),
+  };
+}
+
+// ── 99.ABM_DetalleCircuito (una fila por edificio-en-circuito) ──
+export interface DetalleCircuitoRow {
+  ID: number;
+  NroCircuito: number;
+  CodigoEdificio: string;
+  Edificio: string;
+  Direccion: string;
+  Horario: string;
+  Encargado: string;
+  ConcatContacto: string;
+  NroCelular: string;
+  MailEdificio: string;
+  Latitud: string;
+  Longitud: string;
+  Observaciones: string;
+  Status: string;
+}
+const DETALLE_CIRCUITO_SELECT = [
+  'NroCircuito_DC', 'CodigoEdificio_DC', 'Edificio_DC', 'Direccion_DC', 'Horario_DC',
+  'Encargado_DC', 'ConcatContacto_DC', 'NroCelular_DC', 'MailEdificio_DC',
+  'Latitud_DC', 'Longitud_DC', 'Observaciones_DC', 'Status_DC',
+];
+export function detalleCircuitoSelectFields(): string[] {
+  return DETALLE_CIRCUITO_SELECT;
+}
+export function mapDetalleCircuito(item: SharePointItem): DetalleCircuitoRow {
+  return {
+    ID: Number(item.id),
+    NroCircuito: Number(item.NroCircuito_DC ?? 0) || 0,
+    CodigoEdificio: String(item.CodigoEdificio_DC ?? '').trim(),
+    Edificio: String(item.Edificio_DC ?? '').trim(),
+    Direccion: String(item.Direccion_DC ?? '').trim(),
+    Horario: String(item.Horario_DC ?? '').trim(),
+    Encargado: String(item.Encargado_DC ?? '').trim(),
+    ConcatContacto: String(item.ConcatContacto_DC ?? '').trim(),
+    NroCelular: String(item.NroCelular_DC ?? '').trim(),
+    MailEdificio: String(item.MailEdificio_DC ?? '').trim(),
+    Latitud: String(item.Latitud_DC ?? '').trim(),
+    Longitud: String(item.Longitud_DC ?? '').trim(),
+    Observaciones: String(item.Observaciones_DC ?? '').trim(),
+    Status: String(item.Status_DC ?? '').trim(),
+  };
+}
+
+// ── ABM.Edificios (proyección completa para el ABM y el armado de circuitos) ──
+// Al agregar un edificio a un circuito, DetalleCircuito copia estos campos.
+export interface EdificioAbmRow {
+  ID: number;
+  Edificio: string;
+  Codigo: string;
+  Direccion: string;
+  Horario: string;
+  Encargado: string;
+  Celular: string;
+  Correo: string;
+  Latitud: string;
+  Longitud: string;
+  Observaciones: string;
+  Grupo: string;
+  Frecuencia: string;
+}
+const EDIFICIO_ABM_SELECT = [
+  'Micasa', 'C_x00f3_digo', 'Direccion', 'HoraVisita', 'Encargado', 'Celular', 'Correo',
+  'Latitud_ED', 'Longitud_ED', 'Observaciones', 'GrupoVentilacion_ED', 'Frecuencia_ED', 'Status',
+];
+export function edificioAbmSelectFields(): string[] {
+  return EDIFICIO_ABM_SELECT;
+}
+export function mapEdificioAbm(item: SharePointItem): EdificioAbmRow {
+  return {
+    ID: Number(item.id),
+    Edificio: String(item.Micasa ?? '').trim(),
+    Codigo: String(item.C_x00f3_digo ?? '').trim(),
+    Direccion: String(item.Direccion ?? '').trim(),
+    Horario: String(item.HoraVisita ?? '').trim(),
+    Encargado: String(item.Encargado ?? '').trim(),
+    Celular: item.Celular != null ? String(item.Celular).trim() : '',
+    Correo: String(item.Correo ?? '').trim(),
+    Latitud: String(item.Latitud_ED ?? '').trim(),
+    Longitud: String(item.Longitud_ED ?? '').trim(),
+    Observaciones: String(item.Observaciones ?? '').trim(),
+    Grupo: String(item.GrupoVentilacion_ED ?? '').trim(),
+    Frecuencia: item.Frecuencia_ED != null ? String(item.Frecuencia_ED) : '',
+  };
+}
+
+// ── ABM.Roles (catálogo de roles para el ABM de Personas/Usuarios) ──
+export function mapRolesActivos(rows: SharePointItem[]): string[] {
+  return rows
+    .filter((r) => String(r.Estado ?? '').toLowerCase() === 'alta')
+    .map((r) => String(r.Rol ?? '').trim())
+    .filter((v) => v !== '')
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .sort((a, b) => a.localeCompare(b, 'es'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Planificaciones: 17.MesesPlanificacion → 15.ResumenPlanificaciones (ruta×técnico)
+//   → 16.DetallePlanificaciones (circuito) → 18.EdificiosVisitar (edificio a visitar).
+// Se genera desde el catálogo real de circuitos (ABM.ResumenCircuito + DetalleCircuito).
+// Números reales: Circuitos_RP, NroRuta_DP, CantidadEdificios_DP, NroCircuito_DP,
+// Circuito_DP. El resto text. Estado_EV: Pendiente/Visitado.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── 17.MesesPlanificacion ──
+export interface MesPlanifRow {
+  ID: number;
+  Mes: string;
+  MesAno: string;
+  RutasTotales: number;
+  TecnicosTotales: number;
+  Status: string;
+}
+const MES_PLANIF_SELECT = ['MesPlanificado', 'RutasTotales_MP', 'TecnicosTotales_MP', 'MesAnoPlanificado_MP', 'Status_MP'];
+export function mesPlanifSelectFields() { return MES_PLANIF_SELECT; }
+export function mapMesPlanif(item: SharePointItem): MesPlanifRow {
+  return {
+    ID: Number(item.id),
+    Mes: String(item.MesPlanificado ?? '').trim(),
+    MesAno: String(item.MesAnoPlanificado_MP ?? '').trim(),
+    RutasTotales: Number(item.RutasTotales_MP ?? 0) || 0,
+    TecnicosTotales: Number(item.TecnicosTotales_MP ?? 0) || 0,
+    Status: String(item.Status_MP ?? '').trim(),
+  };
+}
+
+// ── 15.ResumenPlanificaciones (una ruta asignada a un técnico en un mes) ──
+export interface ResumenPlanifRow {
+  ID: number;
+  Mes: string;
+  MesAno: string;
+  NroRuta: string;
+  Tecnico: string;
+  Circuitos: number;
+  IDUnivocoRuta: string;
+  Status: string;
+  Fecha: string;
+  Hora: string;
+}
+const RESUMEN_PLANIF_SELECT = ['Mes_RP', 'MesAnoRuta_RP', 'NroRuta_RP', 'Tecnico_RP', 'Circuitos_RP', 'IDUnivocoRuta_RP', 'Status_RP', 'Fecha_RP', 'Hora_RP'];
+export function resumenPlanifSelectFields() { return RESUMEN_PLANIF_SELECT; }
+export function mapResumenPlanif(item: SharePointItem): ResumenPlanifRow {
+  return {
+    ID: Number(item.id),
+    Mes: String(item.Mes_RP ?? '').trim(),
+    MesAno: String(item.MesAnoRuta_RP ?? '').trim(),
+    NroRuta: String(item.NroRuta_RP ?? '').trim(),
+    Tecnico: String(item.Tecnico_RP ?? '').trim(),
+    Circuitos: Number(item.Circuitos_RP ?? 0) || 0,
+    IDUnivocoRuta: String(item.IDUnivocoRuta_RP ?? '').trim(),
+    Status: String(item.Status_RP ?? '').trim(),
+    Fecha: String(item.Fecha_RP ?? '').trim(),
+    Hora: String(item.Hora_RP ?? '').trim(),
+  };
+}
+
+// ── 16.DetallePlanificaciones (un circuito dentro de una ruta planificada) ──
+export interface DetallePlanifRow {
+  ID: number;
+  IDUnivocoRuta: string;
+  IDUnivocoCircuito: string;
+  NroRuta: number;
+  NroCircuito: number;
+  CantidadEdificios: number;
+  Tecnico: string;
+  MesAno: string;
+  Mes: string;
+  Observaciones: string;
+  Status: string;
+}
+const DETALLE_PLANIF_SELECT = ['IDUnivoco_DP', 'IDUnivocoCircuito_DP', 'NroRuta_DP', 'NroCircuito_DP', 'CantidadEdificios_DP', 'Tecnico_DP', 'MesAno_DP', 'Mes_DP', 'ObservacionCircuito_DP', 'Status_DP'];
+export function detallePlanifSelectFields() { return DETALLE_PLANIF_SELECT; }
+export function mapDetallePlanif(item: SharePointItem): DetallePlanifRow {
+  return {
+    ID: Number(item.id),
+    IDUnivocoRuta: String(item.IDUnivoco_DP ?? '').trim(),
+    IDUnivocoCircuito: String(item.IDUnivocoCircuito_DP ?? '').trim(),
+    NroRuta: Number(item.NroRuta_DP ?? 0) || 0,
+    NroCircuito: Number(item.NroCircuito_DP ?? 0) || 0,
+    CantidadEdificios: Number(item.CantidadEdificios_DP ?? 0) || 0,
+    Tecnico: String(item.Tecnico_DP ?? '').trim(),
+    MesAno: String(item.MesAno_DP ?? '').trim(),
+    Mes: String(item.Mes_DP ?? '').trim(),
+    Observaciones: String(item.ObservacionCircuito_DP ?? '').trim(),
+    Status: String(item.Status_DP ?? '').trim(),
+  };
+}
+
+// ── 18.EdificiosVisitar (un edificio a visitar en un circuito planificado) ──
+export interface EdificioVisitarRow {
+  ID: number;
+  Edificio: string;
+  Codigo: string;
+  Direccion: string;
+  Tecnico: string;
+  Estado: string;
+  NroCircuito: string;
+  NroRuta: string;
+  MesAno: string;
+  IDUnivocoCircuito: string;
+  IDUnivocoRuta: string;
+  Encargado: string;
+  Celular: string;
+  Mail: string;
+  HoraSugerida: string;
+  Observacion: string;
+}
+const EDIFICIO_VISITAR_SELECT = ['Edificio_EV', 'CodigoEdificio_EV', 'Direccion_EV', 'TecnicoAsignado_EV', 'Estado_EV', 'NroCircuito_EV', 'NroRuta_EV', 'MesAno_EV', 'IDUnivocoCircuito_EV', 'IDUnivocoRuta_EV', 'Encargado_EV', 'Celular_EV', 'Mail_EV', 'HoraSugerida_EV', 'ObservacionEdificio_EV'];
+export function edificioVisitarSelectFields() { return EDIFICIO_VISITAR_SELECT; }
+export function mapEdificioVisitar(item: SharePointItem): EdificioVisitarRow {
+  return {
+    ID: Number(item.id),
+    Edificio: String(item.Edificio_EV ?? '').trim(),
+    Codigo: String(item.CodigoEdificio_EV ?? '').trim(),
+    Direccion: String(item.Direccion_EV ?? '').trim(),
+    Tecnico: String(item.TecnicoAsignado_EV ?? '').trim(),
+    Estado: String(item.Estado_EV ?? '').trim(),
+    NroCircuito: String(item.NroCircuito_EV ?? '').trim(),
+    NroRuta: String(item.NroRuta_EV ?? '').trim(),
+    MesAno: String(item.MesAno_EV ?? '').trim(),
+    IDUnivocoCircuito: String(item.IDUnivocoCircuito_EV ?? '').trim(),
+    IDUnivocoRuta: String(item.IDUnivocoRuta_EV ?? '').trim(),
+    Encargado: String(item.Encargado_EV ?? '').trim(),
+    Celular: String(item.Celular_EV ?? '').trim(),
+    Mail: String(item.Mail_EV ?? '').trim(),
+    HoraSugerida: String(item.HoraSugerida_EV ?? '').trim(),
+    Observacion: String(item.ObservacionEdificio_EV ?? '').trim(),
+  };
 }

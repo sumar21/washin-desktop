@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react';
-import { Outlet, Navigate, useNavigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Loader2, Menu, X } from 'lucide-react';
 import { Sidebar } from '@/components/Sidebar';
 import { ConfirmDialog } from '@/components/Modal';
 import { useAppStore } from '@/store/useAppStore';
+import { cn } from '@/lib/utils';
+import { moduleNameForPath } from '@/lib/nav';
 
 export function AppShell() {
   const navigate = useNavigate();
+  const location = useLocation();
   const VarUsuario = useAppStore((s) => s.VarUsuario);
   const cerrarSesion = useAppStore((s) => s.cerrarSesion);
   const setCerrarSesion = useAppStore((s) => s.setCerrarSesion);
   const logout = useAppStore((s) => s.logout);
   const restoreSession = useAppStore((s) => s.restoreSession);
+
+  // Único estado JS "mobile": el drawer de navegación (DESIGN.md §5.10).
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Si se entra directo a una ruta interna (F5 en /home, /stock, etc.) el store
   // arranca en blanco — hay que intentar restaurar la sesión desde la cookie
@@ -19,7 +25,6 @@ export function AppShell() {
   const [checking, setChecking] = useState(() => !useAppStore.getState().VarUsuario);
 
   useEffect(() => {
-    // Ya había sesión al montar (lazy initializer de `checking` la vio) — nada que hacer.
     if (useAppStore.getState().VarUsuario) return;
     let cancelled = false;
     restoreSession().finally(() => {
@@ -44,11 +49,66 @@ export function AppShell() {
 
   return (
     <div className="relative flex h-full w-full bg-gradient-to-b from-wash-navy to-wash-navy-deep">
-      <Sidebar />
+      {/* Sidebar desktop (≥md) */}
+      <div className="hidden lg:flex">
+        <Sidebar />
+      </div>
 
-      <main className="relative flex-1 overflow-hidden bg-wash-canvas">
-        <Outlet />
-      </main>
+      {/* Columna de contenido: header mobile + main */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Header mobile (<md) — hamburguesa + módulo + usuario */}
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/15 px-4 text-white lg:hidden">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Abrir menú"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/90 hover:bg-white/10"
+            >
+              <Menu size={22} />
+            </button>
+            <span className="truncate font-display text-lg font-black tracking-tight">
+              {moduleNameForPath(location.pathname)}
+            </span>
+          </div>
+          <span className="ml-2 max-w-[38vw] truncate text-xs font-medium text-white/60">
+            {VarUsuario}
+          </span>
+        </header>
+
+        <main className="relative flex-1 overflow-hidden bg-wash-canvas">
+          <Outlet />
+        </main>
+      </div>
+
+      {/* Drawer mobile (<md) */}
+      {/* Backdrop */}
+      <div
+        onClick={() => setDrawerOpen(false)}
+        className={cn(
+          'fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity duration-300 lg:hidden',
+          drawerOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+        )}
+        aria-hidden
+      />
+      {/* Panel */}
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] bg-gradient-to-b from-wash-navy to-wash-navy-deep shadow-2xl transition-transform duration-300 ease-out lg:hidden',
+          drawerOpen ? 'translate-x-0' : '-translate-x-full'
+        )}
+        aria-hidden={!drawerOpen}
+      >
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(false)}
+          aria-label="Cerrar menú"
+          className="absolute right-2 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white"
+        >
+          <X size={18} />
+        </button>
+        <Sidebar drawer onNavigate={() => setDrawerOpen(false)} />
+      </aside>
 
       <ConfirmDialog
         open={cerrarSesion}

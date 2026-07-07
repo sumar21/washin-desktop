@@ -1,55 +1,53 @@
+import type { ElementType } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  Home,
-  Package,
-  ShoppingCart,
-  CheckCircle2,
-  WashingMachine,
-  AlertOctagon,
-  HardHat,
-  Map,
-  Wind,
-  Settings,
-  LogOut,
-  RotateCw,
-  ChevronsLeft,
-  ChevronsRight,
-} from 'lucide-react';
+import { LogOut, RotateCw, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import type { ModuloNombre } from '@/types/domain';
+import { moduleMeta, canSeeMetricas } from '@/lib/nav';
 
-const moduleMeta: Record<ModuloNombre, { icon: typeof Home; path: string }> = {
-  Home: { icon: Home, path: '/home' },
-  Stock: { icon: Package, path: '/stock' },
-  Compras: { icon: ShoppingCart, path: '/compras' },
-  'Mis Aprobaciones': { icon: CheckCircle2, path: '/aprobaciones' },
-  'Detalle Maquinas': { icon: WashingMachine, path: '/detalle-maquina' },
-  Incidentes: { icon: AlertOctagon, path: '/incidentes' },
-  'Stock Tecnico': { icon: HardHat, path: '/stock-tecnicos' },
-  Planificaciones: { icon: Map, path: '/rutas' },
-  Ventilacion: { icon: Wind, path: '/ventilaciones' },
-  Configuracion: { icon: Settings, path: '/configuracion' },
-};
-
-export function Sidebar() {
+/** `drawer`: modo panel mobile (siempre expandido, cierra al navegar). */
+export function Sidebar({ drawer = false, onNavigate }: { drawer?: boolean; onNavigate?: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const Collect_LPP = useAppStore((s) => s.Collect_LPP);
+  const VarTipoUser = useAppStore((s) => s.VarTipoUser);
   const setCerrarSesion = useAppStore((s) => s.setCerrarSesion);
   const VarUsuario = useAppStore((s) => s.VarUsuario);
-  const collapsed = useAppStore((s) => s.sidebarCollapsed);
+  const storeCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
 
+  // En modo drawer siempre va expandido; el colapso solo aplica al sidebar desktop.
+  const collapsed = drawer ? false : storeCollapsed;
+  const go = (path: string) => {
+    navigate(path);
+    onNavigate?.();
+  };
+
   const ordered = [...Collect_LPP].sort((a, b) => a.Orden_LPP - b.Orden_LPP);
+
+  // Entradas de nav: los módulos de permisos + Métricas (módulo transversal, no
+  // vive en permisos) inyectado justo antes de Configuración para los roles que lo ven.
+  const showMetricas = canSeeMetricas(VarTipoUser);
+  const navEntries: { id: string; label: string; path: string; icon: ElementType }[] = [];
+  for (const perm of ordered) {
+    const meta = moduleMeta[perm.Modulo_LPP];
+    if (!meta) continue;
+    if (showMetricas && perm.Modulo_LPP === 'Configuracion') {
+      navEntries.push({ id: 'metricas', label: 'Metricas', path: moduleMeta.Metricas.path, icon: moduleMeta.Metricas.icon });
+    }
+    navEntries.push({ id: String(perm.ID), label: perm.Modulo_LPP, path: meta.path, icon: meta.icon });
+  }
+  if (showMetricas && !navEntries.some((e) => e.id === 'metricas')) {
+    navEntries.push({ id: 'metricas', label: 'Metricas', path: moduleMeta.Metricas.path, icon: moduleMeta.Metricas.icon });
+  }
 
   return (
     <TooltipProvider delayDuration={200}>
       <aside
         className={cn(
-          'relative z-20 flex h-full flex-col border-r border-white/15 bg-black/[0.06] transition-[width] duration-300 ease-out',
-          collapsed ? 'w-[72px]' : 'w-[200px]'
+          'relative z-20 flex h-full flex-col border-r border-white/15 bg-black/[0.06]',
+          drawer ? 'w-full' : cn('transition-[width] duration-300 ease-out', collapsed ? 'w-[72px]' : 'w-[200px]')
         )}
       >
 
@@ -85,38 +83,38 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* Collapse handle — subtle bar under the logo */}
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          aria-label={collapsed ? 'Expandir menú' : 'Colapsar menú'}
-          className={cn(
-            'group flex items-center border-b border-white/10 text-[10px] font-semibold uppercase tracking-widest text-white/30 transition-colors hover:bg-white/5 hover:text-white/70',
-            collapsed ? 'justify-center py-2' : 'justify-end gap-1.5 px-4 py-1.5'
-          )}
-        >
-          {collapsed ? (
-            <ChevronsRight size={14} />
-          ) : (
-            <>
-              <span>Contraer</span>
-              <ChevronsLeft size={14} />
-            </>
-          )}
-        </button>
+        {/* Collapse handle — subtle bar under the logo (solo sidebar desktop) */}
+        {!drawer && (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={collapsed ? 'Expandir menú' : 'Colapsar menú'}
+            className={cn(
+              'group hidden items-center border-b border-white/10 text-[10px] font-semibold uppercase tracking-widest text-white/30 transition-colors hover:bg-white/5 hover:text-white/70 lg:flex',
+              collapsed ? 'justify-center py-2' : 'justify-end gap-1.5 px-4 py-1.5'
+            )}
+          >
+            {collapsed ? (
+              <ChevronsRight size={14} />
+            ) : (
+              <>
+                <span>Contraer</span>
+                <ChevronsLeft size={14} />
+              </>
+            )}
+          </button>
+        )}
 
         {/* Modules */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3">
-          {ordered.map((perm) => {
-            const meta = moduleMeta[perm.Modulo_LPP];
-            if (!meta) return null;
-            const Icon = meta.icon;
-            const active = location.pathname.startsWith(meta.path);
+          {navEntries.map((entry) => {
+            const Icon = entry.icon;
+            const active = location.pathname.startsWith(entry.path);
             const buttonEl = (
               <button
-                key={perm.ID}
+                key={entry.id}
                 type="button"
-                onClick={() => navigate(meta.path)}
+                onClick={() => go(entry.path)}
                 className={cn(
                   'group flex w-full items-center gap-3 text-left text-[13px] font-medium transition-colors',
                   collapsed ? 'justify-center px-0 py-2.5' : 'px-4 py-2.5',
@@ -125,22 +123,18 @@ export function Sidebar() {
                     : 'border-l-[3px] border-transparent text-white/75 hover:bg-white/10 hover:text-white'
                 )}
               >
-                <Icon
-                  size={18}
-                  strokeWidth={active ? 2.2 : 1.6}
-                  className="shrink-0"
-                />
-                {!collapsed && <span className="truncate">{perm.Modulo_LPP}</span>}
+                <Icon size={18} strokeWidth={active ? 2.2 : 1.6} className="shrink-0" />
+                {!collapsed && <span className="truncate">{entry.label}</span>}
               </button>
             );
 
             if (!collapsed) return buttonEl;
 
             return (
-              <Tooltip key={perm.ID}>
+              <Tooltip key={entry.id}>
                 <TooltipTrigger asChild>{buttonEl}</TooltipTrigger>
                 <TooltipContent side="right" sideOffset={12}>
-                  {perm.Modulo_LPP}
+                  {entry.label}
                 </TooltipContent>
               </Tooltip>
             );

@@ -163,7 +163,7 @@ export function DetalleMaquina() {
       ) : (
         <>
           {/* Stat strip */}
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-wash-border bg-wash-surface px-6 py-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-wash-border bg-wash-surface px-4 py-3 text-xs md:px-6">
             <Stat label="Total activas" value={maquinas.length} tone="bg-wash-brand/10 text-wash-brand ring-wash-brand/20" />
             <Stat label="Instaladas" value={instaladas} tone="bg-emerald-500/10 text-emerald-700 ring-emerald-500/20" />
             <Stat label="En depósito" value={deposito} tone="bg-amber-500/10 text-amber-700 ring-amber-500/20" />
@@ -175,7 +175,7 @@ export function DetalleMaquina() {
 
           {/* Active filter chips */}
           {(activeFilters > 0) && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
+            <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-4 py-2 text-xs text-wash-text-muted md:px-6">
               <span className="font-semibold uppercase tracking-wider">Filtros:</span>
               {([
                 ['Edificio', fEdificio, () => setFEdificio('')],
@@ -206,7 +206,7 @@ export function DetalleMaquina() {
             </div>
           )}
 
-          <div className="flex-1 overflow-hidden p-6">
+          <div className="flex-1 overflow-hidden p-3 md:p-6">
             <VirtualMachineTable
               rows={filtered}
               resetKey={`${query}|${fEdificio}|${fSegmento}|${fMarca}|${fEncendido}`}
@@ -272,9 +272,24 @@ export function DetalleMaquina() {
 
 // ===== Virtualized table (renderiza solo lo visible; soporta miles de filas) =====
 
-const ROW_H = 52;
+const ROW_H_DESKTOP = 52;
+const ROW_H_MOBILE = 112; // card por fila en <lg (más alta que la fila-grid)
 const OVERSCAN = 8;
 const GRID = '190px 170px 130px minmax(160px,1fr) 150px 90px 130px 110px';
+
+// Virtualización responsiva: <lg renderiza cards (fila más alta). Lazy-init evita flash de tabla.
+function useIsMobileList() {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isMobile;
+}
 
 function VirtualMachineTable({
   rows,
@@ -304,6 +319,9 @@ function VirtualMachineTable({
   }, []);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(600);
+
+  const isMobile = useIsMobileList();
+  const ROW_H = isMobile ? ROW_H_MOBILE : ROW_H_DESKTOP;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -335,7 +353,7 @@ function VirtualMachineTable({
     <div className="flex h-full flex-col overflow-hidden rounded-2xl bg-wash-surface shadow-sm ring-1 ring-wash-border">
       {/* Header */}
       <div
-        className="grid shrink-0 border-b border-wash-border bg-wash-canvas px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-wash-text-muted"
+        className="hidden shrink-0 border-b border-wash-border bg-wash-canvas px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-wash-text-muted lg:grid"
         style={{ gridTemplateColumns: GRID }}
       >
         <div>Edificio</div>
@@ -364,6 +382,61 @@ function VirtualMachineTable({
               {visible.map((m) => {
                 const meta = segMeta(m.Segmento_DM);
                 const Icon = meta.icon;
+                if (isMobile) {
+                  return (
+                    <div key={m.ID} style={{ height: ROW_H }} className="px-3 py-1.5">
+                      <div className="flex h-full flex-col justify-between rounded-xl border border-wash-border bg-wash-surface p-2.5 shadow-sm">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide ring-1',
+                                meta.tone
+                              )}
+                            >
+                              <Icon size={9} />
+                              {m.Segmento_DM}
+                            </span>
+                            {m.Status_DM === 'DEPOSITO' && (
+                              <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700">
+                                DEP
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <IconBtn icon={Eye} tone="neutral" title="Ver detalle / historial" onClick={() => onView(m)} />
+                            {canManage && (
+                              <>
+                                <IconBtn icon={ArrowLeftRight} tone="brand" title="Transferir" onClick={() => onTransfer(m)} />
+                                <IconBtn icon={Trash2} tone="danger" title="Dar de baja" onClick={() => onBaja(m)} />
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-semibold text-wash-text-strong">
+                            {m.Marca_DM || '—'} {m.Modelo_DM}
+                          </p>
+                          <div className="mt-0.5 flex items-center gap-2 overflow-hidden text-[11px] text-wash-text-muted">
+                            <span className="inline-flex shrink-0 items-center gap-1">
+                              <Building2 size={10} className="shrink-0" />
+                              <span className="truncate">{m.Edificio_DM}</span>
+                            </span>
+                            {m.IDMaquina_DM && (
+                              <span className="shrink-0 font-semibold text-wash-text">{m.IDMaquina_DM}</span>
+                            )}
+                            {m.Encendido_DM && (
+                              <span className="inline-flex shrink-0 items-center gap-0.5">
+                                <Zap size={10} className="shrink-0 text-amber-500" />
+                                {m.Encendido_DM}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div
                     key={m.ID}
