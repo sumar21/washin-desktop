@@ -13,7 +13,6 @@ import { Rutas } from '@/screens/Rutas';
 import { DetallePlanificacion } from '@/screens/DetallePlanificacion';
 import { Ventilaciones } from '@/screens/Ventilaciones';
 import { Dashboard } from '@/screens/Dashboard';
-import { Repuestos } from '@/screens/Repuestos';
 import { Configuracion } from '@/screens/Configuracion';
 import { DetalleCircuito } from '@/screens/DetalleCircuito';
 
@@ -35,7 +34,6 @@ export const router = createBrowserRouter([
       { path: '/ventilaciones', element: <Ventilaciones /> },
       { path: '/dashboard', element: <Dashboard /> },
       { path: '/metricas', element: <Navigate to="/dashboard" replace /> },
-      { path: '/repuestos', element: <Repuestos /> },
       { path: '/configuracion', element: <Configuracion /> },
       { path: '/configuracion/circuito', element: <DetalleCircuito /> },
     ],

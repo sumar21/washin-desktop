@@ -530,6 +530,7 @@ export interface RepuestoAbmRow {
   ID: number;
   Nombre_RP: string;
   Codigo_RP: string;
+  Marca_RP: string;
   Stock_RP: number;
   Status_RP: string;
   ConcatRepuesto_RP: string;
@@ -550,6 +551,7 @@ export function mapRepuestoAbm(item: SharePointItem): RepuestoAbmRow {
     ID: Number(item.id),
     Nombre_RP: String(item.Nombre_RP ?? '').trim(),
     Codigo_RP: String(item.Codigo_RP ?? '').trim(),
+    Marca_RP: String(item.Marca_RP ?? '').trim(),
     Stock_RP: Number(item.Stock_RP ?? 0) || 0,
     Status_RP: String(item.Status_RP ?? '').trim(),
     ConcatRepuesto_RP: String(item.ConcatRepuesto_RP ?? '').trim(),
@@ -652,6 +654,7 @@ export interface HistorialRow {
   Fecha_IN: string;
   Titulo: string;
   Descripcion?: string;
+  Edificio_IN: string;
   Status_IN: string;
   Resuelto_IN: string;
 }
@@ -662,6 +665,7 @@ const HISTORIAL_SELECT = [
   'NoResuelto_IN',
   'Descripcion_IN',
   'DescripcionResuelto_IN',
+  'NombreEdificio_IN',
   'Status_IN',
   'Resuelto_IN',
   'ConcatMaquina_IN',
@@ -680,6 +684,7 @@ export function mapHistorial(item: SharePointItem): HistorialRow {
     Fecha_IN: String(item.Fecha_IN ?? ''),
     Titulo: titulo,
     Descripcion: desc,
+    Edificio_IN: String(item.NombreEdificio_IN ?? ''),
     Status_IN: String(item.Status_IN ?? ''),
     Resuelto_IN: String(item.Resuelto_IN ?? ''),
   };
@@ -993,14 +998,17 @@ export function desglosarFechaDDMMYYYY(ddmmyyyy: string): { mesAno: string; ano:
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── Control de acceso por rol a los ABMs (fiel a cmbox_tipo_CR + DisplayMode) ──
-export type AbmTab = 'Rutas' | 'Circuitos' | 'Edificios';
+export type AbmTab = 'Rutas' | 'Circuitos' | 'Edificios' | 'Repuestos';
 
 const ABM_EDIT_ROLES = new Set(['Admin', 'Supervisor Mantenimiento', 'Supervisor Lider']);
 const ABM_READONLY_EDIFICIOS_ROLES = new Set(['Supervisor Ventilaciones', 'Atencion Al Cliente']);
+// El catálogo de repuestos lo maneja el taller: Jefe Taller ve SOLO esa pestaña.
+const REPUESTOS_ONLY_ROLES = new Set(['Jefe Taller']);
 
 /** Pestañas ABM visibles + si el rol puede editar (o es solo-lectura). */
 export function abmAccess(rol: string | undefined): { tabs: AbmTab[]; canEdit: boolean } {
-  if (rol && ABM_EDIT_ROLES.has(rol)) return { tabs: ['Rutas', 'Circuitos', 'Edificios'], canEdit: true };
+  if (rol && ABM_EDIT_ROLES.has(rol)) return { tabs: ['Rutas', 'Circuitos', 'Edificios', 'Repuestos'], canEdit: true };
+  if (rol && REPUESTOS_ONLY_ROLES.has(rol)) return { tabs: ['Repuestos'], canEdit: true };
   if (rol && ABM_READONLY_EDIFICIOS_ROLES.has(rol)) return { tabs: ['Edificios'], canEdit: false };
   return { tabs: [], canEdit: false };
 }

@@ -4,7 +4,7 @@ import { LogOut, RotateCw, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { moduleMeta, canSeeDashboard, canSeeRepuestos } from '@/lib/nav';
+import { moduleMeta, canSeeDashboard } from '@/lib/nav';
 
 /** `drawer`: modo panel mobile (siempre expandido, cierra al navegar). */
 export function Sidebar({ drawer = false, onNavigate }: { drawer?: boolean; onNavigate?: () => void }) {
@@ -27,27 +27,21 @@ export function Sidebar({ drawer = false, onNavigate }: { drawer?: boolean; onNa
   const ordered = [...Collect_LPP].sort((a, b) => a.Orden_LPP - b.Orden_LPP);
 
   // Entradas de nav: los módulos de permisos + Dashboard (módulo transversal, no
-  // vive en permisos) inyectado justo antes de Configuración para los roles que lo ven.
+  // vive en permisos) inyectado justo DEBAJO de Home para los roles que lo ven.
   const showDashboard = canSeeDashboard(VarTipoUser);
-  const showRepuestos = canSeeRepuestos(VarTipoUser);
-  const repuestosEntry = { id: 'repuestos', label: 'Repuestos', path: moduleMeta.Repuestos.path, icon: moduleMeta.Repuestos.icon };
+  const dashboardEntry = { id: 'dashboard', label: 'Dashboard', path: moduleMeta.Dashboard.path, icon: moduleMeta.Dashboard.icon };
   const navEntries: { id: string; label: string; path: string; icon: ElementType }[] = [];
   for (const perm of ordered) {
     const meta = moduleMeta[perm.Modulo_LPP];
     if (!meta) continue;
-    if (perm.Modulo_LPP === 'Configuracion') {
-      if (showDashboard) {
-        navEntries.push({ id: 'dashboard', label: 'Dashboard', path: moduleMeta.Dashboard.path, icon: moduleMeta.Dashboard.icon });
-      }
-      if (showRepuestos) navEntries.push(repuestosEntry);
-    }
     navEntries.push({ id: String(perm.ID), label: perm.Modulo_LPP, path: meta.path, icon: meta.icon });
+    if (perm.Modulo_LPP === 'Home' && showDashboard) {
+      navEntries.push(dashboardEntry);
+    }
   }
+  // Fallback: si no hubo un módulo Home en los permisos, lo ponemos al inicio.
   if (showDashboard && !navEntries.some((e) => e.id === 'dashboard')) {
-    navEntries.push({ id: 'dashboard', label: 'Dashboard', path: moduleMeta.Dashboard.path, icon: moduleMeta.Dashboard.icon });
-  }
-  if (showRepuestos && !navEntries.some((e) => e.id === 'repuestos')) {
-    navEntries.push(repuestosEntry);
+    navEntries.unshift(dashboardEntry);
   }
 
   return (

@@ -8,10 +8,12 @@ import type { UserRole } from '@/types/domain';
  *  - Resto → sin acceso a Configuración.
  * El backend replica esta matriz para gatear los writes (ver `abmAccess`/`canEditAbm` en api/_lib/lists.ts).
  */
-export type AbmTab = 'Rutas' | 'Circuitos' | 'Edificios';
+export type AbmTab = 'Rutas' | 'Circuitos' | 'Edificios' | 'Repuestos';
 
 const ABM_EDIT_ROLES: UserRole[] = ['Admin', 'Supervisor Mantenimiento', 'Supervisor Lider'];
 const ABM_READONLY_EDIFICIOS_ROLES: UserRole[] = ['Supervisor Ventilaciones', 'Atencion Al Cliente'];
+// El catálogo de repuestos lo maneja el taller: Jefe Taller ve SOLO esa pestaña.
+const REPUESTOS_ONLY_ROLES: UserRole[] = ['Jefe Taller'];
 
 export interface AbmAccess {
   /** Pestañas visibles, en orden. */
@@ -21,7 +23,8 @@ export interface AbmAccess {
 }
 
 export function abmAccess(rol: UserRole | null | undefined): AbmAccess {
-  if (rol && ABM_EDIT_ROLES.includes(rol)) return { tabs: ['Rutas', 'Circuitos', 'Edificios'], canEdit: true };
+  if (rol && ABM_EDIT_ROLES.includes(rol)) return { tabs: ['Rutas', 'Circuitos', 'Edificios', 'Repuestos'], canEdit: true };
+  if (rol && REPUESTOS_ONLY_ROLES.includes(rol)) return { tabs: ['Repuestos'], canEdit: true };
   if (rol && ABM_READONLY_EDIFICIOS_ROLES.includes(rol)) return { tabs: ['Edificios'], canEdit: false };
   return { tabs: [], canEdit: false };
 }

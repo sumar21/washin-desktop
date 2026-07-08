@@ -27,6 +27,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
+import { StatusBadge } from '@/components/StatusBadge';
+import { type Column } from '@/components/DataTable';
+import { GridPanel, type GridView } from '@/components/dashboard/GridPanel';
 import { KpiCard } from '@/components/dashboard/widgets';
 import { CHART_GRID, X_TICK, AXIS, intFmt, money, pct } from '@/components/dashboard/shared';
 import {
@@ -82,6 +85,150 @@ const dias = (ms: number) => (ms > 0 ? (ms / 86_400_000).toFixed(1) : '0');
 const moneyK = (v: number) => (v === 0 ? '$0' : Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}k` : `$${Math.round(v)}`);
 
 const isResuelto = (i: Incidente) => String(i.Resuelto_IN).toUpperCase() === 'SI';
+
+// ── Clasificación de registros ────────────────────────────────────────────────
+// En Wash Inn muchos "incidentes" NO son fallas de servicio sino MOVIMIENTOS de
+// máquina (instalada→depósito→Wash Inn): Transferencia / Cambio de Máquina / Baja.
+// Y otra parte grande son controles que salieron OK ("Todo Funcionando"). Contar
+// todo junto infla la métrica de incidentes. Separamos en 3 tipos:
+//   • servicio → falla real atendida (Mecánico, Agua, Tildado, Placa, …)
+//   • cambio   → movimiento logístico de máquina (0 repuestos asociados)
+//   • control  → visita de control que no encontró problema
+const MOV_TYPES = new Set(['transferencia', 'cambio de maquina', 'cambio de máquina', 'baja de maquina', 'baja de máquina']);
+type TipoInc = 'servicio' | 'cambio' | 'control';
+function tipoDe(i: Incidente): TipoInc {
+  if (MOV_TYPES.has((i.NoResuelto_IN ?? '').trim().toLowerCase())) return 'cambio';
+  if ((i.Categoria_IN ?? '').trim().toLowerCase() === 'todo funcionando') return 'control';
+  return 'servicio';
+}
+const TIPO_META: Record<TipoInc, { label: string; cls: string }> = {
+  servicio: { label: 'Servicio', cls: 'bg-wash-brand/10 text-wash-brand-dark ring-wash-brand/25' },
+  cambio: { label: 'Cambio máq.', cls: 'bg-violet-50 text-violet-700 ring-violet-200' },
+  control: { label: 'Control OK', cls: 'bg-slate-100 text-slate-600 ring-slate-300/60' },
+};
+function TipoBadge({ i }: { i: Incidente }) {
+  const m = TIPO_META[tipoDe(i)];
+  return (
+    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide ring-1', m.cls)}>
+      {m.label}
+    </span>
+  );
+}
+
+// ── Grilla de Incidentes ──────────────────────────────────────────────────────
+// Columnas UNIFICADAS/curadas para pantalla; el export (`incidenteFlat`) trae todas
+// las columnas separadas. El estado se muestra Resuelto/Pendiente, el tipo con badge.
+const INCIDENTES_COLUMNS: Column<Incidente>[] = [
+  {
+    key: 'estado',
+    header: 'Estado',
+    width: '124px',
+    truncate: false,
+    render: (i) => <StatusBadge status={isResuelto(i) ? 'Resuelto' : i.Status_IN || 'Pendiente'} />,
+  },
+  {
+    key: 'tipo',
+    header: 'Tipo',
+    width: '120px',
+    truncate: false,
+    render: (i) => <TipoBadge i={i} />,
+  },
+  {
+    key: 'fecha',
+    header: 'Fecha',
+    width: '100px',
+    align: 'center',
+    truncate: false,
+    render: (i) => <span className="tabular-nums text-wash-text-muted">{i.Fecha_IN || '—'}</span>,
+  },
+  {
+    key: 'edificio',
+    header: 'Edificio',
+    width: 'minmax(160px,1.3fr)',
+    render: (i) => (
+      <div className="min-w-0">
+        <div className="truncate font-medium text-wash-text-strong" title={i.NombreEdificio_IN}>
+          {i.NombreEdificio_IN || '—'}
+        </div>
+        {i.CodigoEdifcio_IN && <div className="truncate text-[11px] text-wash-text-muted">{i.CodigoEdifcio_IN}</div>}
+      </div>
+    ),
+  },
+  {
+    key: 'maquina',
+    header: 'Máquina',
+    width: 'minmax(160px,1.2fr)',
+    render: (i) => (
+      <span className="truncate text-[12.5px] text-wash-text" title={i.ConcatMaquina_IN || ''}>
+        {i.ConcatMaquina_IN || '—'}
+      </span>
+    ),
+  },
+  {
+    key: 'categoria',
+    header: 'Categoría',
+    width: '120px',
+    truncate: false,
+    render: (i) => <span className="truncate text-wash-text">{proper((i.Categoria_IN ?? '').trim()) || '—'}</span>,
+  },
+  {
+    key: 'tecnico',
+    header: 'Técnico',
+    width: 'minmax(120px,1fr)',
+    render: (i) => (
+      <span className="truncate text-wash-text">{proper(i.TecnicoAsignado_IN || i.User_IN || '') || '—'}</span>
+    ),
+  },
+  {
+    key: 'rep',
+    header: 'Rep.',
+    width: '72px',
+    align: 'center',
+    truncate: false,
+    render: (i) => <span className="tabular-nums font-semibold text-wash-text-strong">{i.CantidadRepuestos_IN || 0}</span>,
+  },
+];
+
+const incidenteSearch = (i: Incidente) =>
+  `${i.NombreEdificio_IN} ${i.CodigoEdifcio_IN ?? ''} ${i.ConcatMaquina_IN ?? ''} ${i.Categoria_IN ?? ''} ${i.NoResuelto_IN} ${i.TecnicoAsignado_IN ?? ''} ${i.User_IN} ${i.Fecha_IN} ${i.Status_IN} ${TIPO_META[tipoDe(i)].label}`;
+
+/** Card mobile de un incidente (DESIGN.md §5.4: la tabla se vuelve cards en <lg). */
+function incidenteCard(i: Incidente) {
+  return (
+    <div className="rounded-xl bg-wash-surface p-3 shadow-sm ring-1 ring-wash-border">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {i.CodigoEdifcio_IN && (
+            <span className="inline-flex rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand ring-1 ring-wash-brand/20">
+              {i.CodigoEdifcio_IN}
+            </span>
+          )}
+          <p className="mt-0.5 truncate text-[14px] font-semibold text-wash-text-strong">{i.NombreEdificio_IN || '—'}</p>
+        </div>
+        <StatusBadge status={isResuelto(i) ? 'Resuelto' : i.Status_IN || 'Pendiente'} />
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <TipoBadge i={i} />
+        <span className="text-[11px] tabular-nums text-wash-text-muted">{i.Fecha_IN || '—'}</span>
+      </div>
+      <div className="mt-2.5 space-y-1.5 border-t border-wash-divider/60 pt-2.5 text-[12px] text-wash-text-muted">
+        <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+          <Wrench size={12} className="shrink-0" />
+          <span className="truncate">{i.ConcatMaquina_IN || '—'}</span>
+        </span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate">
+            {proper((i.Categoria_IN ?? '').trim()) || '—'} · {proper(i.TecnicoAsignado_IN || i.User_IN || '') || '—'}
+          </span>
+          <span className="shrink-0 tabular-nums font-semibold text-wash-text-strong">{i.CantidadRepuestos_IN || 0} rep.</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const fileTag = (desde: string, hasta: string) =>
+  desde === hasta ? desde.replace('/', '-') : `${desde.replace('/', '-')}_a_${hasta.replace('/', '-')}`;
 
 // ── Agregado central ──────────────────────────────────────────────────────────
 
@@ -164,7 +311,7 @@ type RankMetric = 'inc' | 'valor';
 
 // ══════════════════════════════════════════════════════════════════════════════
 
-export default function DashboardIncidentes({ desde, hasta }: { desde: string; hasta: string }) {
+export default function DashboardIncidentes({ desde, hasta, view }: { desde: string; hasta: string; view: GridView }) {
   const [data, setData] = useState<DashboardIncidentesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -191,6 +338,37 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
 
   const { valorByInc, statsFor } = useMemo(() => buildAgg(repuestos), [repuestos]);
 
+  // Export plano (todas las columnas separadas). Incluye Tipo y Valor derivados.
+  const incidenteFlat = useCallback(
+    (i: Incidente): Record<string, string | number> => ({
+      ID: i.ID,
+      IDIncidente: i.IDIncidente,
+      Fecha: i.Fecha_IN,
+      'Mes/Año': i.FechaMesAno_IN,
+      Tipo: TIPO_META[tipoDe(i)].label,
+      Categoría: i.Categoria_IN ?? '',
+      Resolución: i.NoResuelto_IN,
+      Título: i.Titulo_IN,
+      Estado: i.Status_IN,
+      Resuelto: i.Resuelto_IN,
+      Edificio: i.NombreEdificio_IN,
+      Código: i.CodigoEdifcio_IN ?? '',
+      'ID máquina': i.IDMaquina_IN ?? '',
+      Máquina: i.ConcatMaquina_IN ?? '',
+      'Máquina asignada': i.MaquinaAsignada_IN ?? '',
+      Técnico: i.TecnicoAsignado_IN ?? '',
+      'Cant. repuestos': i.CantidadRepuestos_IN,
+      'Valor repuestos': valorByInc.get(i.IDIncidente) ?? 0,
+      'Desc. carga': i.DescripcionCarga_IN ?? '',
+      'Desc. incidente': i.DescripcionIncidente_IN ?? '',
+      'Desc. resuelto': i.DescripcionResuelto_IN ?? '',
+      'Fecha resuelto': i.FechaResuelto_IN ?? '',
+      'Fecha asignada': i.FechaAsignada_IN ?? '',
+      Usuario: i.User_IN,
+    }),
+    [valorByInc]
+  );
+
   // Los datos cargados YA son el rango [desde..hasta] (scoped en el backend):
   // KPIs + pills + donut + rankings usan TODO lo cargado.
   const stats = useMemo(() => statsFor(incidentes), [statsFor, incidentes]);
@@ -211,11 +389,25 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
     return [...byKey.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
   }, [incidentes, valorByInc]);
 
-  // ── Donut por categoría (todo el rango) ──
+  // ── Tipos de registro (servicio / cambio de máquina / control OK) ──
+  const tipos = useMemo(() => {
+    let servicio = 0, cambio = 0, control = 0;
+    for (const i of incidentes) {
+      const t = tipoDe(i);
+      if (t === 'cambio') cambio += 1;
+      else if (t === 'control') control += 1;
+      else servicio += 1;
+    }
+    return { servicio, cambio, control };
+  }, [incidentes]);
+
+  // ── Donut por categoría — SOLO incidentes de servicio reales (excluye cambios de
+  // máquina y controles OK, que si no dominan y ensucian la distribución) ──
   const porCategoria = useMemo(() => {
     const map = new Map<string, number>();
     for (const i of incidentes) {
-      const k = proper((i.Categoria_IN ?? '').trim() || i.NoResuelto_IN || 'Sin categoría') || 'Sin categoría';
+      if (tipoDe(i) !== 'servicio') continue;
+      const k = proper((i.Categoria_IN ?? '').trim() || 'Sin categoría') || 'Sin categoría';
       map.set(k, (map.get(k) ?? 0) + 1);
     }
     return [...map.entries()].map(([name, cantidad]) => ({ name, cantidad })).sort((a, b) => b.cantidad - a.cantidad);
@@ -261,13 +453,9 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
     return rows.sort((a, b) => b.value - a.value).slice(0, 8);
   }, [incidentes]);
 
-  const totalPeriodo = incidentes.length;
-
   // Sin período anterior (los datos son solo el rango) → sin deltas.
   const pctResolCur = stats.total ? (stats.resueltos / stats.total) * 100 : 0;
   const avgRepPorInc = stats.total ? stats.totalRepuestos / stats.total : 0;
-  const shSin = stats.total ? (stats.sinRepuestos / stats.total) * 100 : 0;
-  const shCon = stats.total ? (stats.conRepuestos / stats.total) * 100 : 0;
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -278,17 +466,31 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
           <ErrorState message={loadError} onRetry={load} />
         </div>
       ) : (
-        <div className="h-full space-y-4 overflow-y-auto p-4 pb-8 md:p-6">
+        view === 'grilla' ? (
+          <div className="h-full p-4 pb-4 md:p-6">
+            <GridPanel<Incidente>
+              rows={incidentes}
+              columns={INCIDENTES_COLUMNS}
+              rowKey={(i) => i.ID}
+              search={incidenteSearch}
+              toFlat={incidenteFlat}
+              exportName={`incidentes_${fileTag(desde, hasta)}`}
+              placeholder="Buscar edificio, máquina, categoría, técnico…"
+              mobileCard={incidenteCard}
+            />
+          </div>
+        ) : (
+          <div className="h-full space-y-4 overflow-y-auto p-4 pb-8 md:p-6">
           {/* ── Fila de KPIs ── */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
               icon={AlertOctagon}
-              label="Total incidentes"
+              label="Total registros"
               value={intFmt(stats.total)}
               accent
               sub={
                 <span className="truncate">
-                  {intFmt(stats.resueltos)} resueltos · {intFmt(stats.pendientes)} pendientes
+                  {intFmt(tipos.servicio)} de servicio · {intFmt(tipos.cambio)} cambios de máq.
                 </span>
               }
             />
@@ -316,26 +518,27 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
             />
           </div>
 
-          {/* Desglose del período bajo los KPIs (sin/con repuestos/pendientes) */}
+          {/* Composición de los registros por TIPO — separa lo que NO es incidente de
+              servicio (cambios de máquina + controles OK) del servicio real. */}
           {stats.total > 0 && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <BreakdownPill
                 color={COOL_RAMP[0]}
-                label="Sin repuestos"
-                value={stats.sinRepuestos}
-                share={shSin}
+                label="Incidentes de servicio"
+                value={tipos.servicio}
+                share={stats.total ? (tipos.servicio / stats.total) * 100 : 0}
               />
               <BreakdownPill
-                color={COOL_RAMP[1]}
-                label="Con repuestos"
-                value={stats.conRepuestos}
-                share={shCon}
+                color={COOL_RAMP[2]}
+                label="Cambios de máquina"
+                value={tipos.cambio}
+                share={stats.total ? (tipos.cambio / stats.total) * 100 : 0}
               />
               <BreakdownPill
                 color={COOL_RAMP[5]}
-                label="Pendientes"
-                value={stats.pendientes}
-                share={stats.total ? (stats.pendientes / stats.total) * 100 : 0}
+                label="Controles OK"
+                value={tipos.control}
+                share={stats.total ? (tipos.control / stats.total) * 100 : 0}
               />
             </div>
           )}
@@ -347,9 +550,19 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
               icon={TrendingUp}
               title="Evolución de incidentes"
               subtitle="Incidentes y valor de repuestos por mes del período"
-              empty={evolucion.length === 0}
             >
-              {/* Dos ejes independientes apilados (un solo eje por chart, sin dual-axis) */}
+              {evolucion.length <= 1 ? (
+                <div className="flex h-[250px] w-full flex-col items-center justify-center gap-1.5 text-center">
+                  <TrendingUp size={26} strokeWidth={1.6} className="text-wash-text-faint" />
+                  <p className="text-sm font-medium text-wash-text-strong">
+                    {evolucion.length === 0 ? 'Sin datos en el período' : 'Un solo mes seleccionado'}
+                  </p>
+                  <p className="max-w-[300px] text-xs text-wash-text-muted">
+                    Ampliá el período a varios meses en Filtrar para ver la evolución mes a mes.
+                  </p>
+                </div>
+              ) : (
+              /* Dos ejes independientes apilados (un solo eje por chart, sin dual-axis) */
               <div className="space-y-1">
                 <ChartContainer config={barConfig} className="h-[150px] w-full">
                   <BarChart data={evolucion} margin={{ top: 12, right: 8, left: -18, bottom: 0 }}>
@@ -393,12 +606,13 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
                   </AreaChart>
                 </ChartContainer>
               </div>
+              )}
             </ChartCard>
 
             <ChartCard
               icon={PieIcon}
-              title="Incidentes por categoría"
-              subtitle="Distribución por categoría — período"
+              title="Incidentes de servicio por categoría"
+              subtitle="Solo servicio real (excluye cambios de máquina y controles OK)"
               empty={porCategoria.length === 0}
             >
               <div className="flex flex-col items-center gap-4 sm:flex-row lg:flex-col xl:flex-row">
@@ -424,10 +638,10 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
                   </ChartContainer>
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                     <span className="font-display text-2xl font-bold tabular-nums text-wash-text-strong">
-                      {intFmt(totalPeriodo)}
+                      {intFmt(tipos.servicio)}
                     </span>
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
-                      total
+                      servicio
                     </span>
                   </div>
                 </div>
@@ -440,7 +654,7 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
                         {c.cantidad}
                       </span>
                       <span className="w-10 shrink-0 text-right text-xs tabular-nums text-wash-text-faint">
-                        {totalPeriodo ? Math.round((c.cantidad / totalPeriodo) * 100) : 0}%
+                        {tipos.servicio ? Math.round((c.cantidad / tipos.servicio) * 100) : 0}%
                       </span>
                     </li>
                   ))}
@@ -480,6 +694,7 @@ export default function DashboardIncidentes({ desde, hasta }: { desde: string; h
             </ChartCard>
           </div>
         </div>
+        )
       )}
     </div>
   );

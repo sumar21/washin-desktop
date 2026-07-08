@@ -49,7 +49,6 @@ export type ModuloNombre =
   | 'Planificaciones'
   | 'Ventilacion'
   | 'Dashboard'
-  | 'Repuestos'
   | 'Configuracion';
 
 // ABM.Edificios
@@ -243,6 +242,7 @@ export interface Repuesto {
   ID: number;
   Nombre_RP: string;
   Codigo_RP: string;
+  Marca_RP: string;
   Stock_RP: number;
   Status_RP: string;
   ConcatRepuesto_RP: string;

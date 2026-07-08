@@ -9,12 +9,16 @@ import {
   Activity,
   Users,
   AlertTriangle,
+  User,
+  Clock,
+  CalendarDays,
 } from 'lucide-react';
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   LabelList,
   Line,
   LineChart,
@@ -27,6 +31,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
+import { StatusBadge } from '@/components/StatusBadge';
+import { type Column } from '@/components/DataTable';
+import { GridPanel, type GridView } from '@/components/dashboard/GridPanel';
 import { KpiCard } from '@/components/dashboard/widgets';
 import { CHART_GRID, X_TICK, AXIS, intFmt, pct } from '@/components/dashboard/shared';
 import { useAppStore } from '@/store/useAppStore';
@@ -37,6 +44,7 @@ import type { Registro } from '@/types/domain';
 const C_BRAND = 'var(--color-wash-brand)';
 const C_OK = 'rgb(0 180 229)'; // cian de marca (visitas OK)
 const C_REVISAR = 'rgb(148 163 184)'; // slate neutro (a revisar)
+const C_LINE = 'rgb(58 138 255)'; // azul de la rampa fría (línea de % control del combo)
 
 const MESES_ABBR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
@@ -103,15 +111,19 @@ function metricsFor(rows: Registro[]): MonthMetrics {
       durSum += b - a;
       durN += 1;
     }
-    if (r.Check != null && r.Check > 0) {
-      const ok = r.Ok ?? 0;
-      if (ok >= r.Check) okCount += 1;
+    // Cada visita controlada tiene 8 ítems: `Ok` = ítems OK, `Check` = ítems A REVISAR
+    // (Ok + Check = 8). Una visita "controlada" es la que tiene ítems (Ok+Check > 0);
+    // es OK si no quedó nada a revisar (Check === 0), si no cuenta como "a revisar".
+    // (Las canceladas de verdad son Estado 'Anulado', no éstas.)
+    const ok = r.Ok ?? 0;
+    const chk = r.Check ?? 0;
+    if (ok + chk > 0) {
+      if (chk === 0) okCount += 1;
       else revisarCount += 1;
     }
   }
 
   // Resultado de control = % de visitas controladas que dieron OK (coincide con el donut).
-  // Ojo: NO usar okSum/checkSum — `Ok`/`Check` no son "items ok/chequeados" y ese ratio da >100%.
   const controladas = okCount + revisarCount;
   return {
     visitas: rows.length,
@@ -127,8 +139,143 @@ function metricsFor(rows: Registro[]): MonthMetrics {
 const lineConfig: ChartConfig = { control: { label: 'Resultado control' } };
 const donutConfig: ChartConfig = { value: { label: 'Visitas' } };
 const barConfig: ChartConfig = { value: { label: 'Visitas' } };
+// Combo de eficiencia por técnico: barras = cantidad de visitas, línea = % de control OK.
+const comboConfig: ChartConfig = {
+  visitas: { label: 'Visitas', color: C_BRAND },
+  control: { label: '% Control OK', color: C_LINE },
+};
 
-export default function DashboardVisitas({ desde, hasta }: { desde: string; hasta: string }) {
+// ── Grilla de Visitas (01.Registros) ──────────────────────────────────────────
+// Columnas UNIFICADAS/curadas para pantalla (los datos que importan). El export
+// a Excel usa `visitaFlat` (todas las columnas separadas, sin unificar).
+// Ítems OK sobre el total controlado (Ok + Check, normalmente 8). Ej. "8/8", "6/8".
+const controlTxt = (r: Registro) => {
+  const ok = r.Ok ?? 0;
+  const tot = ok + (r.Check ?? 0);
+  return tot > 0 ? `${ok}/${tot}` : '—';
+};
+
+const VISITAS_COLUMNS: Column<Registro>[] = [
+  {
+    key: 'estado',
+    header: 'Estado',
+    width: '128px',
+    truncate: false,
+    render: (r) => <StatusBadge status={r.Estado} />,
+  },
+  {
+    key: 'edificio',
+    header: 'Edificio',
+    width: 'minmax(180px,1.5fr)',
+    render: (r) => (
+      <div className="min-w-0">
+        <div className="truncate font-medium text-wash-text-strong" title={r.Edificio}>
+          {r.Edificio || '—'}
+        </div>
+        {r.Codigo && <div className="truncate text-[11px] text-wash-text-muted">{r.Codigo}</div>}
+      </div>
+    ),
+  },
+  {
+    key: 'tecnico',
+    header: 'Técnico',
+    width: 'minmax(130px,1fr)',
+    render: (r) => <span className="truncate text-wash-text">{proper(r.Usuario) || '—'}</span>,
+  },
+  {
+    key: 'periodo',
+    header: 'Período',
+    width: '96px',
+    align: 'center',
+    truncate: false,
+    render: (r) => <span className="tabular-nums text-wash-text-muted">{r.MesAño || '—'}</span>,
+  },
+  {
+    key: 'horario',
+    header: 'Horario',
+    width: '150px',
+    truncate: false,
+    render: (r) => (
+      <span className="tabular-nums text-[12.5px] text-wash-text">
+        {(r.HoraVisita || '—') + ' – ' + (r.HoraSalida || '—')}
+      </span>
+    ),
+  },
+  {
+    key: 'control',
+    header: 'Control',
+    width: '100px',
+    align: 'center',
+    truncate: false,
+    render: (r) => <span className="tabular-nums font-semibold text-wash-text-strong">{controlTxt(r)}</span>,
+  },
+];
+
+const visitaSearch = (r: Registro) =>
+  `${r.Edificio} ${r.Codigo ?? ''} ${r.Usuario} ${r.MesAño} ${r.Estado} ${r.NroRuta_R} ${r.NroCircuito_R} ${r.Direccion ?? ''}`;
+
+/** Card mobile de una visita (DESIGN.md §5.4: la tabla se vuelve cards en <lg). */
+function visitaCard(r: Registro) {
+  return (
+    <div className="rounded-xl bg-wash-surface p-3 shadow-sm ring-1 ring-wash-border">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          {r.Codigo && (
+            <span className="inline-flex rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand ring-1 ring-wash-brand/20">
+              {r.Codigo}
+            </span>
+          )}
+          <p className="mt-0.5 truncate text-[14px] font-semibold text-wash-text-strong">{r.Edificio || '—'}</p>
+        </div>
+        <StatusBadge status={r.Estado} />
+      </div>
+      <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-wash-divider/60 pt-2.5 text-[12px] text-wash-text-muted">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <User size={12} className="shrink-0" />
+          <span className="truncate">{proper(r.Usuario) || '—'}</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <CalendarDays size={12} className="shrink-0" />
+          {r.MesAño || '—'}
+        </span>
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <Clock size={12} className="shrink-0" />
+          {(r.HoraVisita || '—') + ' – ' + (r.HoraSalida || '—')}
+        </span>
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <ShieldCheck size={12} className="shrink-0" />
+          {controlTxt(r)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const visitaFlat = (r: Registro): Record<string, string | number> => ({
+  ID: r.ID,
+  Estado: r.Estado,
+  Edificio: r.Edificio,
+  Código: r.Codigo ?? '',
+  Dirección: r.Direccion ?? '',
+  Técnico: r.Usuario,
+  Ruta: r.NroRuta_R,
+  Circuito: r.NroCircuito_R,
+  Período: r.MesAño,
+  'Hora inicio': r.HoraInicio ?? '',
+  'Hora final': r.HoraFinal ?? '',
+  'Hora visita': r.HoraVisita ?? '',
+  'Hora salida': r.HoraSalida ?? '',
+  'Fecha terminada': r.FechaTerminada_R ?? '',
+  'Ítems OK': r.Ok ?? 0,
+  'Ítems a revisar': r.Check ?? 0,
+  'Total control': (r.Ok ?? 0) + (r.Check ?? 0),
+  'Progreso %': r.Progreso ?? 0,
+});
+
+const fileTag = (desde: string, hasta: string) =>
+  desde === hasta ? desde.replace('/', '-') : `${desde.replace('/', '-')}_a_${hasta.replace('/', '-')}`;
+
+export default function DashboardVisitas({ desde, hasta, view }: { desde: string; hasta: string; view: GridView }) {
   const registros = useAppStore((s) => s.CollectDashboardVisitas);
   const fetchDashboardVisitas = useAppStore((s) => s.fetchDashboardVisitas);
 
@@ -196,16 +343,26 @@ export default function DashboardVisitas({ desde, hasta }: { desde: string; hast
   );
   const donutTotal = cur.okCount + cur.revisarCount;
 
-  // ── Ranking: visitas por técnico (todo el rango) ──
+  // ── Eficiencia por técnico (todo el rango): cantidad de visitas + % de control OK ──
+  // Combo estilo BI — la barra dice CUÁNTO trabajó y la línea CÓN QUÉ CALIDAD (control sí/no).
   const porTecnico = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, Registro[]>();
     for (const r of registros) {
       const k = proper(r.Usuario || '—') || '—';
-      map.set(k, (map.get(k) ?? 0) + 1);
+      const arr = map.get(k);
+      if (arr) arr.push(r);
+      else map.set(k, [r]);
     }
     return [...map.entries()]
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
+      .map(([name, rows]) => {
+        const m = metricsFor(rows);
+        return {
+          name,
+          visitas: rows.length,
+          control: m.controlPct != null ? Math.round(m.controlPct) : null,
+        };
+      })
+      .sort((a, b) => b.visitas - a.visitas)
       .slice(0, 8);
   }, [registros]);
 
@@ -213,17 +370,21 @@ export default function DashboardVisitas({ desde, hasta }: { desde: string; hast
   const edificiosBajo = useMemo(() => {
     // Resultado de control promedio por edificio (items Ok / chequeados), clampeado a ≤100
     // (los datos traen algunos edificios con Ok>Check que darían >100% — se acotan).
-    const agg = new Map<string, { ok: number; check: number }>();
+    // Resultado por edificio = ítems OK / total controlado (Ok + Check). <100% = tuvo
+    // ítems a revisar en el período.
+    const agg = new Map<string, { ok: number; tot: number }>();
     for (const r of registros) {
-      if (r.Check == null || r.Check <= 0) continue;
+      const ok = r.Ok ?? 0;
+      const tot = ok + (r.Check ?? 0);
+      if (tot <= 0) continue;
       const k = proper(r.Edificio || '—') || '—';
-      const a = agg.get(k) ?? { ok: 0, check: 0 };
-      a.ok += r.Ok ?? 0;
-      a.check += r.Check;
+      const a = agg.get(k) ?? { ok: 0, tot: 0 };
+      a.ok += ok;
+      a.tot += tot;
       agg.set(k, a);
     }
     return [...agg.entries()]
-      .map(([name, a]) => ({ name, value: Math.min(100, Math.round((a.ok / a.check) * 100)) }))
+      .map(([name, a]) => ({ name, value: Math.min(100, Math.round((a.ok / a.tot) * 100)) }))
       .filter((d) => d.value < 100)
       .sort((a, b) => a.value - b.value)
       .slice(0, 8);
@@ -239,6 +400,19 @@ export default function DashboardVisitas({ desde, hasta }: { desde: string; hast
       {loadError ? (
         <div className="h-full overflow-y-auto">
           <ErrorState message={loadError} onRetry={load} />
+        </div>
+      ) : view === 'grilla' ? (
+        <div className="h-full p-4 pb-4 md:p-6">
+          <GridPanel<Registro>
+            rows={registros}
+            columns={VISITAS_COLUMNS}
+            rowKey={(r) => r.ID}
+            search={visitaSearch}
+            toFlat={visitaFlat}
+            exportName={`visitas_${fileTag(desde, hasta)}`}
+            placeholder="Buscar edificio, técnico, código, ruta…"
+            mobileCard={visitaCard}
+          />
         </div>
       ) : (
         <div className="h-full space-y-4 overflow-y-auto p-4 pb-8 md:p-6">
@@ -278,27 +452,32 @@ export default function DashboardVisitas({ desde, hasta }: { desde: string; hast
               icon={TrendingUp}
               title="Evolución del resultado de control"
               subtitle="Resultado de control % por mes"
-              empty={evolucionVacia}
             >
-              <ChartContainer config={lineConfig} className="h-[220px] w-full">
-                <LineChart data={evolucion} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
-                  <CartesianGrid vertical={false} {...CHART_GRID} />
-                  <XAxis dataKey="label" {...AXIS} tick={X_TICK} interval="preserveStartEnd" minTickGap={16} />
-                  <YAxis {...AXIS} tick={X_TICK} width={44} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                  <ChartTooltip
-                    content={<ChartTooltipContent labelKey="label" formatter={(v) => `${v}%`} />}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="control"
-                    stroke={C_BRAND}
-                    strokeWidth={2.5}
-                    dot={{ r: 3, strokeWidth: 0, fill: C_BRAND }}
-                    activeDot={{ r: 5, strokeWidth: 0 }}
-                    connectNulls
-                  />
-                </LineChart>
-              </ChartContainer>
+              {months.length <= 1 ? (
+                <SingleMonthNote text="Ampliá el período a varios meses en Filtrar para ver la evolución mes a mes." />
+              ) : evolucionVacia ? (
+                <div className="flex h-[220px] w-full items-center justify-center text-sm text-wash-text-muted">
+                  Sin datos para mostrar.
+                </div>
+              ) : (
+                <ChartContainer config={lineConfig} className="h-[220px] w-full">
+                  <LineChart data={evolucion} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+                    <CartesianGrid vertical={false} {...CHART_GRID} />
+                    <XAxis dataKey="label" {...AXIS} tick={X_TICK} interval="preserveStartEnd" minTickGap={16} />
+                    <YAxis {...AXIS} tick={X_TICK} width={44} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                    <ChartTooltip content={<ChartTooltipContent labelKey="label" formatter={(v) => `${v}%`} />} />
+                    <Line
+                      type="monotone"
+                      dataKey="control"
+                      stroke={C_BRAND}
+                      strokeWidth={2.5}
+                      dot={{ r: 3, strokeWidth: 0, fill: C_BRAND }}
+                      activeDot={{ r: 5, strokeWidth: 0 }}
+                      connectNulls
+                    />
+                  </LineChart>
+                </ChartContainer>
+              )}
             </ChartCard>
 
             <ChartCard
@@ -355,26 +534,25 @@ export default function DashboardVisitas({ desde, hasta }: { desde: string; hast
             </ChartCard>
           </div>
 
-          {/* ── Ranking técnicos + edificios por debajo del 100% ── */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ChartCard
-              icon={Users}
-              title="Eficiencia por técnico"
-              subtitle={`Visitas por técnico — ${periodo}`}
-              empty={porTecnico.length === 0}
-            >
-              <HBar data={porTecnico} color={C_BRAND} />
-            </ChartCard>
+          {/* ── Eficiencia por técnico: combo cantidad de visitas (barra) + % control OK (línea) ── */}
+          <ChartCard
+            icon={Users}
+            title="Eficiencia por técnico"
+            subtitle={`Cantidad de visitas y % de control OK — ${periodo}`}
+            empty={porTecnico.length === 0}
+          >
+            <TecnicoCombo data={porTecnico} />
+          </ChartCard>
 
-            <ChartCard
-              icon={AlertTriangle}
-              title="Edificios por debajo del 100%"
-              subtitle="Resultado de control incompleto"
-              empty={edificiosBajo.length === 0}
-            >
-              <HBar data={edificiosBajo} color={C_BRAND} suffix="%" domainMax={100} />
-            </ChartCard>
-          </div>
+          {/* ── Edificios por debajo del 100% ── */}
+          <ChartCard
+            icon={AlertTriangle}
+            title="Edificios por debajo del 100%"
+            subtitle="Resultado de control incompleto"
+            empty={edificiosBajo.length === 0}
+          >
+            <HBar data={edificiosBajo} color={C_BRAND} suffix="%" domainMax={100} />
+          </ChartCard>
 
           <p className="text-xs text-wash-text-faint">
             Período actual: {periodo} · {intFmt(cur.visitas)} visitas · {months.length} mes
@@ -387,6 +565,17 @@ export default function DashboardVisitas({ desde, hasta }: { desde: string; hast
 }
 
 // ── Subcomponentes ─────────────────────────────────────────────────────────────
+
+/** Aviso para gráficos de evolución cuando el período es un solo mes (no hay serie temporal). */
+function SingleMonthNote({ text }: { text: string }) {
+  return (
+    <div className="flex h-[220px] w-full flex-col items-center justify-center gap-1.5 text-center">
+      <CalendarDays size={26} strokeWidth={1.6} className="text-wash-text-faint" />
+      <p className="text-sm font-medium text-wash-text-strong">Un solo mes seleccionado</p>
+      <p className="max-w-[300px] text-xs text-wash-text-muted">{text}</p>
+    </div>
+  );
+}
 
 /** Card estándar de chart: header con ícono de marca + título/subtítulo y estado vacío. */
 function ChartCard({
@@ -425,6 +614,72 @@ function ChartCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Combo de eficiencia por técnico (estilo BI): barras = cantidad de visitas (eje izq),
+ * línea = % de control OK (eje der, 0–100). Dos ejes a propósito: una es un CONTEO y la
+ * otra una TASA — se leen juntas para ver volumen + calidad de cada técnico.
+ */
+function TecnicoCombo({ data }: { data: { name: string; visitas: number; control: number | null }[] }) {
+  return (
+    <div>
+      {/* Leyenda del combo (aclara qué eje es cada serie) */}
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-wash-text-muted">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: C_BRAND }} />
+          Visitas (cantidad)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: C_LINE }} />
+          % Control OK
+        </span>
+      </div>
+      <ChartContainer config={comboConfig} className="h-[248px] w-full">
+        <ComposedChart data={data} margin={{ top: 14, right: 6, left: -8, bottom: 4 }}>
+          <CartesianGrid vertical={false} {...CHART_GRID} />
+          <XAxis
+            dataKey="name"
+            {...AXIS}
+            tick={{ fontSize: 11, fill: 'var(--color-wash-text-muted)' }}
+            interval={0}
+            angle={-20}
+            textAnchor="end"
+            height={54}
+          />
+          <YAxis yAxisId="left" {...AXIS} tick={X_TICK} allowDecimals={false} width={34} />
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            {...AXIS}
+            tick={X_TICK}
+            width={40}
+            domain={[0, 100]}
+            tickFormatter={(v) => `${v}%`}
+          />
+          <ChartTooltip content={<ChartTooltipContent />} />
+          <Bar yAxisId="left" dataKey="visitas" fill={C_BRAND} radius={[4, 4, 0, 0]} barSize={26} />
+          <Line
+            yAxisId="right"
+            type="monotone"
+            dataKey="control"
+            stroke={C_LINE}
+            strokeWidth={2.5}
+            dot={{ r: 3, strokeWidth: 0, fill: C_LINE }}
+            activeDot={{ r: 5, strokeWidth: 0 }}
+            connectNulls
+          >
+            <LabelList
+              dataKey="control"
+              position="top"
+              formatter={(v) => (v == null ? '' : `${v}%`)}
+              style={{ fontSize: 10, fontWeight: 600, fill: C_LINE }}
+            />
+          </Line>
+        </ComposedChart>
+      </ChartContainer>
+    </div>
   );
 }
 

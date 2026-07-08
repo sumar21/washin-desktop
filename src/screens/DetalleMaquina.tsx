@@ -576,8 +576,17 @@ function DetailModal({ maquina, onClose }: { maquina: Maquina | null; onClose: (
             <ul className="space-y-2">
               {historial.map((i) => (
                 <li key={i.ID} className="rounded-xl bg-wash-canvas px-4 py-3 ring-1 ring-wash-border">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-wash-text-muted">{i.Fecha_IN || '—'}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2 text-xs text-wash-text-muted">
+                      <span className="shrink-0">{i.Fecha_IN || '—'}</span>
+                      {i.Edificio_IN && (
+                        <span className="inline-flex min-w-0 items-center gap-1">
+                          <span className="text-wash-text-faint">·</span>
+                          <Building2 size={11} className="shrink-0" />
+                          <span className="truncate">{i.Edificio_IN}</span>
+                        </span>
+                      )}
+                    </div>
                     <StatusBadge status={i.Resuelto_IN === 'SI' ? 'Resuelto' : i.Status_IN || 'Pendiente'} />
                   </div>
                   <div className="mt-1 font-display font-bold text-wash-accent">{proper(i.Titulo)}</div>

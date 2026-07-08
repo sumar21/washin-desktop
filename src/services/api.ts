@@ -281,6 +281,7 @@ export interface HistorialItem {
   Fecha_IN: string;
   Titulo: string;
   Descripcion?: string;
+  Edificio_IN: string;
   Status_IN: string;
   Resuelto_IN: string;
 }
@@ -562,11 +563,27 @@ export function deletePlanificacion(payload: { mesAno?: string; idUnivocoRuta?: 
   return request('/planificaciones', { method: 'POST', body: JSON.stringify({ action: 'delete', ...payload }) });
 }
 
-// ── Repuestos (11.Respuestos) — ABM de precios ───────────────────────────
+// ── Repuestos (11.Respuestos) — ABM (Configuración) ──────────────────────
+/** Campos editables del ABM de repuestos (el stock vive en 04.Stock, no acá). */
+export interface RepuestoAbmInput {
+  nombre: string;
+  codigo?: string;
+  marca?: string;
+  precio?: number;
+}
+
 export function getRepuestos(): Promise<Repuesto[]> {
   return request('/repuestos');
 }
 
-export function updateRepuestoPrecio(id: number, precio: number): Promise<{ ID: number; Precio_RP: number }> {
-  return request(`/repuestos/${id}`, { method: 'PATCH', body: JSON.stringify({ precio }) });
+export function createRepuesto(payload: RepuestoAbmInput): Promise<Repuesto> {
+  return request('/repuestos', { method: 'POST', body: JSON.stringify({ action: 'create', ...payload }) });
+}
+
+export function updateRepuesto(id: number, payload: RepuestoAbmInput): Promise<Repuesto> {
+  return request('/repuestos', { method: 'POST', body: JSON.stringify({ action: 'update', id, ...payload }) });
+}
+
+export function bajaRepuesto(id: number): Promise<{ ID: number; Status_RP: string }> {
+  return request('/repuestos', { method: 'POST', body: JSON.stringify({ action: 'baja', id }) });
 }

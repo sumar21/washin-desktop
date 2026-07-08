@@ -9,7 +9,6 @@ import {
   Map,
   Wind,
   BarChart3,
-  Wrench,
   Settings,
 } from 'lucide-react';
 import type { ModuloNombre, UserRole } from '@/types/domain';
@@ -26,7 +25,6 @@ export const moduleMeta: Record<ModuloNombre, { icon: typeof Home; path: string 
   Planificaciones: { icon: Map, path: '/rutas' },
   Ventilacion: { icon: Wind, path: '/ventilaciones' },
   Dashboard: { icon: BarChart3, path: '/dashboard' },
-  Repuestos: { icon: Wrench, path: '/repuestos' },
   Configuracion: { icon: Settings, path: '/configuracion' },
 };
 
@@ -43,26 +41,6 @@ const DASHBOARD_ROLES: UserRole[] = [
 ];
 export function canSeeDashboard(rol: UserRole | null | undefined): boolean {
   return !!rol && DASHBOARD_ROLES.includes(rol);
-}
-
-/**
- * Repuestos (catálogo con precio) también es transversal: se inyecta en el sidebar
- * para administración/mantenimiento. Solo Admin / Jefe Taller pueden editar el precio
- * (el resto lo ve en solo-lectura; el gate real de escritura vive en el backend).
- */
-const REPUESTOS_ROLES: UserRole[] = [
-  'Admin',
-  'Jefe Taller',
-  'Supervisor Lider',
-  'Supervisor Mantenimiento',
-];
-export function canSeeRepuestos(rol: UserRole | null | undefined): boolean {
-  return !!rol && REPUESTOS_ROLES.includes(rol);
-}
-
-/** ¿El rol puede editar el precio de un repuesto? (mismo gate que el backend). */
-export function canEditRepuestoPrecio(rol: UserRole | null | undefined): boolean {
-  return rol === 'Admin' || rol === 'Jefe Taller';
 }
 
 /** Nombre del módulo cuya ruta matchea el pathname actual (para el título del header mobile). */

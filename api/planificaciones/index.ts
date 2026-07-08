@@ -49,15 +49,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Detalle de un mes: rutas + circuitos + edificios a visitar.
       if (mes) {
         const esc = odataEscape(mes);
-        const [resRows, detRows, edifRows] = await Promise.all([
+        const [resRows, detRows, edifRows, regRows] = await Promise.all([
           listItems(LIST_IDS.resumenPlanif, { select: resumenPlanifSelectFields(), filter: `fields/MesAnoRuta_RP eq '${esc}' and ${VIVOS}`, top: 999 }),
           listItems(LIST_IDS.detallePlanif, { select: detallePlanifSelectFields(), filter: `fields/MesAno_DP eq '${esc}'`, top: 2000 }),
           listItems(LIST_IDS.edificiosVisitar, { select: edificioVisitarSelectFields(), filter: `fields/MesAno_EV eq '${esc}'`, top: 4000 }),
+          // 01.Registros del mismo mes: la "visita real" (Estado_EV en 18 nunca se
+          // actualiza — siempre queda 'Pendiente'). El estado Visitado se DERIVA
+          // cruzando contra los registros Finalizados de ese mes.
+          listItems(LIST_IDS.registros, { select: ['Codigo', 'Edificio', 'Estado', 'MesA_x00f1_o'], filter: `fields/MesA_x00f1_o eq '${esc}'`, top: 4000 }),
         ]);
+
+        // Índice de "visitados" del mes: código de edificio (clave principal, ~94% de match)
+        // y nombre de edificio normalizado (fallback). El técnico NO se cruza: los formatos
+        // difieren entre listas ("Martinez, Luis" en 18 vs "Luimartinez" en 01).
+        const visitados = new Set<string>();
+        for (const r of regRows) {
+          if (String(r.Estado ?? '') !== 'Finalizado') continue; // Anulado no cuenta
+          const cod = String(r.Codigo ?? '').trim().toUpperCase();
+          const edif = String(r.Edificio ?? '').trim().toLowerCase();
+          if (cod) visitados.add('C:' + cod);
+          if (edif) visitados.add('E:' + edif);
+        }
+        const edificios = edifRows.map(mapEdificioVisitar).map((e) => {
+          const cod = e.Codigo.trim().toUpperCase();
+          const edif = e.Edificio.trim().toLowerCase();
+          const visito = (cod && visitados.has('C:' + cod)) || (edif && visitados.has('E:' + edif));
+          return visito ? { ...e, Estado: 'Visitado' } : e;
+        });
+
         return res.status(200).json({
           resumen: resRows.map(mapResumenPlanif),
           detalle: detRows.map(mapDetallePlanif).filter((d) => d.Status !== 'Anulado'),
-          edificios: edifRows.map(mapEdificioVisitar),
+          edificios,
         });
       }
 

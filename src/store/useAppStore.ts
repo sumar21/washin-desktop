@@ -162,10 +162,12 @@ interface AppState {
   fetchDashboardVisitas: (desde?: string, hasta?: string) => Promise<void>;
   fetchStock: () => Promise<void>;
   fetchTecnicos: () => Promise<void>;
-  /** Real: GET /api/repuestos — catálogo de repuestos con precio (11.Respuestos). */
+  /** Real: GET /api/repuestos — catálogo de repuestos (11.Respuestos). */
   fetchRepuestos: () => Promise<void>;
-  /** Real: PATCH /api/repuestos/:id — actualiza Precio_RP (gate Admin / Jefe Taller). */
-  updateRepuestoPrecio: (id: number, precio: number) => Promise<void>;
+  /** Real: POST /api/repuestos — ABM de repuestos (gate canEditAbm 'Repuestos'). */
+  createRepuesto: (payload: api.RepuestoAbmInput) => Promise<void>;
+  updateRepuesto: (id: number, payload: api.RepuestoAbmInput) => Promise<void>;
+  bajaRepuesto: (id: number) => Promise<void>;
   /** Real: GET /api/catalog — segmentos + items (11.Respuestos + 99.ABM_MaquinasCompra). */
   fetchCatalog: () => Promise<void>;
   /** Real: GET /api/compras — cabeceras + sus líneas. `meses` (varios mm/yyyy) mergea; `mes` un mes puntual. */
@@ -274,7 +276,9 @@ const initialState: Omit<
   | 'fetchStock'
   | 'fetchTecnicos'
   | 'fetchRepuestos'
-  | 'updateRepuestoPrecio'
+  | 'createRepuesto'
+  | 'updateRepuesto'
+  | 'bajaRepuesto'
   | 'fetchCatalog'
   | 'fetchCompras'
   | 'fetchAprobaciones'
@@ -515,14 +519,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  updateRepuestoPrecio: async (id, precio) => {
+  createRepuesto: async (payload) => {
     try {
-      const result = await api.updateRepuestoPrecio(id, precio);
-      set((s) => ({
-        CollectRepuestos: s.CollectRepuestos.map((r) =>
-          r.ID === id ? { ...r, Precio_RP: result.Precio_RP } : r
-        ),
-      }));
+      await api.createRepuesto(payload);
+      await get().fetchRepuestos();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  updateRepuesto: async (id, payload) => {
+    try {
+      await api.updateRepuesto(id, payload);
+      await get().fetchRepuestos();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  bajaRepuesto: async (id) => {
+    try {
+      await api.bajaRepuesto(id);
+      await get().fetchRepuestos();
     } catch (err) {
       handleAuthError(err, set);
       throw err;

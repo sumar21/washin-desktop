@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Map, GitBranch, Building2, Search, Plus, Lock } from 'lucide-react';
+import { Map, GitBranch, Building2, Wrench, Search, Plus, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { abmAccess, type AbmTab } from '@/lib/abmAccess';
@@ -8,8 +8,9 @@ import { ErrorState } from '@/components/ErrorState';
 import { ConfigRutas } from './config/ConfigRutas';
 import { ConfigCircuitos } from './config/ConfigCircuitos';
 import { ConfigEdificios } from './config/ConfigEdificios';
+import { ConfigRepuestos } from './config/ConfigRepuestos';
 
-type ConfigTab = 'rutas' | 'circuitos' | 'edificios';
+type ConfigTab = 'rutas' | 'circuitos' | 'edificios' | 'repuestos';
 
 interface TabDef {
   key: ConfigTab;
@@ -25,6 +26,7 @@ const TABS: TabDef[] = [
   { key: 'rutas', label: 'Rutas', icon: Map, addLabel: 'Agregar Ruta', placeholder: 'Buscar ruta…', abm: 'Rutas' },
   { key: 'circuitos', label: 'Circuitos', icon: GitBranch, addLabel: 'Agregar Circuito', placeholder: 'Buscar circuito o edificio…', abm: 'Circuitos' },
   { key: 'edificios', label: 'Edificios', icon: Building2, addLabel: 'Agregar Edificio', placeholder: 'Buscar edificio…', abm: 'Edificios' },
+  { key: 'repuestos', label: 'Repuestos', icon: Wrench, addLabel: 'Agregar Repuesto', placeholder: 'Buscar repuesto, código, marca…', abm: 'Repuestos' },
 ];
 
 export function Configuracion() {
@@ -36,7 +38,7 @@ export function Configuracion() {
   const visibleTabs = TABS.filter((t) => t.abm === null || access.tabs.includes(t.abm));
 
   const [tab, setTab] = useState<ConfigTab | null>(null);
-  const [queries, setQueries] = useState<Record<ConfigTab, string>>({ rutas: '', circuitos: '', edificios: '' });
+  const [queries, setQueries] = useState<Record<ConfigTab, string>>({ rutas: '', circuitos: '', edificios: '', repuestos: '' });
   const [addOpen, setAddOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -141,6 +143,7 @@ export function Configuracion() {
             <ConfigCircuitos query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} onFullscreenChange={setFullscreen} />
           )}
           {active.key === 'edificios' && <ConfigEdificios query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} />}
+          {active.key === 'repuestos' && <ConfigRepuestos query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} />}
         </div>
       )}
     </div>

@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import type { ElementType } from 'react';
-import { LayoutDashboard, MapPin, AlertOctagon, CalendarDays } from 'lucide-react';
+import { LayoutDashboard, MapPin, AlertOctagon, CalendarDays, Filter } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ViewToggle, type GridView } from '@/components/dashboard/GridPanel';
 import { cn } from '@/lib/utils';
 import DashboardGeneral from '@/screens/dashboard/DashboardGeneral';
 import DashboardVisitas from '@/screens/dashboard/DashboardVisitas';
@@ -42,10 +44,13 @@ const ord = (mmYyyy: string) => {
  */
 export function Dashboard() {
   const [tab, setTab] = useState<TabId>('general');
+  const [view, setView] = useState<GridView>('graficos');
   const meses = useMemo(() => monthOptions(24), []);
-  // Período por defecto: mes actual (1 mes → fetch chico y rápido). El usuario lo ensancha.
-  const [desde, setDesde] = useState<string>(meses[0].value);
-  const [hasta, setHasta] = useState<string>(meses[0].value);
+  // Período por defecto: el mes anterior (el mes en curso suele estar incompleto y da
+  // números parciales). meses[1] = mes pasado; fallback a meses[0] si sólo hay uno.
+  const mesDefault = (meses[1] ?? meses[0]).value;
+  const [desde, setDesde] = useState<string>(mesDefault);
+  const [hasta, setHasta] = useState<string>(mesDefault);
 
   const active = TABS.find((t) => t.id === tab) ?? TABS[0];
   const rangeVisible = tab !== 'general';
@@ -69,31 +74,89 @@ export function Dashboard() {
         title="Dashboard"
         subtitle={subtitle}
         toolbarExtra={
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex w-full min-w-0 items-center gap-2 md:w-auto md:flex-wrap md:justify-end">
             {rangeVisible && (
-              <div className="flex items-center gap-1.5">
-                <CalendarDays size={14} className="shrink-0 text-wash-text-muted" />
-                <MesSelect value={desde} onChange={onDesde} options={meses} />
-                <span className="text-xs text-wash-text-muted">→</span>
-                <MesSelect value={hasta} onChange={onHasta} options={meses} />
-              </div>
+              <PeriodoFiltro
+                desde={desde}
+                hasta={hasta}
+                onDesde={onDesde}
+                onHasta={onHasta}
+                options={meses}
+                desdeLabel={desdeLabel}
+                hastaLabel={hastaLabel}
+              />
             )}
+            {rangeVisible && <ViewToggle value={view} onChange={setView} />}
             <TabControl tab={tab} onTab={setTab} />
           </div>
         }
       />
 
       {tab === 'general' && <DashboardGeneral />}
-      {tab === 'visitas' && <DashboardVisitas desde={desde} hasta={hasta} />}
-      {tab === 'incidentes' && <DashboardIncidentes desde={desde} hasta={hasta} />}
+      {tab === 'visitas' && <DashboardVisitas desde={desde} hasta={hasta} view={view} />}
+      {tab === 'incidentes' && <DashboardIncidentes desde={desde} hasta={hasta} view={view} />}
     </div>
+  );
+}
+
+/**
+ * Botón "Filtros" que despliega el período (desde/hasta) en un popover. Reemplaza a
+ * los 2 datepickers inline para ganar espacio en el header — el rango elegido se
+ * muestra en el propio botón.
+ */
+function PeriodoFiltro({
+  desde,
+  hasta,
+  onDesde,
+  onHasta,
+  options,
+  desdeLabel,
+  hastaLabel,
+}: {
+  desde: string;
+  hasta: string;
+  onDesde: (v: string) => void;
+  onHasta: (v: string) => void;
+  options: { value: string; label: string }[];
+  desdeLabel: string;
+  hastaLabel: string;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        {/* Botón "Filtrar" consistente con los demás módulos (ver PageHeader). */}
+        <button
+          type="button"
+          title="Filtrar período"
+          aria-label="Filtrar período"
+          className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-wash-canvas px-3 text-sm font-medium text-wash-text-strong ring-1 ring-wash-border transition-colors hover:bg-wash-border/40"
+        >
+          <Filter size={14} className="shrink-0" />
+          <span className="hidden md:inline">Filtrar</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[240px]">
+        <div className="flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+          <CalendarDays size={12} />
+          Período · {desdeLabel} → {hastaLabel}
+        </div>
+        <div>
+          <label className="mb-1 block px-1 text-xs text-wash-text-muted">Desde</label>
+          <MesSelect value={desde} onChange={onDesde} options={options} />
+        </div>
+        <div>
+          <label className="mb-1 block px-1 text-xs text-wash-text-muted">Hasta</label>
+          <MesSelect value={hasta} onChange={onHasta} options={options} />
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
 function MesSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-9 w-[126px] bg-wash-canvas text-[13px] ring-wash-border">
+      <SelectTrigger className="h-9 w-full bg-wash-canvas text-[13px] ring-wash-border">
         <SelectValue />
       </SelectTrigger>
       <SelectContent className="max-h-[320px]">
@@ -110,7 +173,7 @@ function MesSelect({ value, onChange, options }: { value: string; onChange: (v: 
 /** Segmented control de marca para alternar entre los tabs del dashboard. */
 function TabControl({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
   return (
-    <div className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-xl bg-wash-surface-2 p-1 ring-1 ring-wash-border">
+    <div className="flex min-w-0 flex-1 items-center gap-1 rounded-xl bg-wash-surface-2 p-1 ring-1 ring-wash-border md:w-auto md:flex-none">
       {TABS.map((t) => {
         const Icon = t.icon;
         const activo = t.id === tab;
@@ -120,15 +183,17 @@ function TabControl({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
             type="button"
             onClick={() => onTab(t.id)}
             aria-pressed={activo}
+            title={t.label}
+            aria-label={t.label}
             className={cn(
-              'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+              'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors md:flex-none',
               activo
                 ? 'bg-wash-surface text-wash-brand-dark shadow-sm ring-1 ring-wash-border'
                 : 'text-wash-text-muted hover:text-wash-text-strong'
             )}
           >
             <Icon size={15} className="shrink-0" />
-            <span>{t.label}</span>
+            <span className="hidden md:inline">{t.label}</span>
           </button>
         );
       })}
