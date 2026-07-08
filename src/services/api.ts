@@ -14,6 +14,7 @@ import type {
   PlanifMes,
   PlanifRuta,
   Registro,
+  Repuesto,
   RepuestoIncidente,
   RepuestoTecnico,
   RutaAbm,
@@ -115,6 +116,20 @@ export function getHome(): Promise<HomeResponse> {
 
 export function getStock(): Promise<StockItem[]> {
   return request('/stock');
+}
+
+// ── Dashboard (Visitas) — registros del rango de meses elegido ───────────
+export interface DashboardVisitasResponse {
+  visitas: Registro[];
+}
+
+/** Registros del rango [desde..hasta] (mm/yyyy). Sin args: mes actual (fetch chico). */
+export function getDashboardVisitas(desde?: string, hasta?: string): Promise<DashboardVisitasResponse> {
+  const qs = new URLSearchParams();
+  if (desde) qs.set('desde', desde);
+  if (hasta) qs.set('hasta', hasta);
+  const suffix = qs.toString();
+  return request(`/dashboard/visitas${suffix ? `?${suffix}` : ''}`);
 }
 
 export interface AddStockPayload {
@@ -306,6 +321,31 @@ export interface IncidentesResponse {
 /** Sin arg: incidentes sin resolver. Con `resueltosMes` (mm/yyyy): los resueltos de ese mes. */
 export function getIncidentes(resueltosMes?: string): Promise<IncidentesResponse> {
   return request(resueltosMes ? `/incidentes?resueltos=${encodeURIComponent(resueltosMes)}` : '/incidentes');
+}
+
+// ── Dashboard de Incidentes (scoped al rango de meses + repuestos con Precio_RI) ─
+/** Repuesto de incidente enriquecido con el precio unitario nuevo (default 0). */
+export interface DashRepuestoIncidente extends RepuestoIncidente {
+  Precio_RI: number;
+  FechaMes_RI?: string;
+}
+
+export interface DashboardIncidentesResponse {
+  incidentes: Incidente[];
+  repuestos: DashRepuestoIncidente[];
+}
+
+/**
+ * Incidentes + repuestos (con Precio_RI) SOLO de los meses del rango [desde..hasta]
+ * (ambos en `mm/yyyy`). Sin args → mes actual. El backend acota server-side, así que
+ * los datos que llegan ya son el rango (no filtrar de nuevo en cliente).
+ */
+export function getDashboardIncidentes(desde?: string, hasta?: string): Promise<DashboardIncidentesResponse> {
+  const qs = new URLSearchParams();
+  if (desde) qs.set('desde', desde);
+  if (hasta) qs.set('hasta', hasta);
+  const suffix = qs.toString();
+  return request(`/dashboard/incidentes${suffix ? `?${suffix}` : ''}`);
 }
 
 export interface NewIncidentePayload {
@@ -520,4 +560,13 @@ export function createPlanificacion(payload: {
 
 export function deletePlanificacion(payload: { mesAno?: string; idUnivocoRuta?: string }): Promise<{ anuladas: number; circuitos: number; edificios: number }> {
   return request('/planificaciones', { method: 'POST', body: JSON.stringify({ action: 'delete', ...payload }) });
+}
+
+// ── Repuestos (11.Respuestos) — ABM de precios ───────────────────────────
+export function getRepuestos(): Promise<Repuesto[]> {
+  return request('/repuestos');
+}
+
+export function updateRepuestoPrecio(id: number, precio: number): Promise<{ ID: number; Precio_RP: number }> {
+  return request(`/repuestos/${id}`, { method: 'PATCH', body: JSON.stringify({ precio }) });
 }

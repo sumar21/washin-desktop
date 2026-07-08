@@ -13,15 +13,17 @@ export const money = (n: number) => `$${nf0.format(Math.round(n || 0))}`;
 export const pct = (n: number) => `${(n || 0).toFixed(1)}%`;
 
 // ── Paleta de charts (Recharts es la única librería) ─────────────────────────
-// Deriva de los tokens `--color-chart-*` (cyan de marca + semánticos) + extras.
+// Rampa FRÍA de marca (cian → azul → violeta → slate). A propósito NO usa verde/ámbar/rojo:
+// la marca es cian y esos colores se veían fuera de gama. Los estados (good/warning) usan
+// tokens de status dedicados, no esta rampa categórica.
 export const CHART_COLORS = [
-  'var(--color-chart-1)',
-  'var(--color-chart-2)',
-  'var(--color-chart-3)',
-  'var(--color-chart-4)',
-  'var(--color-chart-5)',
-  'rgb(168 85 247)',
-  'rgb(244 114 182)',
+  'var(--color-chart-1)', // cian (marca)
+  'var(--color-chart-2)', // azul
+  'rgb(124 111 240)', // violeta
+  'var(--color-wash-brand-dark)', // cian oscuro
+  'rgb(94 200 235)', // cian claro
+  'rgb(120 160 200)', // slate
+  'rgb(42 111 176)', // azul profundo
 ];
 export const chartColor = (i: number) => CHART_COLORS[i % CHART_COLORS.length];
 

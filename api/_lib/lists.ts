@@ -255,6 +255,15 @@ export interface RegistroRow {
   HoraInicio?: string;
   HoraFinal?: string;
   Progreso?: number;
+  /** Campos crudos para el Dashboard de visitas (tiempos + resultado de control). */
+  HoraVisita?: string;
+  HoraSalida?: string;
+  FechaTerminada_R?: string;
+  /** Ítems controlados OK y total de ítems chequeados de la visita. */
+  Ok?: number;
+  Check?: number;
+  Codigo?: string;
+  Direccion?: string;
 }
 
 const REGISTROS_SELECT = [
@@ -268,6 +277,11 @@ const REGISTROS_SELECT = [
   'Fecha',
   'Check',
   'Ok',
+  'HoraVisita',
+  'HoraSalida',
+  'FechaTerminada_R',
+  'Codigo',
+  'Direccion',
 ];
 
 export function mapRegistro(item: SharePointItem): RegistroRow {
@@ -287,6 +301,13 @@ export function mapRegistro(item: SharePointItem): RegistroRow {
     HoraInicio: item.Hora ? String(item.Hora) : undefined,
     HoraFinal: item.Fecha ? String(item.Fecha) : undefined,
     Progreso: progreso,
+    HoraVisita: item.HoraVisita ? String(item.HoraVisita) : undefined,
+    HoraSalida: item.HoraSalida ? String(item.HoraSalida) : undefined,
+    FechaTerminada_R: item.FechaTerminada_R ? String(item.FechaTerminada_R) : undefined,
+    Ok: check > 0 || item.Ok != null ? ok : undefined,
+    Check: item.Check != null ? check : undefined,
+    Codigo: item.Codigo ? String(item.Codigo) : undefined,
+    Direccion: item.Direccion ? String(item.Direccion) : undefined,
   };
 }
 
@@ -497,6 +518,48 @@ export function buildCatalog(
   }
   return { segmentos, items };
 }
+
+// ── 11.Respuestos (ABM de repuestos con precio) ───────────────────────────
+// Catálogo de repuestos con su precio unitario. `Precio_RP` es una columna NUEVA
+// (número, 2 decimales) que el usuario debe crear a mano en SharePoint. Hasta que
+// exista, el GET la mapea con default 0 y el PATCH la escribe igual (ver api/repuestos).
+// OJO: el GET NO restringe $select para esta lista — no se puede $select una columna
+// que todavía no existe (Graph responde 400). Al expandir todos los fields, `Precio_RP`
+// aparece automáticamente apenas se cree la columna, sin tocar más código.
+export interface RepuestoAbmRow {
+  ID: number;
+  Nombre_RP: string;
+  Codigo_RP: string;
+  Stock_RP: number;
+  Status_RP: string;
+  ConcatRepuesto_RP: string;
+  Precio_RP: number;
+}
+
+/**
+ * Proyección "objetivo" de la lista 11 (incluye Precio_RP). Documenta las columnas
+ * que consume el ABM. El GET de /api/repuestos NO la usa como $select a propósito:
+ * como Precio_RP puede no existir todavía, expandimos todos los fields (ver arriba).
+ */
+export function repuestoAbmSelectFields(): string[] {
+  return ['Nombre_RP', 'Codigo_RP', 'Stock_RP', 'Status_RP', 'ConcatRepuesto_RP', 'Precio_RP'];
+}
+
+export function mapRepuestoAbm(item: SharePointItem): RepuestoAbmRow {
+  return {
+    ID: Number(item.id),
+    Nombre_RP: String(item.Nombre_RP ?? '').trim(),
+    Codigo_RP: String(item.Codigo_RP ?? '').trim(),
+    Stock_RP: Number(item.Stock_RP ?? 0) || 0,
+    Status_RP: String(item.Status_RP ?? '').trim(),
+    ConcatRepuesto_RP: String(item.ConcatRepuesto_RP ?? '').trim(),
+    // Columna nueva: default 0 mientras no exista en SharePoint.
+    Precio_RP: Number(item.Precio_RP ?? 0) || 0,
+  };
+}
+
+/** Roles que pueden editar el precio de un repuesto (mismo gate que Stock). */
+export const REPUESTO_PRECIO_EDIT_ROLES = STOCK_EDIT_ROLES;
 
 // ── DetalleMaquina (08.DetalleMaquina) — parque de máquinas ───────────────
 // OJO: la columna Segmento_DM es internamente `Segmentp_DM` (typo real en SharePoint).
@@ -712,17 +775,39 @@ export function mapIncidente(item: SharePointItem): IncidenteRow {
 
 // ── RepuestosIncidentes (13.RepuestosIncidentes) ──────────────────────────
 // OJO: display IDIncidente_RI → interno IDIncidente_IN, guarda el ID numérico del incidente.
+// Precio_RI es una columna NUEVA: puede no existir todavía o venir vacía → se
+// normaliza a number con default 0 (acepta coma decimal del formato es-AR).
 export interface RepuestoIncidenteRow {
   ID: number;
   IDIncidente_RI: string;
   Repuesto_RI: string;
   Cantidad_RI: number;
+  Precio_RI: number;
+  FechaMes_RI: string;
 }
 
-const REPUESTO_INCIDENTE_SELECT = ['IDIncidente_IN', 'Repuesto_RI', 'Cantidad_RI', 'Status_RI'];
+const REPUESTO_INCIDENTE_SELECT = [
+  'IDIncidente_IN',
+  'Repuesto_RI',
+  'Cantidad_RI',
+  'Precio_RI',
+  'FechaMes_RI',
+  'Status_RI',
+];
 
 export function repuestoIncidenteSelectFields(): string[] {
   return REPUESTO_INCIDENTE_SELECT;
+}
+
+/** Precio como número tolerante: undefined/'' → 0, "1.234,56" (es-AR) → 1234.56, texto raro → 0. */
+function parsePrecioRI(raw: unknown): number {
+  if (raw == null || raw === '') return 0;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
+  const cleaned = String(raw).trim().replace(/\./g, '').replace(',', '.');
+  const n = Number(cleaned);
+  if (Number.isFinite(n)) return n;
+  const plain = Number(raw);
+  return Number.isFinite(plain) ? plain : 0;
 }
 
 export function mapRepuestoIncidente(item: SharePointItem): RepuestoIncidenteRow {
@@ -731,6 +816,8 @@ export function mapRepuestoIncidente(item: SharePointItem): RepuestoIncidenteRow
     IDIncidente_RI: String(item.IDIncidente_IN ?? ''),
     Repuesto_RI: String(item.Repuesto_RI ?? ''),
     Cantidad_RI: Number(item.Cantidad_RI ?? 0) || 0,
+    Precio_RI: parsePrecioRI(item.Precio_RI),
+    FechaMes_RI: String(item.FechaMes_RI ?? ''),
   };
 }
 

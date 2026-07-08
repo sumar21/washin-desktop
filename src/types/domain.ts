@@ -48,7 +48,8 @@ export type ModuloNombre =
   | 'Stock Tecnico'
   | 'Planificaciones'
   | 'Ventilacion'
-  | 'Metricas'
+  | 'Dashboard'
+  | 'Repuestos'
   | 'Configuracion';
 
 // ABM.Edificios
@@ -75,6 +76,15 @@ export interface Registro {
   HoraFinal?: string;
   /** Progreso de la visita 0–100. 100 = completa, <100 = parcial. */
   Progreso?: number;
+  /** Campos crudos para el Dashboard de visitas (tiempos + resultado de control). */
+  HoraVisita?: string;
+  HoraSalida?: string;
+  FechaTerminada_R?: string;
+  /** Ítems controlados OK y total de ítems chequeados de la visita. */
+  Ok?: number;
+  Check?: number;
+  Codigo?: string;
+  Direccion?: string;
 }
 
 // 04.Stock
@@ -226,12 +236,17 @@ export interface Incidente {
   User_IN: string;
 }
 
-// 11.Repuestos
+// 11.Repuestos — catálogo de repuestos con precio (ABM).
+// `Precio_RP` es una columna NUEVA (número, 2 decimales) que el usuario debe crear
+// a mano en SharePoint; hasta que exista, el backend la devuelve como 0.
 export interface Repuesto {
   ID: number;
   Nombre_RP: string;
   Codigo_RP: string;
-  Marca_RP?: string;
+  Stock_RP: number;
+  Status_RP: string;
+  ConcatRepuesto_RP: string;
+  Precio_RP: number;
 }
 
 // 12.FotoIncidentes

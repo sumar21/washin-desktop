@@ -46,7 +46,7 @@ const toneFor = (t: string) =>
       ? tipoTone['Cambio de Maquina']
       : 'bg-slate-50 text-slate-700 ring-slate-300/70');
 
-const GRID = '130px 100px 150px minmax(220px,1.6fr) minmax(180px,1fr) 132px';
+const GRID = '120px 96px 140px minmax(200px,1.5fr) minmax(150px,1fr) minmax(130px,0.9fr) 120px';
 
 // Estados de un incidente SIN resolver (por defecto se muestran estos, Resuelto_IN='NO').
 const ESTADOS_IN = ['A Revisar', 'Pendiente', 'Asignado', 'En Aprobacion'];
@@ -353,6 +353,10 @@ export function Incidentes() {
                             </span>
                           )}
                         </div>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">Asignador</span>
+                          <span className="min-w-0 truncate font-medium text-wash-text-strong">{i.User_IN || '—'}</span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -371,6 +375,7 @@ export function Incidentes() {
                 <div>Tipo</div>
                 <div>Máquina / Edificio</div>
                 <div>Técnico</div>
+                <div>Asignador</div>
                 <div className="text-right">Acciones</div>
               </div>
 
@@ -424,6 +429,9 @@ export function Incidentes() {
                               <UserCircle2 size={12} /> Sin asignar
                             </span>
                           )}
+                        </div>
+                        <div className="min-w-0 truncate pr-2 text-[12.5px] text-wash-text" title={i.User_IN || ''}>
+                          {i.User_IN || '—'}
                         </div>
                         <div className="flex items-center justify-end gap-1.5">
                           <IconBtn icon={Eye} tone="neutral" title="Ver detalle" onClick={() => setDetail(i)} />
@@ -827,7 +835,7 @@ function DetailModal({
         <Meta label="Técnico" value={incidente.TecnicoAsignado_IN || <span className="text-amber-700">Sin asignar</span>} />
         {incidente.MaquinaAsignada_IN && <Meta label="Máquina asignada" value={proper(incidente.MaquinaAsignada_IN)} />}
         {incidente.FechaAsignada_IN && <Meta label="Asignada" value={incidente.FechaAsignada_IN} />}
-        {incidente.User_IN && <Meta label="Asignador" value={incidente.User_IN} />}
+        <Meta label="Asignador" value={incidente.User_IN || '—'} />
         {incidente.FechaResuelto_IN && <Meta label="Resuelto" value={incidente.FechaResuelto_IN} />}
       </div>
       <div className="mt-4">

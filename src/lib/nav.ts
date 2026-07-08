@@ -9,6 +9,7 @@ import {
   Map,
   Wind,
   BarChart3,
+  Wrench,
   Settings,
 } from 'lucide-react';
 import type { ModuloNombre, UserRole } from '@/types/domain';
@@ -24,23 +25,44 @@ export const moduleMeta: Record<ModuloNombre, { icon: typeof Home; path: string 
   'Stock Tecnico': { icon: HardHat, path: '/stock-tecnicos' },
   Planificaciones: { icon: Map, path: '/rutas' },
   Ventilacion: { icon: Wind, path: '/ventilaciones' },
-  Metricas: { icon: BarChart3, path: '/metricas' },
+  Dashboard: { icon: BarChart3, path: '/dashboard' },
+  Repuestos: { icon: Wrench, path: '/repuestos' },
   Configuracion: { icon: Settings, path: '/configuracion' },
 };
 
 /**
- * Métricas es un módulo transversal (no vive en 99.ListaPermisosDesktop): se
+ * Dashboard es un módulo transversal (no vive en 99.ListaPermisosDesktop): se
  * inyecta en el sidebar para roles de supervisión/administración.
  */
-const METRICAS_ROLES: UserRole[] = [
+const DASHBOARD_ROLES: UserRole[] = [
   'Admin',
   'Supervisor Lider',
   'Supervisor',
   'Supervisor Mantenimiento',
   'Supervisor Ventilaciones',
 ];
-export function canSeeMetricas(rol: UserRole | null | undefined): boolean {
-  return !!rol && METRICAS_ROLES.includes(rol);
+export function canSeeDashboard(rol: UserRole | null | undefined): boolean {
+  return !!rol && DASHBOARD_ROLES.includes(rol);
+}
+
+/**
+ * Repuestos (catálogo con precio) también es transversal: se inyecta en el sidebar
+ * para administración/mantenimiento. Solo Admin / Jefe Taller pueden editar el precio
+ * (el resto lo ve en solo-lectura; el gate real de escritura vive en el backend).
+ */
+const REPUESTOS_ROLES: UserRole[] = [
+  'Admin',
+  'Jefe Taller',
+  'Supervisor Lider',
+  'Supervisor Mantenimiento',
+];
+export function canSeeRepuestos(rol: UserRole | null | undefined): boolean {
+  return !!rol && REPUESTOS_ROLES.includes(rol);
+}
+
+/** ¿El rol puede editar el precio de un repuesto? (mismo gate que el backend). */
+export function canEditRepuestoPrecio(rol: UserRole | null | undefined): boolean {
+  return rol === 'Admin' || rol === 'Jefe Taller';
 }
 
 /** Nombre del módulo cuya ruta matchea el pathname actual (para el título del header mobile). */

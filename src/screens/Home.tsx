@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   CalendarCheck,
   Gauge,
@@ -145,8 +146,10 @@ export function Home() {
       tecnicos: tecMap.size,
       porTecnico,
       porEstado: [
-        { key: 'Finalizadas', value: finalizadas, color: 'var(--color-chart-3)' },
-        { key: 'Pendientes', value: pendientes, color: 'var(--color-chart-4)' },
+        // Paleta fría de marca (igual que el donut de Visitas del Dashboard):
+        // cian = finalizadas, slate = pendientes. Nada de verde/ámbar off-brand.
+        { key: 'Finalizadas', value: finalizadas, color: 'var(--color-wash-brand)' },
+        { key: 'Pendientes', value: pendientes, color: 'rgb(148 163 184)' },
       ],
     };
   }, [CollectResumen]);
@@ -208,8 +211,8 @@ export function Home() {
     total: { label: 'Visitas', color: 'var(--color-wash-brand)' },
   };
   const estadoConfig: ChartConfig = {
-    Finalizadas: { label: 'Finalizadas', color: 'var(--color-chart-3)' },
-    Pendientes: { label: 'Pendientes', color: 'var(--color-chart-4)' },
+    Finalizadas: { label: 'Finalizadas', color: 'var(--color-wash-brand)' },
+    Pendientes: { label: 'Pendientes', color: 'rgb(148 163 184)' },
   };
 
   return (
@@ -221,19 +224,27 @@ export function Home() {
         <ErrorState message={homeError} onRetry={loadHome} />
       ) : (
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {/* Bienvenida ejecutiva */}
-          <div className="mb-5 flex flex-col gap-1">
-            <h2 className="font-display text-xl font-bold text-wash-text-strong sm:text-2xl">
-              {saludo()}
-              {nombre ? `, ${nombre}` : ''}
-            </h2>
-            <p className="text-sm text-wash-text-muted">
-              Así viene{' '}
-              <span className="font-semibold capitalize text-wash-text-strong">{currentMonthName()}</span>:{' '}
-              <span className="font-semibold tabular-nums text-wash-text-strong">{intFmt(visitas.total)}</span> visitas ·{' '}
-              <span className="font-semibold tabular-nums text-wash-text-strong">{visitas.edificios}</span> edificios ·{' '}
-              <span className="font-semibold tabular-nums text-wash-text-strong">{visitas.tecnicos}</span> técnicos en campo
-            </p>
+          {/* Hero band ejecutivo — gradiente de marca cian + chips de resumen */}
+          <div className="relative mb-5 overflow-hidden rounded-2xl bg-gradient-to-br from-wash-brand via-wash-brand-dark to-wash-accent p-5 shadow-sm ring-1 ring-wash-brand-dark/20 sm:p-6">
+            {/* Halo decorativo sutil */}
+            <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+            <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="font-display text-xl font-bold text-white sm:text-2xl">
+                  {saludo()}
+                  {nombre ? `, ${nombre}` : ''}
+                </h2>
+                <p className="mt-1 text-sm text-white/80">
+                  Resumen operativo de{' '}
+                  <span className="font-semibold capitalize text-white">{currentMonthName()}</span>
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <HeroStat value={intFmt(visitas.total)} label="visitas" />
+                <HeroStat value={intFmt(visitas.edificios)} label="edificios" />
+                <HeroStat value={intFmt(visitas.tecnicos)} label="técnicos" />
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-12 gap-4">
@@ -260,7 +271,7 @@ export function Home() {
                   <div className="flex w-full items-center gap-2">
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-wash-border/60">
                       <div
-                        className="h-full rounded-full bg-emerald-500 transition-all"
+                        className="h-full rounded-full bg-wash-brand transition-all"
                         style={{ width: `${visitas.tasa}%` }}
                       />
                     </div>
@@ -487,6 +498,17 @@ export function Home() {
   );
 }
 
+// ---- Hero stat chip ----
+
+function HeroStat({ value, label }: { value: ReactNode; label: string }) {
+  return (
+    <div className="rounded-xl bg-white/15 px-4 py-2.5 text-center ring-1 ring-inset ring-white/25 backdrop-blur-sm">
+      <div className="font-display text-xl font-bold tabular-nums text-white">{value}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-white/75">{label}</div>
+    </div>
+  );
+}
+
 // ---- Attention row ----
 
 function AttentionRow({ item }: { item: AttentionItem }) {
@@ -570,11 +592,10 @@ function VisitaCard({ registro, onDelete }: { registro: Registro; onDelete: () =
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-wash-border/60">
           <div
-            className={
-              progreso === 100
-                ? 'h-full rounded-full bg-emerald-500 transition-all'
-                : 'h-full rounded-full bg-wash-brand transition-all'
-            }
+            className={cn(
+              'h-full rounded-full transition-all',
+              progreso === 100 ? 'bg-wash-brand' : 'bg-wash-brand/55'
+            )}
             style={{ width: `${progreso}%` }}
           />
         </div>

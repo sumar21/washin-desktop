@@ -7,6 +7,7 @@ import type {
   StockItem,
   StockCatalogItem,
   RepuestoTecnico,
+  Repuesto,
   PedidoCompra,
   DetalleCompra,
   Aprobacion,
@@ -76,8 +77,12 @@ interface AppState {
   Collect_LPP: PermisoModulo[];
   CollectEdificios: Edificio[];
   CollectResumen: Registro[];
+  /** Registros del rango de meses elegido para el Dashboard de Visitas. */
+  CollectDashboardVisitas: Registro[];
   CollectStock: StockItem[];
   CollectStockTecnicos: RepuestoTecnico[];
+  /** Catálogo de repuestos con precio (11.Respuestos). */
+  CollectRepuestos: Repuesto[];
   CollectCompras: PedidoCompra[];
   CollectDetalleCompras: DetalleCompra[];
   CollectAprobaciones: Aprobacion[];
@@ -153,8 +158,14 @@ interface AppState {
 
   // Home / Stock / Compras / Aprobaciones — datos reales (API real, ver src/services/api.ts)
   fetchHome: () => Promise<void>;
+  /** Real: GET /api/dashboard/visitas — registros del rango [desde..hasta] (mm/yyyy). */
+  fetchDashboardVisitas: (desde?: string, hasta?: string) => Promise<void>;
   fetchStock: () => Promise<void>;
   fetchTecnicos: () => Promise<void>;
+  /** Real: GET /api/repuestos — catálogo de repuestos con precio (11.Respuestos). */
+  fetchRepuestos: () => Promise<void>;
+  /** Real: PATCH /api/repuestos/:id — actualiza Precio_RP (gate Admin / Jefe Taller). */
+  updateRepuestoPrecio: (id: number, precio: number) => Promise<void>;
   /** Real: GET /api/catalog — segmentos + items (11.Respuestos + 99.ABM_MaquinasCompra). */
   fetchCatalog: () => Promise<void>;
   /** Real: GET /api/compras — cabeceras + sus líneas. `meses` (varios mm/yyyy) mergea; `mes` un mes puntual. */
@@ -259,8 +270,11 @@ const initialState: Omit<
   | 'setMesPlanificacionDetail'
   | 'setLoading'
   | 'fetchHome'
+  | 'fetchDashboardVisitas'
   | 'fetchStock'
   | 'fetchTecnicos'
+  | 'fetchRepuestos'
+  | 'updateRepuestoPrecio'
   | 'fetchCatalog'
   | 'fetchCompras'
   | 'fetchAprobaciones'
@@ -317,8 +331,10 @@ const initialState: Omit<
   Collect_LPP: mockPermisos,
   CollectEdificios: mockEdificios,
   CollectResumen: mockRegistros,
+  CollectDashboardVisitas: [],
   CollectStock: mockStock,
   CollectStockTecnicos: [],
+  CollectRepuestos: [],
   CollectCompras: [],
   CollectDetalleCompras: [],
   CollectAprobaciones: [],
@@ -459,6 +475,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchDashboardVisitas: async (desde, hasta) => {
+    try {
+      const { visitas } = await api.getDashboardVisitas(desde, hasta);
+      set({ CollectDashboardVisitas: visitas });
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
   fetchStock: async () => {
     try {
       const stock = await api.getStock();
@@ -473,6 +499,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const tecnicos = await api.getTecnicos();
       set({ CollectTecnicosDisponibles: tecnicos });
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  fetchRepuestos: async () => {
+    try {
+      const repuestos = await api.getRepuestos();
+      set({ CollectRepuestos: repuestos });
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  updateRepuestoPrecio: async (id, precio) => {
+    try {
+      const result = await api.updateRepuestoPrecio(id, precio);
+      set((s) => ({
+        CollectRepuestos: s.CollectRepuestos.map((r) =>
+          r.ID === id ? { ...r, Precio_RP: result.Precio_RP } : r
+        ),
+      }));
     } catch (err) {
       handleAuthError(err, set);
       throw err;

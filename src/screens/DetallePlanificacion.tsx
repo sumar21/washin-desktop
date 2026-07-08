@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Circle,
   CalendarDays,
+  ChevronDown,
   Phone,
   UserRound,
   Clock,
@@ -292,6 +293,16 @@ function RutaDetailModal({
   edificios: PlanifEdificio[];
   onClose: () => void;
 }) {
+  // Circuitos colapsables: por defecto cerrados; se despliegan al tocar el header.
+  const [openCircuitos, setOpenCircuitos] = useState<Set<number>>(new Set());
+  const toggleCircuito = (id: number) =>
+    setOpenCircuitos((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   if (!ruta) return null;
 
   const circuitos = detalles
@@ -391,9 +402,9 @@ function RutaDetailModal({
       </div>
 
       {/* Circuitos grid */}
-      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-3 space-y-2.5">
         {circuitos.length === 0 ? (
-          <div className="col-span-full rounded-xl border border-dashed border-wash-border bg-wash-surface-2/30 p-8 text-center text-sm text-wash-text-muted">
+          <div className="rounded-xl border border-dashed border-wash-border bg-wash-surface-2/30 p-8 text-center text-sm text-wash-text-muted">
             Esta ruta no tiene circuitos planificados.
           </div>
         ) : (
@@ -403,6 +414,7 @@ function RutaDetailModal({
             );
             const visit = edifs.filter((e) => e.Estado === 'Visitado').length;
             const complete = edifs.length > 0 && visit === edifs.length;
+            const isOpen = openCircuitos.has(c.ID);
 
             return (
               <div
@@ -412,35 +424,39 @@ function RutaDetailModal({
                   complete ? 'ring-emerald-500/30' : 'ring-wash-border'
                 )}
               >
-                <div
+                <button
+                  type="button"
+                  onClick={() => toggleCircuito(c.ID)}
+                  aria-expanded={isOpen}
                   className={cn(
-                    'border-b px-3.5 py-2.5',
+                    'flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left transition-colors',
+                    isOpen && 'border-b',
                     complete
-                      ? 'border-emerald-500/20 bg-emerald-500/5'
-                      : 'border-wash-border bg-wash-surface-2/40'
+                      ? 'border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10'
+                      : 'border-wash-border bg-wash-surface-2/40 hover:bg-wash-surface-2/70'
                   )}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          'flex h-7 w-7 items-center justify-center rounded-lg ring-1',
-                          complete
-                            ? 'bg-emerald-500/15 text-emerald-600 ring-emerald-500/25'
-                            : 'bg-wash-brand/10 text-wash-brand ring-wash-brand/20'
-                        )}
-                      >
-                        <MapPin size={12} />
-                      </span>
-                      <div>
-                        <p className="font-display text-[13px] font-black leading-none text-wash-accent">
-                          Circuito {c.NroCircuito}
-                        </p>
-                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
-                          {edifs.length} {edifs.length === 1 ? 'edificio' : 'edificios'}
-                        </p>
-                      </div>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className={cn(
+                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1',
+                        complete
+                          ? 'bg-emerald-500/15 text-emerald-600 ring-emerald-500/25'
+                          : 'bg-wash-brand/10 text-wash-brand ring-wash-brand/20'
+                      )}
+                    >
+                      <MapPin size={12} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-display text-[13px] font-black leading-none text-wash-accent">
+                        Circuito {c.NroCircuito}
+                      </p>
+                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
+                        {edifs.length} {edifs.length === 1 ? 'edificio' : 'edificios'}
+                      </p>
                     </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
                     <span
                       className={cn(
                         'inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10.5px] font-bold tabular-nums',
@@ -451,9 +467,14 @@ function RutaDetailModal({
                     >
                       {visit}/{edifs.length}
                     </span>
+                    <ChevronDown
+                      size={16}
+                      className={cn('text-wash-text-muted transition-transform', isOpen && 'rotate-180')}
+                    />
                   </div>
-                </div>
+                </button>
 
+                {isOpen && (
                 <ul className="divide-y divide-wash-divider/60">
                   {edifs.length === 0 ? (
                     <li className="px-3 py-3 text-xs italic text-wash-text-muted">
@@ -536,6 +557,7 @@ function RutaDetailModal({
                     })
                   )}
                 </ul>
+                )}
               </div>
             );
           })

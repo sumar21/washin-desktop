@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, Children, isValidElement, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,13 @@ interface ModalProps {
 
 export function Modal({ open, onClose, title, children, width = 580, className }: ModalProps) {
   const { visible, overlayClass, modalClass } = useModalAnimation(open);
+
+  // Separamos el/los <ModalActions> del resto: el cuerpo scrollea, el footer queda FIJO
+  // abajo (hermano flex, no `sticky` dentro del scroll → el contenido nunca pasa por
+  // detrás del zócalo del botón Cerrar).
+  const kids = Children.toArray(children);
+  const footer = kids.filter((k) => isValidElement(k) && k.type === ModalActions);
+  const body = kids.filter((k) => !(isValidElement(k) && k.type === ModalActions));
 
   useEffect(() => {
     if (!open) return;
@@ -60,7 +67,8 @@ export function Modal({ open, onClose, title, children, width = 580, className }
             </button>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto p-6">{children}</div>
+        <div className="flex-1 overflow-y-auto p-6">{body}</div>
+        {footer.length > 0 && footer}
       </div>
     </div>,
     document.body
@@ -68,13 +76,15 @@ export function Modal({ open, onClose, title, children, width = 580, className }
 }
 
 export function ModalActions({ children }: { children: ReactNode }) {
-  // Footer pegado al fondo del modal: los botones quedan SIEMPRE visibles aunque el
-  // cuerpo scrollee (evita tener que scrollear para ver Guardar/Aceptar/Cancelar,
-  // incluso a 125% de zoom). Se extiende a los bordes (-mx-6/-mb-6) para tapar el
-  // padding p-6 del cuerpo y dibujar una barra con borde superior.
+  // Footer FIJO del modal: el componente <Modal> lo extrae de los children y lo
+  // renderiza como hermano flex del cuerpo scrolleable (shrink-0), así los botones
+  // Guardar/Aceptar/Cerrar quedan SIEMPRE visibles y el contenido nunca pasa por detrás.
   // Mobile: apilados full-width; desktop: en línea a la derecha (§5.5).
+  // `sticky bottom-0`: cuando el <Modal> lo extrae es un hermano flex (sticky inerte, queda
+  // fijo abajo); cuando va anidado dentro del cuerpo (ej. EditCompraForm) el sticky lo mantiene
+  // pegado al fondo mientras el cuerpo scrollea.
   return (
-    <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-6 flex flex-col gap-2 border-t border-wash-border bg-wash-surface px-6 py-4 sm:flex-row sm:justify-end sm:gap-3">
+    <div className="sticky bottom-0 flex shrink-0 flex-col gap-2 border-t border-wash-border bg-wash-surface px-6 py-4 sm:flex-row sm:justify-end sm:gap-3">
       {children}
     </div>
   );

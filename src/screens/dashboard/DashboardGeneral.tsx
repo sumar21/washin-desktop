@@ -30,7 +30,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { PageHeader } from '@/components/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
@@ -73,7 +72,7 @@ const donutConfig: ChartConfig = { cantidad: { label: 'Incidentes' } };
 const rankConfig: ChartConfig = { cantidad: { label: 'Incidentes' } };
 const trendConfig: ChartConfig = { cantidad: { label: 'Incidentes' } };
 
-export function Metricas() {
+export default function DashboardGeneral() {
   const incidentes = useAppStore((s) => s.CollectIncidentes);
   const registros = useAppStore((s) => s.CollectResumen);
   const ventilaciones = useAppStore((s) => s.CollectVentilaciones);
@@ -172,14 +171,15 @@ export function Metricas() {
   const gaugeData = useMemo(() => [{ name: 'Finalizadas', value: tasaCompletado }], [tasaCompletado]);
 
   return (
-    <div className="relative flex h-full w-full flex-col">
-      <PageHeader title="Métricas" subtitle="Panel ejecutivo · incidentes, visitas y ventilaciones" />
+    <div className="relative min-h-0 flex-1">
       <LoadingOverlay visible={loading} label="Cargando métricas…" />
 
       {loadError ? (
-        <ErrorState message={loadError} onRetry={load} />
+        <div className="h-full overflow-y-auto">
+          <ErrorState message={loadError} onRetry={load} />
+        </div>
       ) : (
-        <div className="flex-1 space-y-4 overflow-y-auto p-4 md:p-6">
+        <div className="h-full space-y-4 overflow-y-auto p-4 pb-8 md:p-6">
           {/* ── Fila de KPIs "hero" ── */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <KpiCard
@@ -357,8 +357,8 @@ export function Metricas() {
                   </div>
                 </div>
                 <div className="mt-3 grid w-full grid-cols-3 gap-2 border-t border-wash-divider pt-3">
-                  <GaugeStat icon={CheckCircle2} label="Finalizadas" value={regFinalizados} tone="text-wash-status-approved" />
-                  <GaugeStat icon={Clock} label="Pendientes" value={regPendientes} tone="text-wash-status-pending" />
+                  <GaugeStat icon={CheckCircle2} label="Finalizadas" value={regFinalizados} tone="text-wash-brand" />
+                  <GaugeStat icon={Clock} label="Pendientes" value={regPendientes} tone="text-wash-text-muted" />
                   <GaugeStat icon={CircleSlash} label="Otros" value={regOtros} tone="text-wash-text-faint" />
                 </div>
               </div>
