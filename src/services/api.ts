@@ -176,8 +176,14 @@ export interface ComprasResponse {
   detalles: DetalleCompra[];
 }
 
-/** Sin `mes`: mes actual. Con `mes` (mm/yyyy): ese mes. Devuelve todos los estados del mes. */
-export function getCompras(mes?: string): Promise<ComprasResponse> {
+/**
+ * Sin args: mes actual. Con `meses` (varios mm/yyyy): esos meses mergeados.
+ * Con `mes` (un mm/yyyy): ese mes. Devuelve todos los estados de los meses pedidos.
+ */
+export function getCompras(mes?: string, meses?: string[]): Promise<ComprasResponse> {
+  if (meses && meses.length > 0) {
+    return request(`/compras?meses=${encodeURIComponent(meses.join(','))}`);
+  }
   return request(mes ? `/compras?mes=${encodeURIComponent(mes)}` : '/compras');
 }
 

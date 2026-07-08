@@ -10,7 +10,6 @@ import {
   AlertCircle,
   X,
   Check,
-  CalendarDays,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
@@ -38,6 +37,9 @@ import type { ReceiveLine } from '@/services/api';
 /** Orden canónico de los estados de un pedido de compra (para el filtro). */
 const ESTADO_ORDEN_PC = ['Pendiente', 'En Aprobacion', 'Aprobada', 'Recibida', 'Rechazada', 'Anulado'];
 
+/** Estados "archivados": se ocultan por defecto (cuando el filtro de Estado está vacío). */
+const ESTADOS_ARCHIVADOS = ['Recibida', 'Anulado', 'Rechazada'];
+
 interface ComposeLine {
   catalogId: number;
   item: string;
@@ -64,10 +66,11 @@ export function Compras() {
   const anularCompra = useAppStore((s) => s.anularCompra);
 
   const [query, setQuery] = useState('');
-  // Período (mes a ver) — vive en el header y dispara el fetch. Default: mes actual.
-  const periodoOpts = useMemo(() => last12MesesOptions(), []);
-  const [periodo, setPeriodo] = useState<string>(() => periodoOpts[0].value);
-  // Filtros multi-select: array vacío = "todos".
+  // Mes/Año: opciones fijas (últimos 12 meses). Viven DENTRO del popover de filtros y
+  // disparan el fetch al aplicar. Default: solo el mes actual.
+  const mesOpts = useMemo(() => last12MesesOptions(), []);
+  // Filtros multi-select: estado/segmento vacío = "todos"; meses default = mes actual.
+  const [filterMeses, setFilterMeses] = useState<string[]>(() => [mesOpts[0].value]);
   const [filterEstados, setFilterEstados] = useState<string[]>([]);
   const [filterSegmentos, setFilterSegmentos] = useState<string[]>([]);
   const [newOpen, setNewOpen] = useState(false);
@@ -81,23 +84,28 @@ export function Compras() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = useCallback((mes?: string) => {
+  const load = useCallback((meses: string[]) => {
     setLoading(true);
     setLoadError(null);
-    return Promise.all([fetchCompras(mes), fetchCatalog()])
+    return Promise.all([fetchCompras(undefined, meses), fetchCatalog()])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar las compras.'))
       .finally(() => setLoading(false));
   }, [fetchCompras, fetchCatalog]);
 
-  // Cambio de período: recarga ese mes desde SharePoint (con todos sus estados).
-  const onPeriodoChange = (v: string) => {
-    setPeriodo(v);
-    load(v);
-  };
+  // Aplica una selección de meses: si viene vacía cae al mes actual. Guarda + refetchea
+  // (el backend trae TODOS los estados de esos meses; el filtrado de estado es en cliente).
+  const applyMeses = useCallback(
+    (meses: string[]) => {
+      const effective = meses.length > 0 ? meses : [mesOpts[0].value];
+      setFilterMeses(effective);
+      load(effective);
+    },
+    [load, mesOpts]
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; el botón "Reintentar" también dispara load().
-    load();
+    load([mesOpts[0].value]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar.
   }, []);
 
@@ -117,7 +125,12 @@ export function Compras() {
     const q = query.toLowerCase();
     return [...pedidos]
       .sort((a, b) => b.ID - a.ID)
-      .filter((p) => filterEstados.length === 0 || filterEstados.includes(p.Status_PC))
+      .filter((p) => {
+        // Con estados tildados: mostramos exactamente esos (incl. archivadas si se pidieron).
+        if (filterEstados.length > 0) return filterEstados.includes(p.Status_PC);
+        // Sin estados tildados: ocultamos las archivadas (Recibida/Anulado/Rechazada).
+        return p.Filtrar_PC !== 'SI' && !ESTADOS_ARCHIVADOS.includes(p.Status_PC);
+      })
       .filter((p) => filterSegmentos.length === 0 || filterSegmentos.includes(p.Segmento_PC))
       .filter(
         (p) =>
@@ -128,7 +141,7 @@ export function Compras() {
       );
   }, [pedidos, query, filterEstados, filterSegmentos]);
 
-  const activeFilters = filterEstados.length + filterSegmentos.length;
+  const activeFilters = filterMeses.length + filterEstados.length + filterSegmentos.length;
 
   const detallesDe = (pedido: PedidoCompra): DetalleCompra[] =>
     detalles.filter((d) => d.IDCompra_DC === pedido.IDUnivoco_PC);
@@ -229,32 +242,20 @@ export function Compras() {
     <div className="relative flex h-full w-full flex-col">
       <PageHeader
         title="Compras"
-        subtitle="Pedidos de compra del mes"
+        subtitle="Pedidos de compra"
         search={{ value: query, onChange: setQuery, placeholder: 'Buscar ID, fecha o estado' }}
-        toolbarExtra={
-          <Select value={periodo} onValueChange={onPeriodoChange} disabled={loading}>
-            <SelectTrigger className="h-9 w-[130px] shrink-0 bg-wash-canvas text-[13px] ring-wash-border sm:w-[150px]">
-              <CalendarDays size={13} className="shrink-0 text-wash-text-muted" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="max-h-[320px]">
-              {periodoOpts.map((p) => (
-                <SelectItem key={p.value} value={p.value}>
-                  {p.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
         filterPopover={
           <FilterContent
+            mesOpts={mesOpts}
             estadoOpts={estadoOpts}
             segmentoOpts={segmentoOpts}
+            meses={filterMeses}
             estados={filterEstados}
             segmentos={filterSegmentos}
-            onApply={({ estados, segmentos: segs }) => {
+            onApply={({ meses, estados, segmentos: segs }) => {
               setFilterEstados(estados);
               setFilterSegmentos(segs);
+              applyMeses(meses);
             }}
           />
         }
@@ -264,7 +265,7 @@ export function Compras() {
       <LoadingOverlay visible={loading} label="Cargando compras…" />
 
       {loadError ? (
-        <ErrorState message={loadError} onRetry={load} />
+        <ErrorState message={loadError} onRetry={() => load(filterMeses)} />
       ) : (
         <>
         {activeFilters > 0 && (
@@ -272,6 +273,13 @@ export function Compras() {
             <span className="font-semibold uppercase tracking-wider">
               Filtro{activeFilters === 1 ? '' : 's'} activo{activeFilters === 1 ? '' : 's'}:
             </span>
+            {filterMeses.map((m) => (
+              <FilterChip
+                key={`m-${m}`}
+                label={m}
+                onRemove={() => applyMeses(filterMeses.filter((x) => x !== m))}
+              />
+            ))}
             {filterEstados.map((e) => (
               <FilterChip
                 key={`e-${e}`}
@@ -291,6 +299,7 @@ export function Compras() {
               onClick={() => {
                 setFilterEstados([]);
                 setFilterSegmentos([]);
+                applyMeses([]); // vuelve al mes actual + refetch
               }}
               className="ml-auto text-wash-text-muted hover:text-wash-text-strong"
             >
@@ -303,7 +312,7 @@ export function Compras() {
             rows={filtered}
             rowKey={(r) => r.ID}
             columns={columns}
-            empty="Sin pedidos este mes"
+            empty="Sin pedidos"
             mobileCard={(r) => (
               <div className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
                 {/* Fila 1: #ID + estado + acciones (mismas que la columna Acciones) */}
@@ -596,24 +605,32 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
 }
 
 function FilterContent({
+  mesOpts,
   estadoOpts,
   segmentoOpts,
+  meses,
   estados,
   segmentos,
   onApply,
 }: {
+  mesOpts: MultiOption[];
   estadoOpts: MultiOption[];
   segmentoOpts: MultiOption[];
+  meses: string[];
   estados: string[];
   segmentos: string[];
-  onApply: (next: { estados: string[]; segmentos: string[] }) => void;
+  onApply: (next: { meses: string[]; estados: string[]; segmentos: string[] }) => void;
 }) {
+  const [pendingMeses, setPendingMeses] = useState<string[]>(meses);
   const [pendingEstados, setPendingEstados] = useState<string[]>(estados);
   const [pendingSegmentos, setPendingSegmentos] = useState<string[]>(segmentos);
 
   const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((v) => b.includes(v));
-  const dirty = !sameSet(pendingEstados, estados) || !sameSet(pendingSegmentos, segmentos);
-  const anySelected = pendingEstados.length > 0 || pendingSegmentos.length > 0;
+  const dirty =
+    !sameSet(pendingMeses, meses) ||
+    !sameSet(pendingEstados, estados) ||
+    !sameSet(pendingSegmentos, segmentos);
+  const anySelected = pendingMeses.length > 0 || pendingEstados.length > 0 || pendingSegmentos.length > 0;
 
   const toggle = (setter: React.Dispatch<React.SetStateAction<string[]>>) => (v: string) =>
     setter((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
@@ -626,6 +643,7 @@ function FilterContent({
           <button
             type="button"
             onClick={() => {
+              setPendingMeses([]);
               setPendingEstados([]);
               setPendingSegmentos([]);
             }}
@@ -637,6 +655,15 @@ function FilterContent({
       </div>
 
       <div className="space-y-2">
+        <MultiSelect
+          label="Mes/Año"
+          options={mesOpts}
+          selected={pendingMeses}
+          onToggle={toggle(setPendingMeses)}
+          onClear={() => setPendingMeses([])}
+          searchable={false}
+          placeholder="Mes actual"
+        />
         <MultiSelect
           label="Estado"
           options={estadoOpts}
@@ -667,7 +694,7 @@ function FilterContent({
           <button
             type="button"
             disabled={!dirty}
-            onClick={() => onApply({ estados: pendingEstados, segmentos: pendingSegmentos })}
+            onClick={() => onApply({ meses: pendingMeses, estados: pendingEstados, segmentos: pendingSegmentos })}
             className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
             Aplicar

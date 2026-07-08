@@ -387,9 +387,9 @@ export function Ventilaciones() {
         <ErrorState message={loadError} onRetry={load} />
       ) : (
         <>
-          {/* KPIs (el selector de Período vive en el header, junto a search + filtro) */}
-          <div className="border-b border-wash-border bg-wash-surface px-4 py-3 md:px-6 md:py-4">
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {/* KPIs — mini-stats compactos en 1 fila (el selector de Período vive en el header) */}
+          <div className="border-b border-wash-border bg-wash-surface px-4 py-2.5 md:px-6 md:py-3">
+            <div className="grid grid-cols-4 gap-2 md:gap-3">
               <CounterCard icon={AlertTriangle} label="Pendientes" value={counters.pendientes} tone="bg-amber-500/10 text-amber-700 ring-amber-500/20" />
               <CounterCard icon={Calendar} label="Vencidas" value={counters.vencidas} tone="bg-rose-500/10 text-rose-600 ring-rose-500/20" />
               <CounterCard icon={Zap} label="Adelantadas" value={counters.adelantadas} tone="bg-fuchsia-500/10 text-fuchsia-600 ring-fuchsia-500/20" />
@@ -651,14 +651,14 @@ function CounterCard({
   tone: string;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-wash-border bg-wash-surface px-4 py-2.5">
-      <span className={cn('flex h-9 w-9 items-center justify-center rounded-lg ring-1', tone)}>
-        <Icon size={16} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">{label}</div>
-        <div className="font-display text-xl font-black leading-tight text-wash-text-strong tabular-nums">{value}</div>
+    <div className="rounded-lg border border-wash-border bg-wash-surface px-2 py-1.5 md:px-3 md:py-2">
+      <div className="flex items-center gap-1.5">
+        <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 md:h-7 md:w-7', tone)}>
+          <Icon size={13} />
+        </span>
+        <span className="font-display text-lg font-black leading-none text-wash-text-strong tabular-nums md:text-xl">{value}</span>
       </div>
+      <div className="mt-1 truncate text-[9px] font-semibold uppercase tracking-wide text-wash-text-muted md:text-[10px] md:tracking-wider">{label}</div>
     </div>
   );
 }

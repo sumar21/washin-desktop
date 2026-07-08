@@ -162,12 +162,12 @@ export function DetalleMaquina() {
         <ErrorState message={loadError} onRetry={load} />
       ) : (
         <>
-          {/* Stat strip */}
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-wash-border bg-wash-surface px-4 py-3 text-xs md:px-6">
+          {/* Stat strip — mini-stats en 1 fila (compactos en mobile) */}
+          <div className="flex items-center gap-2 border-b border-wash-border bg-wash-surface px-4 py-2 text-xs md:flex-wrap md:gap-2.5 md:px-6 md:py-3">
             <Stat label="Total activas" value={maquinas.length} tone="bg-wash-brand/10 text-wash-brand ring-wash-brand/20" />
             <Stat label="Instaladas" value={instaladas} tone="bg-emerald-500/10 text-emerald-700 ring-emerald-500/20" />
             <Stat label="En depósito" value={deposito} tone="bg-amber-500/10 text-amber-700 ring-amber-500/20" />
-            <span className="ml-auto text-wash-text-muted">
+            <span className="ml-auto hidden shrink-0 text-wash-text-muted md:inline">
               Mostrando <strong className="text-wash-text-strong tabular-nums">{filtered.length}</strong>
               {filtered.length !== maquinas.length && ` de ${maquinas.length}`}
             </span>
@@ -573,7 +573,7 @@ function DetailModal({ maquina, onClose }: { maquina: Maquina | null; onClose: (
               <p className="mt-1 text-xs text-wash-text-muted">No hay incidentes registrados para esta máquina.</p>
             </div>
           ) : (
-            <ul className="max-h-[280px] space-y-2 overflow-y-auto">
+            <ul className="space-y-2">
               {historial.map((i) => (
                 <li key={i.ID} className="rounded-xl bg-wash-canvas px-4 py-3 ring-1 ring-wash-border">
                   <div className="flex items-center justify-between">
@@ -1027,9 +1027,16 @@ function IconBtn({
 
 function Stat({ label, value, tone }: { label: string; value: number; tone: string }) {
   return (
-    <span className={cn('inline-flex items-center gap-2 rounded-lg px-3 py-1.5 ring-1', tone)}>
-      <span className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{label}</span>
-      <span className="font-display text-base font-black tabular-nums">{value}</span>
+    <span
+      className={cn(
+        'inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1 ring-1 md:flex-none md:gap-2 md:px-3 md:py-1.5',
+        tone
+      )}
+    >
+      <span className="truncate text-[9px] font-semibold uppercase tracking-wide opacity-80 md:text-[10px] md:tracking-wider">
+        {label}
+      </span>
+      <span className="ml-auto font-display text-sm font-black tabular-nums md:ml-0 md:text-base">{value}</span>
     </span>
   );
 }

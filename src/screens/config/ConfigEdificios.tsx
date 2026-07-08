@@ -251,13 +251,79 @@ export function ConfigEdificios({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex-1 overflow-hidden p-6">
+      <div className="flex-1 overflow-hidden p-4 sm:p-6">
         <DataTable
           rows={rows}
           rowKey={(r) => r.ID}
           columns={columns}
           empty="Sin edificios registrados."
           onRowClick={(r) => setViewing(r)}
+          mobileCard={(e) => {
+            const cs = circuitosDe(e);
+            const hasGrupo = !!e.Grupo?.trim();
+            const hasFrec = !!e.Frecuencia?.trim();
+            return (
+              <div
+                onClick={() => setViewing(e)}
+                className="rounded-xl bg-wash-surface p-3 shadow-sm ring-1 ring-wash-border transition active:scale-[0.99]"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-wash-surface-2 text-wash-text-muted ring-1 ring-wash-border">
+                      <Building2 size={14} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        {e.Codigo && (
+                          <span className="shrink-0 rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand ring-1 ring-wash-brand/20">
+                            {e.Codigo}
+                          </span>
+                        )}
+                        {cs.length > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded bg-wash-surface-2 px-1.5 py-0.5 text-[10px] font-bold text-wash-text-strong tabular-nums ring-1 ring-wash-border">
+                            <GitBranch size={9} className="text-wash-brand" />
+                            {cs.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 truncate font-display text-[14px] font-bold text-wash-accent">{e.Edificio}</p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <ActionBtn icon={Eye} tone="brand" title="Ver detalle" onClick={(ev) => { ev.stopPropagation(); setViewing(e); }} />
+                    {canEdit && (
+                      <>
+                        <ActionBtn icon={Pencil} tone="neutral" title="Editar" onClick={(ev) => { ev.stopPropagation(); setEditing(e); }} />
+                        <ActionBtn icon={Trash2} tone="danger" title="Dar de baja" onClick={(ev) => { ev.stopPropagation(); setDeleting(e); setDeleteError(null); }} />
+                      </>
+                    )}
+                  </div>
+                </div>
+                {e.Direccion && (
+                  <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-wash-text-muted">
+                    <MapPin size={11} className="shrink-0" />
+                    <span className="truncate uppercase tracking-wide">{e.Direccion}</span>
+                  </p>
+                )}
+                {(hasGrupo || hasFrec) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {hasGrupo && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-wash-surface-2 px-2 py-0.5 text-[11px] font-semibold text-wash-text-strong ring-1 ring-wash-border">
+                        <Wind size={10} className="text-wash-brand" />
+                        {e.Grupo}
+                      </span>
+                    )}
+                    {hasFrec && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-wash-surface-2 px-2 py-0.5 text-[11px] text-wash-text-muted">
+                        <CalendarClock size={10} />
+                        cada {e.Frecuencia} días
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          }}
         />
       </div>
 

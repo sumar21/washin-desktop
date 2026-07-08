@@ -157,8 +157,8 @@ interface AppState {
   fetchTecnicos: () => Promise<void>;
   /** Real: GET /api/catalog — segmentos + items (11.Respuestos + 99.ABM_MaquinasCompra). */
   fetchCatalog: () => Promise<void>;
-  /** Real: GET /api/compras — cabeceras activas del mes + sus líneas. */
-  fetchCompras: (mes?: string) => Promise<void>;
+  /** Real: GET /api/compras — cabeceras + sus líneas. `meses` (varios mm/yyyy) mergea; `mes` un mes puntual. */
+  fetchCompras: (mes?: string, meses?: string[]) => Promise<void>;
   /** Real: GET /api/aprobaciones — pendientes del mes. */
   fetchAprobaciones: () => Promise<void>;
   /** Real: POST /api/stock/assign — mueve cantidad de 04.Stock a 99.ABMRepuestos_Tecnico. */
@@ -513,9 +513,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchCompras: async (mes) => {
+  fetchCompras: async (mes, meses) => {
     try {
-      const { pedidos, detalles } = await api.getCompras(mes);
+      const { pedidos, detalles } = await api.getCompras(mes, meses);
       set({ CollectCompras: pedidos, CollectDetalleCompras: detalles });
     } catch (err) {
       handleAuthError(err, set);

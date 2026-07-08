@@ -3,7 +3,6 @@ import {
   Eye,
   UserCog,
   Plus,
-  ExternalLink,
   AlertTriangle,
   Building2,
   Wrench,
@@ -11,9 +10,9 @@ import {
   UserCircle2,
   ShoppingCart,
   ArrowLeftRight,
+  WashingMachine,
   Check,
   AlertCircle,
-  RefreshCw,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal, ModalActions } from '@/components/Modal';
@@ -22,12 +21,12 @@ import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
 import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
+import { getIncidentes } from '@/services/api';
 import { last12MesesOptions, estadoOptions } from '@/lib/filters';
 import { cn, proper } from '@/lib/utils';
-import type { Incidente } from '@/types/domain';
+import type { Incidente, RepuestoIncidente } from '@/types/domain';
 
 const requiereRepuesto = (i: Incidente) => /repuesto/i.test(i.NoResuelto_IN);
 const esCambioMaquina = (i: Incidente) => /cambio/i.test(i.NoResuelto_IN);
@@ -47,14 +46,18 @@ const toneFor = (t: string) =>
       ? tipoTone['Cambio de Maquina']
       : 'bg-slate-50 text-slate-700 ring-slate-300/70');
 
-const GRID = '130px 100px 150px minmax(220px,1.6fr) minmax(150px,1fr) 140px 132px';
+const GRID = '130px 100px 150px minmax(220px,1.6fr) minmax(180px,1fr) 132px';
 
-// Estados de un incidente SIN resolver (esta pantalla filtra Resuelto_IN='NO'). Se muestran
-// SIEMPRE como opciones de filtro aunque los datos cargados solo tengan algunos.
-// ('Resuelto'/'Aprobada' son estados ya resueltos → no aparecen en esta vista.)
+// Estados de un incidente SIN resolver (por defecto se muestran estos, Resuelto_IN='NO').
 const ESTADOS_IN = ['A Revisar', 'Pendiente', 'Asignado', 'En Aprobacion'];
-// Estados de un incidente YA resuelto (vista "Resueltos · mes").
+// Estados de un incidente YA resuelto. Tildar alguno en el filtro de Estado dispara el fetch
+// de resueltos (por mes) que se mergean con los abiertos.
 const ESTADOS_IN_RESUELTOS = ['Resuelto', 'Aprobada', 'Rechazada'];
+
+const dedupeById = (arr: Incidente[]): Incidente[] => {
+  const seen = new Set<number>();
+  return arr.filter((i) => (seen.has(i.ID) ? false : (seen.add(i.ID), true)));
+};
 
 export function Incidentes() {
   const incidentes = useAppStore((s) => s.CollectIncidentes);
@@ -74,18 +77,19 @@ export function Incidentes() {
   const generarCompraIncidente = useAppStore((s) => s.generarCompraIncidente);
 
   const [query, setQuery] = useState('');
-  // Scope de la vista: 'abiertos' (sin resolver) o 'MM/YYYY' (resueltos de ese mes). Vive en el header.
-  const [scope, setScope] = useState<string>('abiertos');
-  const scopeResueltos = scope !== 'abiertos';
   const [filterMesAno, setFilterMesAno] = useState<string[]>([]);
   const [filterEstado, setFilterEstado] = useState<string[]>([]);
   const [filterEdificio, setFilterEdificio] = useState<string[]>([]);
   const [filterTipo, setFilterTipo] = useState<string[]>([]);
 
+  // Resueltos traídos on-demand (por mes) cuando se tildan estados resueltos en el filtro.
+  // NO van al store (otras pantallas usan CollectIncidentes como "abiertos"): viven acá.
+  const [resueltosExtra, setResueltosExtra] = useState<Incidente[]>([]);
+  const [repuestosExtra, setRepuestosExtra] = useState<RepuestoIncidente[]>([]);
+
   const [detail, setDetail] = useState<Incidente | null>(null);
   const [assigning, setAssigning] = useState<Incidente | null>(null);
   const [reassign, setReassign] = useState(false); // true = cambiar técnico (sin descuento)
-  const [verRepuestos, setVerRepuestos] = useState<Incidente | null>(null);
   const [comprar, setComprar] = useState<Incidente | null>(null);
   const [cambioMaq, setCambioMaq] = useState<Incidente | null>(null);
   const [newOpen, setNewOpen] = useState(false);
@@ -93,22 +97,35 @@ export function Incidentes() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const load = useCallback((sc?: string) => {
+  const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    const resueltosMes = sc && sc !== 'abiertos' ? sc : undefined;
-    return Promise.all([fetchIncidentes(resueltosMes), fetchStock(), fetchMaquinas(), fetchTecnicos()])
+    return Promise.all([fetchIncidentes(), fetchStock(), fetchMaquinas(), fetchTecnicos()])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar los incidentes.'))
       .finally(() => setLoading(false));
   }, [fetchIncidentes, fetchStock, fetchMaquinas, fetchTecnicos]);
 
-  // Cambio de scope (sin resolver ↔ resueltos de un mes): recarga y limpia el filtro de estado
-  // (las opciones de estado cambian según el scope).
-  const onScopeChange = (v: string) => {
-    setScope(v);
-    setFilterEstado([]);
-    load(v);
-  };
+  // Trae los resueltos de los meses dados (GET /incidentes?resueltos=MM/YYYY) y los guarda en
+  // el estado local (mergea incidentes + repuestos de todos los meses, dedupe por ID).
+  const loadResueltos = useCallback(async (meses: string[]) => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const results = await Promise.all(meses.map((m) => getIncidentes(m)));
+      const inc: Incidente[] = [];
+      const reps: RepuestoIncidente[] = [];
+      for (const r of results) {
+        inc.push(...r.incidentes);
+        reps.push(...r.repuestos);
+      }
+      setResueltosExtra(dedupeById(inc));
+      setRepuestosExtra(reps);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar los incidentes resueltos.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; "Reintentar" también dispara load().
@@ -117,8 +134,20 @@ export function Incidentes() {
   }, []);
 
   const repuestosDe = useCallback(
-    (id: number) => repuestos.filter((r) => r.IDIncidente_RI === String(id)),
-    [repuestos]
+    (id: number) => [...repuestos, ...repuestosExtra].filter((r) => r.IDIncidente_RI === String(id)),
+    [repuestos, repuestosExtra]
+  );
+
+  // Abiertos = store (fuente de verdad de otras pantallas). Si el usuario tildó algún estado
+  // resuelto, mergeamos los resueltos traídos on-demand. displayList alimenta filtro + render.
+  const abiertos = incidentes;
+  const wantResueltos = useMemo(
+    () => filterEstado.some((e) => ESTADOS_IN_RESUELTOS.includes(e)),
+    [filterEstado]
+  );
+  const displayList = useMemo(
+    () => (wantResueltos ? dedupeById([...abiertos, ...resueltosExtra]) : abiertos),
+    [wantResueltos, abiertos, resueltosExtra]
   );
 
   const hasStock = useCallback(
@@ -134,26 +163,27 @@ export function Incidentes() {
   );
 
   const mesAnoOpts = useMemo(() => last12MesesOptions(), []);
+  // Opciones de Estado = canónicos abiertos + resueltos ∪ los presentes en la lista mostrada.
   const estadoOpts = useMemo(
     () => {
-      const canon = scopeResueltos ? ESTADOS_IN_RESUELTOS : ESTADOS_IN;
-      return estadoOptions([...canon, ...incidentes.map((i) => i.Status_IN)], canon);
+      const canon = [...ESTADOS_IN, ...ESTADOS_IN_RESUELTOS];
+      return estadoOptions([...canon, ...displayList.map((i) => i.Status_IN)], canon);
     },
-    [incidentes, scopeResueltos]
+    [displayList]
   );
   const edificioOpts = useMemo<MultiOption[]>(
     () =>
-      [...new Set(incidentes.map((i) => i.NombreEdificio_IN).filter(Boolean))]
+      [...new Set(displayList.map((i) => i.NombreEdificio_IN).filter(Boolean))]
         .sort((a, b) => a.localeCompare(b, 'es'))
         .map((e) => ({ value: e, label: e })),
-    [incidentes]
+    [displayList]
   );
   const tipoOpts = useMemo<MultiOption[]>(
     () =>
-      [...new Set(incidentes.map((i) => i.NoResuelto_IN).filter(Boolean))]
+      [...new Set(displayList.map((i) => i.NoResuelto_IN).filter(Boolean))]
         .sort((a, b) => a.localeCompare(b, 'es'))
         .map((t) => ({ value: t, label: t })),
-    [incidentes]
+    [displayList]
   );
   const mesAnoLabel = useMemo(() => new Map(mesAnoOpts.map((o) => [o.value, o.label])), [mesAnoOpts]);
 
@@ -177,7 +207,7 @@ export function Incidentes() {
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     const pass = (arr: string[], v: string) => arr.length === 0 || arr.includes(v);
-    return incidentes
+    return displayList
       .filter((i) => pass(filterMesAno, i.FechaMesAno_IN))
       .filter((i) => pass(filterEstado, i.Status_IN))
       .filter((i) => pass(filterEdificio, i.NombreEdificio_IN))
@@ -190,7 +220,7 @@ export function Incidentes() {
           (i.TecnicoAsignado_IN ?? '').toLowerCase().includes(q) ||
           String(i.ID).includes(q)
       );
-  }, [incidentes, query, filterMesAno, filterEstado, filterEdificio, filterTipo]);
+  }, [displayList, query, filterMesAno, filterEstado, filterEdificio, filterTipo]);
 
   const abrirAsignar = (i: Incidente, esReasignar: boolean) => {
     setReassign(esReasignar);
@@ -199,16 +229,16 @@ export function Incidentes() {
 
   // Acción contextual de una fila/card según tipo + estado + stock (reusada en tabla y cards).
   const primaryAction = (i: Incidente) => {
-    // En la vista de resueltos no hay acciones de mutación (son incidentes cerrados): solo ver detalle.
-    if (scopeResueltos) return null;
+    // Los incidentes resueltos son cerrados: sin acciones de mutación (solo ver detalle).
+    if (i.Resuelto_IN === 'SI') return null;
     const reps = repuestosDe(i.ID);
     const sinStock = requiereRepuesto(i) && reps.length > 0 && !hasStock(i);
     const asignado = !!i.TecnicoAsignado_IN && i.Status_IN === 'Asignado';
     if (i.Status_IN === 'En Aprobacion')
       return <IconBtn icon={AlertCircle} tone="violet" title="En aprobación de cambio de máquina" onClick={() => setDetail(i)} />;
     if (sinStock) return <IconBtn icon={ShoppingCart} tone="warning" title="Sin stock — Generar compra" onClick={() => setComprar(i)} />;
-    if (esCambioMaquina(i)) return <IconBtn icon={ArrowLeftRight} tone="violet" title="Gestionar cambio de máquina" onClick={() => setCambioMaq(i)} />;
-    if (asignado) return <IconBtn icon={RefreshCw} tone="brand" title="Cambiar técnico" onClick={() => abrirAsignar(i, true)} />;
+    if (esCambioMaquina(i)) return <IconBtn icon={WashingMachine} tone="violet" title="Gestionar cambio de máquina" onClick={() => setCambioMaq(i)} />;
+    if (asignado) return <IconBtn icon={UserCog} tone="brand" title="Cambiar técnico" onClick={() => abrirAsignar(i, true)} />;
     return <IconBtn icon={UserCog} tone="brand" title="Asignar técnico" onClick={() => abrirAsignar(i, false)} />;
   };
 
@@ -216,24 +246,8 @@ export function Incidentes() {
     <div className="relative flex h-full w-full flex-col">
       <PageHeader
         title="Incidentes"
-        subtitle={scopeResueltos ? `Incidentes resueltos · ${scope}` : 'Reportes sin resolver — repuestos y cambios de máquina'}
+        subtitle="Reportes — repuestos, cambios de máquina y resueltos"
         search={{ value: query, onChange: setQuery, placeholder: 'Edificio, máquina, tipo, técnico…' }}
-        toolbarExtra={
-          <Select value={scope} onValueChange={onScopeChange} disabled={loading}>
-            <SelectTrigger className="h-9 w-[150px] shrink-0 bg-wash-canvas text-[13px] ring-wash-border sm:w-[180px]">
-              <Calendar size={13} className="shrink-0 text-wash-text-muted" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="max-h-[320px]">
-              <SelectItem value="abiertos">Sin resolver</SelectItem>
-              {mesAnoOpts.map((p) => (
-                <SelectItem key={p.value} value={p.value}>
-                  Resueltos · {p.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
         filterPopover={
           <FilterContent
             mesAno={filterMesAno}
@@ -249,6 +263,15 @@ export function Incidentes() {
               setFilterEstado(f.estado);
               setFilterEdificio(f.edificio);
               setFilterTipo(f.tipo);
+              // Si tildó estados resueltos → fetch de los meses elegidos (o el mes actual).
+              // Si no, limpiamos los resueltos locales y mostramos solo abiertos.
+              if (f.estado.some((e) => ESTADOS_IN_RESUELTOS.includes(e))) {
+                const meses = f.mesAno.length > 0 ? f.mesAno : [mesAnoOpts[0].value];
+                void loadResueltos(meses);
+              } else {
+                setResueltosExtra([]);
+                setRepuestosExtra([]);
+              }
             }}
           />
         }
@@ -284,7 +307,6 @@ export function Incidentes() {
                 </div>
               ) : (
                 filtered.map((i) => {
-                  const reps = repuestosDe(i.ID);
                   return (
                     <div key={i.ID} className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
                       <div className="flex items-start justify-between gap-2">
@@ -301,35 +323,36 @@ export function Incidentes() {
                         </div>
                       </div>
                       <div className="mt-2 min-w-0">
-                        <p className="truncate text-[13.5px] font-semibold text-wash-text-strong">
-                          {i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : <span className="italic text-wash-text-muted">Sin máquina</span>}
-                        </p>
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <p className="truncate text-[13.5px] font-semibold text-wash-text-strong">
+                            {i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : <span className="italic text-wash-text-muted">Sin máquina</span>}
+                          </p>
+                          {i.IDMaquina_IN && (
+                            <span className="shrink-0 rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand">
+                              #{i.IDMaquina_IN}
+                            </span>
+                          )}
+                        </div>
                         <p className="mt-0.5 flex items-center gap-1 truncate text-[11.5px] text-wash-text-muted">
                           <Building2 size={11} className="shrink-0" />
                           <span className="truncate">{i.NombreEdificio_IN}</span>
-                          {i.IDMaquina_IN && <span className="ml-0.5 shrink-0 rounded bg-wash-surface-2 px-1 font-mono text-[9.5px]">#{i.IDMaquina_IN}</span>}
                         </p>
                       </div>
-                      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-wash-divider/60 pt-2 text-[11.5px]">
-                        <span className="inline-flex shrink-0 items-center gap-1 text-wash-text-muted">
-                          <Calendar size={11} />
+                      <div className="mt-2.5 space-y-1.5 border-t border-wash-divider/60 pt-2 text-[11.5px]">
+                        <div className="flex items-center gap-1.5 text-wash-text-muted">
+                          <Calendar size={11} className="shrink-0" />
                           {i.Fecha_IN}
-                        </span>
-                        {i.TecnicoAsignado_IN ? (
-                          <span className="min-w-0 flex-1 truncate text-center font-medium text-wash-text-strong">{i.TecnicoAsignado_IN}</span>
-                        ) : (
-                          <span className="inline-flex flex-1 items-center justify-center gap-1 font-medium text-amber-700">
-                            <UserCircle2 size={12} /> Sin asignar
-                          </span>
-                        )}
-                        {i.CantidadRepuestos_IN > 0 || reps.length > 0 ? (
-                          <button type="button" onClick={() => setVerRepuestos(i)} className="inline-flex shrink-0 items-center gap-1 font-semibold text-wash-brand">
-                            Rep. ({reps.length || i.CantidadRepuestos_IN})
-                            <ExternalLink size={9} />
-                          </button>
-                        ) : (
-                          <span className="shrink-0 text-wash-text-faint">—</span>
-                        )}
+                        </div>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">Técnico</span>
+                          {i.TecnicoAsignado_IN ? (
+                            <span className="min-w-0 truncate font-medium text-wash-text-strong">{i.TecnicoAsignado_IN}</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+                              <UserCircle2 size={12} /> Sin asignar
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -348,7 +371,6 @@ export function Incidentes() {
                 <div>Tipo</div>
                 <div>Máquina / Edificio</div>
                 <div>Técnico</div>
-                <div>Repuestos</div>
                 <div className="text-right">Acciones</div>
               </div>
 
@@ -359,7 +381,6 @@ export function Incidentes() {
                   </div>
                 ) : (
                   filtered.map((i) => {
-                    const reps = repuestosDe(i.ID);
                     return (
                       <div
                         key={i.ID}
@@ -380,13 +401,19 @@ export function Incidentes() {
                           </span>
                         </div>
                         <div className="min-w-0 pr-2">
-                          <p className="truncate text-[13px] font-semibold text-wash-text-strong" title={i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : ''}>
-                            {i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : <span className="italic text-wash-text-muted">Sin máquina</span>}
-                          </p>
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <p className="truncate text-[13px] font-semibold text-wash-text-strong" title={i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : ''}>
+                              {i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : <span className="italic text-wash-text-muted">Sin máquina</span>}
+                            </p>
+                            {i.IDMaquina_IN && (
+                              <span className="shrink-0 rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand">
+                                #{i.IDMaquina_IN}
+                              </span>
+                            )}
+                          </div>
                           <p className="flex items-center gap-1 truncate text-[11px] text-wash-text-muted">
                             <Building2 size={10} className="shrink-0" />
                             {i.NombreEdificio_IN}
-                            {i.IDMaquina_IN && <span className="ml-1 rounded bg-wash-surface-2 px-1 font-mono text-[9.5px]">#{i.IDMaquina_IN}</span>}
                           </p>
                         </div>
                         <div className="min-w-0 pr-2">
@@ -396,20 +423,6 @@ export function Incidentes() {
                             <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-amber-700">
                               <UserCircle2 size={12} /> Sin asignar
                             </span>
-                          )}
-                        </div>
-                        <div className="pr-2">
-                          {i.CantidadRepuestos_IN > 0 || reps.length > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => setVerRepuestos(i)}
-                              className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-wash-brand hover:text-wash-brand-dark"
-                            >
-                              <span className="underline-offset-2 hover:underline">Ver ({reps.length || i.CantidadRepuestos_IN})</span>
-                              <ExternalLink size={10} className="opacity-70" />
-                            </button>
-                          ) : (
-                            <span className="text-[12px] text-wash-text-muted">—</span>
                           )}
                         </div>
                         <div className="flex items-center justify-end gap-1.5">
@@ -427,7 +440,12 @@ export function Incidentes() {
       )}
 
       {/* Detalle */}
-      <DetailModal incidente={detail} onClose={() => setDetail(null)} />
+      <DetailModal
+        incidente={detail}
+        repuestos={detail ? repuestosDe(detail.ID) : []}
+        stock={stock}
+        onClose={() => setDetail(null)}
+      />
 
       {/* Asignar / cambiar técnico */}
       <AsignarModal
@@ -442,14 +460,6 @@ export function Incidentes() {
           else await assignIncidente(assigning.ID, tecnico);
           setAssigning(null);
         }}
-      />
-
-      {/* Ver repuestos */}
-      <VerRepuestosModal
-        incidente={verRepuestos}
-        repuestos={verRepuestos ? repuestosDe(verRepuestos.ID) : []}
-        stock={stock}
-        onClose={() => setVerRepuestos(null)}
       />
 
       {/* Generar compra (repuesto) */}
@@ -785,7 +795,7 @@ function ComprarRepuestoModal({
   );
 }
 
-function VerRepuestosModal({
+function DetailModal({
   incidente,
   repuestos,
   stock,
@@ -796,52 +806,6 @@ function VerRepuestosModal({
   stock: { Item_ST: string; Cantidad_ST: number; Status_ST: string }[];
   onClose: () => void;
 }) {
-  if (!incidente) return null;
-  return (
-    <Modal open={!!incidente} onClose={onClose} title="Repuestos del incidente" width={560}>
-      <MaquinaHeader incidente={incidente} icon={Wrench} />
-      <div className="mt-5">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">Repuestos solicitados</p>
-        {repuestos.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-wash-border py-8 text-center">
-            <Wrench size={26} className="mx-auto mb-2 text-wash-text-faint" strokeWidth={1.5} />
-            <p className="text-sm font-semibold text-wash-text-strong">Sin repuestos cargados</p>
-          </div>
-        ) : (
-          <ul className="space-y-2">
-            {repuestos.map((r) => {
-              const s = stock.find((st) => st.Status_ST === 'Activo' && st.Item_ST.trim().toLowerCase() === r.Repuesto_RI.trim().toLowerCase());
-              const ok = !!s && s.Cantidad_ST >= r.Cantidad_RI;
-              return (
-                <li key={r.ID} className="flex items-center gap-3 rounded-xl bg-wash-surface px-4 py-3 ring-1 ring-wash-border">
-                  <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', ok ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>
-                    {ok ? <Check size={15} /> : <AlertTriangle size={14} />}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-wash-text-strong">{r.Repuesto_RI}</p>
-                    <p className="text-[11px] text-wash-text-muted">
-                      Stock: {s?.Cantidad_ST ?? 0} · {ok ? 'suficiente' : 'insuficiente'}
-                    </p>
-                  </div>
-                  <span className="flex h-7 min-w-[36px] items-center justify-center rounded-md bg-wash-action/10 px-2 text-sm font-bold text-wash-action ring-1 ring-wash-action/20">
-                    {r.Cantidad_RI}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-      <ModalActions>
-        <button type="button" onClick={onClose} className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark">
-          Cerrar
-        </button>
-      </ModalActions>
-    </Modal>
-  );
-}
-
-function DetailModal({ incidente, onClose }: { incidente: Incidente | null; onClose: () => void }) {
   if (!incidente) return null;
   return (
     <Modal open={!!incidente} onClose={onClose} title="Detalle del incidente" width={580}>
@@ -863,7 +827,39 @@ function DetailModal({ incidente, onClose }: { incidente: Incidente | null; onCl
         <Meta label="Técnico" value={incidente.TecnicoAsignado_IN || <span className="text-amber-700">Sin asignar</span>} />
         {incidente.MaquinaAsignada_IN && <Meta label="Máquina asignada" value={proper(incidente.MaquinaAsignada_IN)} />}
         {incidente.FechaAsignada_IN && <Meta label="Asignada" value={incidente.FechaAsignada_IN} />}
-        <Meta label="Repuestos" value={String(incidente.CantidadRepuestos_IN)} />
+        {incidente.User_IN && <Meta label="Asignador" value={incidente.User_IN} />}
+        {incidente.FechaResuelto_IN && <Meta label="Resuelto" value={incidente.FechaResuelto_IN} />}
+      </div>
+      <div className="mt-4">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+          Repuestos ({repuestos.length})
+        </p>
+        {repuestos.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-wash-border py-6 text-center">
+            <Wrench size={22} className="mx-auto mb-1.5 text-wash-text-faint" strokeWidth={1.5} />
+            <p className="text-[13px] font-semibold text-wash-text-strong">Sin repuestos cargados</p>
+          </div>
+        ) : (
+          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {repuestos.map((r) => {
+              const s = stock.find((st) => st.Status_ST === 'Activo' && st.Item_ST.trim().toLowerCase() === r.Repuesto_RI.trim().toLowerCase());
+              const ok = !!s && s.Cantidad_ST >= r.Cantidad_RI;
+              return (
+                <li key={r.ID} className="flex items-center gap-2.5 rounded-lg bg-wash-surface-2/40 px-3 py-2 ring-1 ring-wash-border">
+                  <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-md', ok ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>
+                    {ok ? <Check size={13} /> : <AlertTriangle size={12} />}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-wash-text-strong" title={r.Repuesto_RI}>
+                    {r.Repuesto_RI}
+                  </span>
+                  <span className="flex h-6 min-w-[30px] items-center justify-center rounded-md bg-wash-action/10 px-1.5 text-[12px] font-bold text-wash-action ring-1 ring-wash-action/20">
+                    {r.Cantidad_RI}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
       <ModalActions>
         <button type="button" onClick={onClose} className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark">

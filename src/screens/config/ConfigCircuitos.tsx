@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import type { CircuitoAbm, DetalleCircuitoAbm, EdificioAbm, RutaAbm } from '@/types/domain';
@@ -187,46 +188,111 @@ export function ConfigCircuitos({ query, addOpen, setAddOpen, canEdit = false }:
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.04)_1px,transparent_0)] bg-[size:22px_22px]">
-      <div className="flex min-h-0 flex-1 flex-col p-6">
-        <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-6">
+        <div className="grid shrink-0 grid-cols-2 gap-2 sm:gap-3">
           <KpiCard icon={GitBranch} tone="brand" label="Circuitos activos" value={filtered.length} />
           <KpiCard icon={Building2} tone="emerald" label="Edificios asignados" value={totalEdificios} />
         </div>
 
-        {/* Warning de integridad: edificios en más de un circuito */}
-        {duplicados.length > 0 && (
-          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-500" />
-            <div className="min-w-0">
-              <p className="font-semibold">
-                {duplicados.length} edificio{duplicados.length === 1 ? '' : 's'} figura{duplicados.length === 1 ? '' : 'n'} en más de un circuito
-              </p>
-              <p className="mt-0.5 text-[11.5px] leading-relaxed text-amber-800">
-                Un edificio debería estar en un solo circuito. Revisá y limpiá:{' '}
-                {duplicados.slice(0, 6).map((d, i) => (
-                  <span key={d.code}>
-                    {i > 0 && ' · '}
-                    <strong className="font-mono">{d.code}</strong> (circuitos {d.circuitos.join(', ')})
-                  </span>
-                ))}
-                {duplicados.length > 6 && ` y ${duplicados.length - 6} más`}
-                .
-              </p>
-            </div>
-          </div>
-        )}
-
-        <div className="mt-5 flex shrink-0 items-end justify-between">
-          <div>
+        <div className="mt-5 flex shrink-0 items-end justify-between gap-3">
+          <div className="min-w-0">
             <p className="font-display text-[13px] font-black uppercase tracking-wider text-wash-text-strong">Catálogo de circuitos</p>
             <p className="mt-0.5 text-[11.5px] text-wash-text-muted">
               {filtered.length === 0 ? 'Sin circuitos registrados todavía' : `${filtered.length} circuito${filtered.length === 1 ? '' : 's'} activo${filtered.length === 1 ? '' : 's'}`}
             </p>
           </div>
+
+          {/* Warning de integridad: edificios en más de un circuito (colapsado en un ícono + popover) */}
+          {duplicados.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  title="Edificios en más de un circuito"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-300/70 bg-amber-50 px-2.5 py-1.5 text-amber-900 transition hover:bg-amber-100"
+                >
+                  <AlertTriangle size={15} className="text-amber-500" />
+                  <span className="text-[12.5px] font-bold tabular-nums">{duplicados.length}</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-500" />
+                  <div className="min-w-0">
+                    <p className="text-[12.5px] font-semibold text-wash-text-strong">
+                      {duplicados.length} edificio{duplicados.length === 1 ? '' : 's'} figura{duplicados.length === 1 ? '' : 'n'} en más de un circuito
+                    </p>
+                    <p className="mt-1 text-[11.5px] leading-relaxed text-wash-text-muted">
+                      Un edificio debería estar en un solo circuito. Revisá y limpiá:{' '}
+                      {duplicados.slice(0, 8).map((d, i) => (
+                        <span key={d.code}>
+                          {i > 0 && ' · '}
+                          <strong className="font-mono text-wash-text-strong">{d.code}</strong> (circuitos {d.circuitos.join(', ')})
+                        </span>
+                      ))}
+                      {duplicados.length > 8 && ` y ${duplicados.length - 8} más`}
+                      .
+                    </p>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
         </div>
 
         <div className="mt-3 min-h-0 flex-1">
-          <DataTable rows={filtered} rowKey={(c) => c.ID} columns={columns} empty="Sin circuitos registrados." onRowClick={(c) => setViewing(c)} />
+          <DataTable
+            rows={filtered}
+            rowKey={(c) => c.ID}
+            columns={columns}
+            empty="Sin circuitos registrados."
+            onRowClick={(c) => setViewing(c)}
+            mobileCard={(c) => {
+              const es = edifsByCircuito.get(c.NroCircuito) ?? [];
+              const visible = es.slice(0, 4);
+              const extra = es.length - visible.length;
+              return (
+                <div
+                  onClick={() => setViewing(c)}
+                  className="rounded-xl bg-wash-surface p-3 shadow-sm ring-1 ring-wash-border transition active:scale-[0.99]"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-wash-brand to-wash-brand-dark text-[12px] font-black text-white tabular-nums shadow-sm shadow-wash-brand/30">
+                        {String(c.NroCircuito).padStart(2, '0')}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="font-display text-[14px] font-black text-wash-accent">Circuito {c.NroCircuito}</p>
+                        <p className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-wash-text-muted">
+                          <MapIcon size={9} className="text-wash-brand" />
+                          Ruta {c.NroRuta || '—'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <ActionBtn icon={Eye} tone="brand" title="Ver / editar edificios" onClick={(e) => { e.stopPropagation(); setViewing(c); }} />
+                      {canEdit && (
+                        <ActionBtn icon={Trash2} tone="danger" title="Eliminar circuito" onClick={(e) => { e.stopPropagation(); setDeleting(c); setDeleteError(null); }} />
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2 py-1 text-[11.5px] font-bold text-wash-text-strong tabular-nums">
+                      <Building2 size={11} className="text-emerald-600" />
+                      {es.length} edificio{es.length === 1 ? '' : 's'}
+                    </span>
+                    {visible.map((e) => (
+                      <span key={e.ID} className="inline-flex items-center gap-1 rounded bg-wash-surface-2 px-1.5 py-0.5 text-[10.5px] font-medium text-wash-text-strong ring-1 ring-wash-border">
+                        <MapPin size={8} className="text-wash-text-muted" />
+                        <span className="max-w-[140px] truncate">{e.Edificio}</span>
+                      </span>
+                    ))}
+                    {extra > 0 && <span className="inline-flex items-center rounded bg-wash-brand/15 px-1.5 py-0.5 text-[10px] font-bold text-wash-brand">+{extra}</span>}
+                  </div>
+                </div>
+              );
+            }}
+          />
         </div>
       </div>
 
@@ -389,7 +455,7 @@ function CircuitoDetailModal({
             Este circuito no tiene edificios.
           </div>
         ) : (
-          <ul className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+          <ul className="space-y-2">
             {edificiosDelCircuito.map((e) => (
               <li key={e.ID} className="flex items-start gap-3 rounded-xl bg-wash-surface px-3.5 py-2.5 ring-1 ring-wash-border">
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-wash-surface-2 text-wash-text-muted ring-1 ring-wash-border">
@@ -664,15 +730,15 @@ function KpiCard({ icon: Icon, label, value, tone }: { icon: typeof GitBranch; l
   };
   const blobCls: Record<KpiTone, string> = { brand: 'bg-wash-brand/15', emerald: 'bg-emerald-500/15' };
   return (
-    <div className={cn('relative overflow-hidden rounded-2xl bg-gradient-to-br to-wash-surface p-4 ring-1 ring-wash-border', bgGradient[tone])}>
-      <div aria-hidden className={cn('pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-3xl', blobCls[tone])} />
-      <div className="relative flex items-center gap-3">
-        <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1', iconCls[tone])}>
+    <div className={cn('relative overflow-hidden rounded-xl bg-gradient-to-br to-wash-surface p-2.5 ring-1 ring-wash-border sm:rounded-2xl sm:p-4', bgGradient[tone])}>
+      <div aria-hidden className={cn('pointer-events-none absolute -right-8 -top-8 hidden h-28 w-28 rounded-full blur-3xl sm:block', blobCls[tone])} />
+      <div className="relative flex items-center gap-2 sm:gap-3">
+        <span className={cn('hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 sm:flex', iconCls[tone])}>
           <Icon size={18} />
         </span>
         <div className="min-w-0">
-          <p className="text-[10.5px] font-bold uppercase tracking-wider text-wash-text-muted">{label}</p>
-          <p className="font-display text-[22px] font-black leading-none text-wash-text-strong tabular-nums">{value}</p>
+          <p className="text-[9px] font-bold uppercase leading-tight tracking-wider text-wash-text-muted sm:text-[10.5px]">{label}</p>
+          <p className="mt-0.5 font-display text-[19px] font-black leading-none text-wash-text-strong tabular-nums sm:mt-0 sm:text-[22px]">{value}</p>
         </div>
       </div>
     </div>

@@ -150,8 +150,8 @@ export function Stock() {
         <ErrorState message={stockError} onRetry={loadStock} />
       ) : (
       <>
-      {/* Counters */}
-      <div className="grid grid-cols-3 gap-2.5 border-b border-wash-border bg-wash-surface px-4 py-3 sm:grid-cols-4 md:px-6 md:py-4 lg:grid-cols-7">
+      {/* Counters + filtro rápido por segmento — solo desktop (en mobile el filtro vive en el popover) */}
+      <div className="hidden gap-2.5 border-b border-wash-border bg-wash-surface px-4 py-3 md:px-6 md:py-4 lg:grid lg:grid-cols-7">
         {TIPOS.map((t) => {
           const meta = tipoMeta[t];
           const Icon = meta.icon;

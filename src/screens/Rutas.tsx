@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
-import type { PlanifMes, PlanifRuta } from '@/types/domain';
+import type { PlanifMes } from '@/types/domain';
 
 const MONTHS_ES = [
   'Enero',
@@ -66,7 +66,6 @@ function generateMonthOptions(): MesOption[] {
 export function Rutas() {
   const navigate = useNavigate();
   const meses = useAppStore((s) => s.CollectPlanifMeses);
-  const resumen = useAppStore((s) => s.CollectPlanifResumen);
   const tecnicos = useAppStore((s) => s.CollectTecnicosDisponibles);
   const rutasCatalog = useAppStore((s) => s.CollectAbmRutas);
   const fetchPlanificaciones = useAppStore((s) => s.fetchPlanificaciones);
@@ -116,22 +115,6 @@ export function Rutas() {
           m.MesAno.toLowerCase().includes(q) || m.Mes.toLowerCase().includes(q)
       );
   }, [meses, query]);
-
-  const rutasDelMes = useCallback(
-    (mesAno: string): PlanifRuta[] => resumen.filter((r) => r.MesAno === mesAno),
-    [resumen]
-  );
-
-  const progresoMes = useCallback(
-    (mesAno: string) => {
-      const rutas = rutasDelMes(mesAno);
-      const cerradas = rutas.filter((r) => r.Status === 'Cerrada').length;
-      const total = rutas.length;
-      const pct = total === 0 ? 0 : Math.round((cerradas / total) * 100);
-      return { cerradas, total, pct };
-    },
-    [rutasDelMes]
-  );
 
   const mesesOptions = useMemo(() => generateMonthOptions(), []);
 
@@ -204,28 +187,6 @@ export function Rutas() {
       ),
     },
     {
-      key: 'progreso',
-      header: 'Progreso',
-      width: '180px',
-      truncate: false,
-      render: (m) => {
-        const { pct } = progresoMes(m.MesAno);
-        return (
-          <div className="flex w-full items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-wash-surface-2">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-wash-brand-light to-wash-brand transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="text-[11.5px] font-semibold text-wash-text-muted tabular-nums">
-              {pct}%
-            </span>
-          </div>
-        );
-      },
-    },
-    {
       key: 'actions',
       header: 'Acciones',
       width: '110px',
@@ -279,7 +240,6 @@ export function Rutas() {
             empty="Sin planificaciones registradas."
             onRowClick={(m) => goDetail(m)}
             mobileCard={(m) => {
-              const { pct } = progresoMes(m.MesAno);
               return (
                 <div className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
                   {/* Fila 1: mes + acciones */}
@@ -326,18 +286,6 @@ export function Rutas() {
                     <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2.5 py-1 text-[12px] font-bold text-wash-text-strong tabular-nums">
                       <Users size={11} className="text-wash-brand" />
                       {m.TecnicosTotales} técnicos
-                    </span>
-                  </div>
-                  {/* Fila 3: progreso */}
-                  <div className="mt-3 flex items-center gap-2">
-                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-wash-surface-2">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-wash-brand-light to-wash-brand transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <span className="text-[11.5px] font-semibold text-wash-text-muted tabular-nums">
-                      {pct}%
                     </span>
                   </div>
                 </div>

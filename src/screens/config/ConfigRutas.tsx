@@ -169,8 +169,8 @@ export function ConfigRutas({ query, addOpen, setAddOpen, canEdit = false }: Con
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[radial-gradient(circle_at_1px_1px,rgba(15,23,42,0.04)_1px,transparent_0)] bg-[size:22px_22px]">
-      <div className="flex min-h-0 flex-1 flex-col p-6">
-        <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-6">
+        <div className="grid shrink-0 grid-cols-3 gap-2 sm:gap-3">
           <KpiCard icon={MapIcon} tone="brand" label="Rutas activas" value={rows.length} />
           <KpiCard icon={GitBranch} tone="emerald" label="Circuitos totales" value={totalCircuitos} />
           <KpiCard icon={Building2} tone="violet" label="Edificios totales" value={totalEdificios} />
@@ -186,7 +186,67 @@ export function ConfigRutas({ query, addOpen, setAddOpen, canEdit = false }: Con
         </div>
 
         <div className="mt-3 min-h-0 flex-1">
-          <DataTable rows={rows} rowKey={(r) => r.ID} columns={columns} empty="Sin rutas registradas." onRowClick={(r) => setViewing(r)} />
+          <DataTable
+            rows={rows}
+            rowKey={(r) => r.ID}
+            columns={columns}
+            empty="Sin rutas registradas."
+            onRowClick={(r) => setViewing(r)}
+            mobileCard={(r) => {
+              const cs = circuitsByRuta.get(r.NroRuta) ?? [];
+              const nEdif = cs.reduce((s, c) => s + (edificiosByCircuito.get(c.NroCircuito) ?? 0), 0);
+              const visible = cs.slice(0, 10);
+              const extra = cs.length - visible.length;
+              return (
+                <div
+                  onClick={() => setViewing(r)}
+                  className="rounded-xl bg-wash-surface p-3 shadow-sm ring-1 ring-wash-border transition active:scale-[0.99]"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-wash-brand to-wash-brand-dark text-[12px] font-black text-white tabular-nums shadow-sm shadow-wash-brand/30">
+                        {String(r.NroRuta).padStart(2, '0')}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="font-display text-[14px] font-black text-wash-accent">Ruta {r.NroRuta}</p>
+                        <p className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-600">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          Activa
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <ActionBtn icon={Eye} tone="brand" title="Ver detalle" onClick={(e) => { e.stopPropagation(); setViewing(r); }} />
+                      {canEdit && (
+                        <ActionBtn icon={Trash2} tone="danger" title="Eliminar" onClick={(e) => { e.stopPropagation(); setDeleting(r); setDeleteError(null); }} />
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2 py-1 text-[11.5px] font-bold text-wash-text-strong tabular-nums">
+                      <GitBranch size={11} className="text-wash-brand" />
+                      {cs.length} circuito{cs.length === 1 ? '' : 's'}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-wash-surface-2 px-2 py-1 text-[11.5px] font-bold text-wash-text-strong tabular-nums">
+                      <Building2 size={11} className="text-emerald-600" />
+                      {nEdif} edificio{nEdif === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  {cs.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1">
+                      {visible.map((c) => (
+                        <span key={c.ID} className="inline-flex items-center gap-0.5 rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand ring-1 ring-wash-brand/20">
+                          <MapPin size={8} />
+                          {c.NroCircuito}
+                        </span>
+                      ))}
+                      {extra > 0 && <span className="inline-flex items-center rounded bg-wash-brand/15 px-1.5 py-0.5 text-[10px] font-bold text-wash-brand">+{extra}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            }}
+          />
         </div>
       </div>
 
@@ -447,15 +507,15 @@ function KpiCard({ icon: Icon, label, value, tone }: { icon: typeof MapIcon; lab
   };
   const blobCls: Record<KpiTone, string> = { brand: 'bg-wash-brand/15', emerald: 'bg-emerald-500/15', violet: 'bg-violet-500/15' };
   return (
-    <div className={cn('relative overflow-hidden rounded-2xl bg-gradient-to-br to-wash-surface p-4 ring-1 ring-wash-border', bgGradient[tone])}>
-      <div aria-hidden className={cn('pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-3xl', blobCls[tone])} />
-      <div className="relative flex items-center gap-3">
-        <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1', iconCls[tone])}>
+    <div className={cn('relative overflow-hidden rounded-xl bg-gradient-to-br to-wash-surface p-2.5 ring-1 ring-wash-border sm:rounded-2xl sm:p-4', bgGradient[tone])}>
+      <div aria-hidden className={cn('pointer-events-none absolute -right-8 -top-8 hidden h-28 w-28 rounded-full blur-3xl sm:block', blobCls[tone])} />
+      <div className="relative flex items-center gap-2 sm:gap-3">
+        <span className={cn('hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 sm:flex', iconCls[tone])}>
           <Icon size={18} />
         </span>
         <div className="min-w-0">
-          <p className="text-[10.5px] font-bold uppercase tracking-wider text-wash-text-muted">{label}</p>
-          <p className="font-display text-[22px] font-black leading-none text-wash-text-strong tabular-nums">{value}</p>
+          <p className="text-[9px] font-bold uppercase leading-tight tracking-wider text-wash-text-muted sm:text-[10.5px]">{label}</p>
+          <p className="mt-0.5 font-display text-[19px] font-black leading-none text-wash-text-strong tabular-nums sm:mt-0 sm:text-[22px]">{value}</p>
         </div>
       </div>
     </div>

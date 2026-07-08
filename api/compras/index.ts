@@ -31,26 +31,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const session = readSession(req.headers.cookie);
   if (!session) return res.status(401).json({ error: 'no_session' });
 
-  // ── Listar compras del mes (cabeceras activas + sus líneas) ──────────────
+  // ── Listar compras (cabeceras + sus líneas) ──────────────────────────────
   if (req.method === 'GET') {
-    // `?mes=MM/YYYY` para ver un mes puntual (default: mes actual). Devolvemos TODOS
-    // los estados del mes (incl. Recibida/Anulado/Rechazada) para que el filtro de
-    // estado del front funcione; antes se excluían las Filtrar_PC="SI" y no se veían.
+    // `?mes=MM/YYYY` para ver un mes puntual (default: mes actual), o
+    // `?meses=MM/YYYY,MM/YYYY` para ver varios meses a la vez (fetch en paralelo
+    // + merge). Devolvemos TODOS los estados (incl. Recibida/Anulado/Rechazada)
+    // para que el filtro de estado del front funcione; el front decide qué ocultar.
+    const mesesParam = typeof req.query.meses === 'string' ? req.query.meses : undefined;
     const mesParam = typeof req.query.mes === 'string' ? req.query.mes : undefined;
-    const mesAno = mesParam && /^\d{2}\/\d{4}$/.test(mesParam) ? mesParam : currentMesAno();
+    const meses = mesesParam
+      ? mesesParam.split(',').map((m) => m.trim()).filter((m) => /^\d{2}\/\d{4}$/.test(m))
+      : [mesParam && /^\d{2}\/\d{4}$/.test(mesParam) ? mesParam : currentMesAno()];
+    // Fallback defensivo: si `meses` venía pero sin ningún valor válido, usar el mes actual.
+    const targetMeses = meses.length > 0 ? meses : [currentMesAno()];
     try {
-      const [pedidoRows, detalleRows] = await Promise.all([
-        listItems(LIST_IDS.pedidoCompras, {
-          select: pedidoCompraSelectFields(),
-          filter: `fields/FechaMesAno_PC eq '${mesAno}'`,
-        }),
-        listItems(LIST_IDS.detalleCompra, {
-          select: detalleCompraSelectFields(),
-          filter: `fields/FechaMesAno_DC eq '${mesAno}'`,
-        }),
-      ]);
-      const pedidos = pedidoRows.map(mapPedidoCompra);
-      const detalles = detalleRows.map(mapDetalleCompra).filter((d) => d.Rechazada_DC !== 'SI');
+      const results = await Promise.all(
+        targetMeses.map(async (mesAno) => {
+          const [pedidoRows, detalleRows] = await Promise.all([
+            listItems(LIST_IDS.pedidoCompras, {
+              select: pedidoCompraSelectFields(),
+              filter: `fields/FechaMesAno_PC eq '${mesAno}'`,
+            }),
+            listItems(LIST_IDS.detalleCompra, {
+              select: detalleCompraSelectFields(),
+              filter: `fields/FechaMesAno_DC eq '${mesAno}'`,
+            }),
+          ]);
+          return { pedidoRows, detalleRows };
+        })
+      );
+      const pedidos = results.flatMap((r) => r.pedidoRows.map(mapPedidoCompra));
+      const detalles = results
+        .flatMap((r) => r.detalleRows.map(mapDetalleCompra))
+        .filter((d) => d.Rechazada_DC !== 'SI');
       return res.status(200).json({ pedidos, detalles });
     } catch (err) {
       console.error('compras GET error', err);

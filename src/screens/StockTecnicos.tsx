@@ -225,14 +225,14 @@ export function StockTecnicos() {
           columns={columns}
           empty="Sin repuestos asignados"
           mobileCard={(r) => (
-            <div className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
+            <div className="rounded-xl border border-wash-border bg-wash-surface p-2.5 shadow-sm transition active:scale-[0.99]">
               {/* Fila 1: técnico (identificador) + acciones */}
               <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[9.5px] font-semibold text-slate-600">
                     {initials(r.Tecnico_RT)}
                   </span>
-                  <span className="truncate text-[12.5px] font-semibold text-wash-text-strong">
+                  <span className="truncate text-[12px] font-semibold text-wash-text-strong">
                     {r.Tecnico_RT}
                   </span>
                 </div>
@@ -268,21 +268,12 @@ export function StockTecnicos() {
                   </div>
                 )}
               </div>
-              {/* Fila 2: repuesto (dato principal) + código */}
-              <div className="mt-2 min-w-0">
-                <p className="truncate text-[13.5px] font-semibold text-wash-accent">
+              {/* Fila 2: repuesto (dato principal, ya incluye el código) + cantidad alineada */}
+              <div className="mt-1.5 flex items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-wash-accent">
                   {r.Concat_RT}
                 </p>
-                <p className="mt-1 min-w-0">
-                  <span className="inline-block rounded bg-wash-surface-2 px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-wash-text">
-                    {r.Codigo_RT}
-                  </span>
-                </p>
-              </div>
-              {/* Fila 3: cantidad */}
-              <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-wash-divider/60 pt-2 text-[11.5px] text-wash-text-muted">
-                <span className="font-semibold uppercase tracking-wider">Cantidad</span>
-                <span className="inline-flex min-w-[40px] items-center justify-center rounded-md bg-wash-action/10 px-2 py-0.5 text-sm font-bold text-wash-action ring-1 ring-wash-action/20">
+                <span className="inline-flex min-w-[36px] shrink-0 items-center justify-center rounded-md bg-wash-action/10 px-2 py-0.5 text-sm font-bold text-wash-action ring-1 ring-wash-action/20">
                   {r.Cantidad_RT}
                 </span>
               </div>

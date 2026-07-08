@@ -55,13 +55,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // trae segmentos en Title Case (Lavadora/Repuesto) — normalizamos al escribir/matchear.
     const tipoUpper = tipo.toUpperCase();
     try {
+      // OJO: `Tipo_ST` NO está indexada en SharePoint → un $filter con `and Tipo_ST eq …`
+      // hace que Graph devuelva 400 (rompía el alta con 502). Filtramos SOLO por
+      // `Status_ST eq 'Activo'` (indexada) y matcheamos el tipo + item en memoria.
       const existingRows = await listItems(LIST_IDS.stock, {
         select: stockSelectFields(),
-        filter: `fields/Status_ST eq 'Activo' and fields/Tipo_ST eq '${tipoUpper}'`,
+        filter: `fields/Status_ST eq 'Activo'`,
       });
       const existing = existingRows
         .map(mapStock)
-        .find((r) => r.Item_ST.toLowerCase() === item.trim().toLowerCase());
+        .find(
+          (r) => r.Tipo_ST === tipoUpper && r.Item_ST.toLowerCase() === item.trim().toLowerCase()
+        );
 
       if (existing) {
         const nuevaCantidad = existing.Cantidad_ST + cantidad;

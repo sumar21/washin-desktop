@@ -93,13 +93,6 @@ export function DetallePlanificacion() {
       .sort((a, b) => Number(a.NroRuta) - Number(b.NroRuta));
   }, [resumen, query]);
 
-  // Progreso global del mes (edificios visitados / total).
-  const mesProgreso = useMemo(() => {
-    const total = edificios.length;
-    const visitados = edificios.filter((e) => e.Estado === 'Visitado').length;
-    return { total, visitados, pct: total > 0 ? Math.round((visitados / total) * 100) : 0 };
-  }, [edificios]);
-
   const columns: Column<PlanifRuta>[] = [
     {
       key: 'estado',
@@ -150,27 +143,17 @@ export function DetallePlanificacion() {
       ),
     },
     {
-      key: 'progreso',
-      header: 'Progreso',
-      width: 'minmax(150px, 0.7fr)',
+      key: 'edificios',
+      header: 'Edificios',
+      width: '110px',
+      align: 'center',
       truncate: false,
-      render: (r) => {
-        const { edificios: total, visitados } = countsFor(r);
-        const pct = total > 0 ? Math.round((visitados / total) * 100) : 0;
-        return (
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-wash-border/60">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-wash-brand to-emerald-500 transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="shrink-0 text-[11px] font-bold text-wash-text-muted tabular-nums">
-              {visitados}/{total}
-            </span>
-          </div>
-        );
-      },
+      render: (r) => (
+        <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-wash-text-strong tabular-nums">
+          <Building2 size={11} className="text-wash-text-muted" />
+          {countsFor(r).edificios}
+        </span>
+      ),
     },
     {
       key: 'actions',
@@ -197,8 +180,7 @@ export function DetallePlanificacion() {
   ];
 
   const mobileCard = (r: PlanifRuta) => {
-    const { circuitos, edificios: total, visitados } = countsFor(r);
-    const pct = total > 0 ? Math.round((visitados / total) * 100) : 0;
+    const { circuitos, edificios: total } = countsFor(r);
     return (
       <button
         type="button"
@@ -229,18 +211,6 @@ export function DetallePlanificacion() {
           <span className="inline-flex items-center gap-1.5 tabular-nums">
             <Building2 size={12} className="text-wash-text-muted" />
             {total} edificio{total === 1 ? '' : 's'}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-wash-border/60">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-wash-brand to-emerald-500 transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="shrink-0 text-[11px] font-bold text-wash-text-muted tabular-nums">
-            {visitados}/{total}
           </span>
         </div>
       </button>
@@ -285,31 +255,6 @@ export function DetallePlanificacion() {
           <ErrorState message={loadError} onRetry={load} />
         ) : (
           <>
-            {/* Progreso del mes */}
-            {mesProgreso.total > 0 && (
-              <div className="mb-4 shrink-0 rounded-2xl bg-wash-surface p-4 shadow-sm ring-1 ring-wash-border">
-                <div className="flex items-center justify-between">
-                  <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-wash-text-muted">
-                    <CheckCircle2 size={13} className="text-emerald-500" />
-                    Progreso del mes
-                  </p>
-                  <p className="font-display text-[14px] font-black text-wash-text-strong tabular-nums">
-                    {mesProgreso.visitados}
-                    <span className="text-[12px] font-bold text-wash-text-muted">
-                      {' '}
-                      / {mesProgreso.total} · {mesProgreso.pct}%
-                    </span>
-                  </p>
-                </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-wash-border/60">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-wash-brand to-emerald-500 transition-all"
-                    style={{ width: `${mesProgreso.pct}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
             <div className="min-h-0 flex-1">
               <DataTable
                 rows={filtered}
@@ -355,7 +300,6 @@ function RutaDetailModal({
   const edificiosRuta = edificios.filter((e) => e.IDUnivocoRuta === ruta.IDUnivocoRuta);
   const totalEdificios = edificiosRuta.length;
   const visitados = edificiosRuta.filter((e) => e.Estado === 'Visitado').length;
-  const progreso = totalEdificios > 0 ? Math.round((visitados / totalEdificios) * 100) : 0;
 
   return (
     <Modal
@@ -400,8 +344,8 @@ function RutaDetailModal({
           </div>
         </div>
 
-        {/* Stats strip */}
-        <div className="relative mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-wash-border/60 ring-1 ring-wash-border sm:grid-cols-4">
+        {/* Stats strip — conteos crudos (sin barra de % engañosa) */}
+        <div className="relative mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-xl bg-wash-border/60 ring-1 ring-wash-border">
           <StatStrip
             icon={MapPin}
             label="Circuitos"
@@ -421,20 +365,6 @@ function RutaDetailModal({
             suffix={totalEdificios > 0 ? ` / ${totalEdificios}` : undefined}
             tone="emerald"
           />
-          <div className="flex flex-col justify-center bg-wash-surface/80 px-4 py-3">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
-              <span>Progreso</span>
-              <span className="font-display text-[14px] font-black text-wash-text-strong tabular-nums">
-                {progreso}%
-              </span>
-            </div>
-            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-wash-border/60">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-wash-brand to-emerald-500 transition-all"
-                style={{ width: `${progreso}%` }}
-              />
-            </div>
-          </div>
         </div>
       </div>
 
@@ -472,7 +402,6 @@ function RutaDetailModal({
               (e) => e.IDUnivocoCircuito === c.IDUnivocoCircuito
             );
             const visit = edifs.filter((e) => e.Estado === 'Visitado').length;
-            const pct = edifs.length > 0 ? Math.round((visit / edifs.length) * 100) : 0;
             const complete = edifs.length > 0 && visit === edifs.length;
 
             return (
@@ -521,22 +450,6 @@ function RutaDetailModal({
                       )}
                     >
                       {visit}/{edifs.length}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <div className="h-1 flex-1 overflow-hidden rounded-full bg-wash-border/60">
-                      <div
-                        className={cn(
-                          'h-full rounded-full transition-all',
-                          complete
-                            ? 'bg-emerald-500'
-                            : 'bg-gradient-to-r from-wash-brand to-wash-brand-light'
-                        )}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] font-bold tabular-nums text-wash-text-muted">
-                      {pct}%
                     </span>
                   </div>
                 </div>

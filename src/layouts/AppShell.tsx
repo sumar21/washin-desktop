@@ -71,9 +71,6 @@ export function AppShell() {
               {moduleNameForPath(location.pathname)}
             </span>
           </div>
-          <span className="ml-2 max-w-[38vw] truncate text-xs font-medium text-white/60">
-            {VarUsuario}
-          </span>
         </header>
 
         <main className="relative flex-1 overflow-hidden bg-wash-canvas">
