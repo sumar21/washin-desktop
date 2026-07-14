@@ -84,7 +84,11 @@ html, body, #root {
 }
 
 body {
-  background: var(--color-wash-bg);
+  /* Fondo gris canvas (no navy oscuro): en mobile es lo que el navegador usa para
+     teñir el safe-area de abajo (home-indicator) → gris, igual que el relleno de la
+     pantalla. El celeste de arriba lo aporta el header sobre el gradiente de marca
+     (viewport-fit=cover + padding safe-area en AppShell). */
+  background: var(--color-wash-canvas);
   color: var(--color-wash-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
