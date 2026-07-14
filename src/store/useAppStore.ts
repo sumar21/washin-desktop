@@ -4,6 +4,7 @@ import type {
   PermisoModulo,
   Edificio,
   Registro,
+  Descanso,
   StockItem,
   StockCatalogItem,
   RepuestoTecnico,
@@ -77,6 +78,8 @@ interface AppState {
   Collect_LPP: PermisoModulo[];
   CollectEdificios: Edificio[];
   CollectResumen: Registro[];
+  /** Descansos (14.HorasDescanso) de HOY — para el Home. */
+  CollectDescansosHoy: Descanso[];
   /** Registros del rango de meses elegido para el Dashboard de Visitas. */
   CollectDashboardVisitas: Registro[];
   CollectStock: StockItem[];
@@ -335,6 +338,7 @@ const initialState: Omit<
   Collect_LPP: mockPermisos,
   CollectEdificios: mockEdificios,
   CollectResumen: mockRegistros,
+  CollectDescansosHoy: [],
   CollectDashboardVisitas: [],
   CollectStock: mockStock,
   CollectStockTecnicos: [],
@@ -471,8 +475,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   fetchHome: async () => {
     try {
-      const { visitas, comprasDelMes } = await api.getHome();
-      set({ CollectResumen: visitas, CollectDetalleCompras: comprasDelMes });
+      const { visitas, comprasDelMes, descansosHoy } = await api.getHome();
+      set({ CollectResumen: visitas, CollectDetalleCompras: comprasDelMes, CollectDescansosHoy: descansosHoy ?? [] });
     } catch (err) {
       handleAuthError(err, set);
       throw err;

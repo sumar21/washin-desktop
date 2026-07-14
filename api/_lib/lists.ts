@@ -34,6 +34,7 @@ export const LIST_IDS = {
   resumenPlanif: '1a5986e8-9367-4350-ae2a-5b3755a7098e',
   detallePlanif: 'bf4452b0-50b8-406c-8988-3c57b393a195',
   edificiosVisitar: '717028c9-9949-494b-9ee8-a1a7089f6f5b',
+  horasDescanso: 'e1361cec-5651-44bc-93b4-44e94e4caeee', // 14.HorasDescanso
 } as const;
 
 /**
@@ -313,6 +314,32 @@ export function mapRegistro(item: SharePointItem): RegistroRow {
 
 export function registrosSelectFields(): string[] {
   return REGISTROS_SELECT;
+}
+
+// ── Descansos (14.HorasDescanso) — pausas de los técnicos ─────────────────
+// Un descanso: técnico (User_HD), hora inicio/fin, y Status_HD (Activo = en curso,
+// Finalizado = ya realizado). Fecha_HD en dd/mm/yyyy. El Home muestra los de HOY.
+export interface DescansoRow {
+  ID: number;
+  Usuario: string;
+  HoraInicio: string;
+  HoraFin: string;
+  Estado: string; // Activo | Finalizado
+  Fecha: string; // dd/mm/yyyy
+}
+const DESCANSO_SELECT = ['User_HD', 'HoraInicio_HD', 'HoraFin_HD', 'Status_HD', 'Fecha_HD'];
+export function descansoSelectFields(): string[] {
+  return DESCANSO_SELECT;
+}
+export function mapDescanso(item: SharePointItem): DescansoRow {
+  return {
+    ID: Number(item.id),
+    Usuario: String(item.User_HD ?? '').trim(),
+    HoraInicio: String(item.HoraInicio_HD ?? '').trim(),
+    HoraFin: String(item.HoraFin_HD ?? '').trim(),
+    Estado: String(item.Status_HD ?? '').trim(),
+    Fecha: String(item.Fecha_HD ?? '').trim(),
+  };
 }
 
 // ── DetalleCompra (06.DetalleCompra) — líneas de una orden de compra ──────

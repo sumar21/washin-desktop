@@ -91,9 +91,10 @@ interface MonthMetrics {
   visitas: number;
   edificios: number;
   avgDur: number | null; // segundos
-  controlPct: number | null; // % ok/check agregado
-  okCount: number; // visitas 100% ok
-  revisarCount: number; // visitas con al menos un ítem a revisar
+  controlPct: number | null; // % ítems OK sobre total (nivel ÍTEM)
+  okItems: number; // Σ ítems OK
+  revisarItems: number; // Σ ítems a revisar
+  controladas: number; // visitas con control (Ok+Check > 0)
 }
 
 function metricsFor(rows: Registro[]): MonthMetrics {
@@ -101,8 +102,9 @@ function metricsFor(rows: Registro[]): MonthMetrics {
 
   let durSum = 0;
   let durN = 0;
-  let okCount = 0;
-  let revisarCount = 0;
+  let okItems = 0;
+  let revisarItems = 0;
+  let controladas = 0;
 
   for (const r of rows) {
     const a = parseHMS(r.HoraVisita);
@@ -112,26 +114,27 @@ function metricsFor(rows: Registro[]): MonthMetrics {
       durN += 1;
     }
     // Cada visita controlada tiene 8 ítems: `Ok` = ítems OK, `Check` = ítems A REVISAR
-    // (Ok + Check = 8). Una visita "controlada" es la que tiene ítems (Ok+Check > 0);
-    // es OK si no quedó nada a revisar (Check === 0), si no cuenta como "a revisar".
-    // (Las canceladas de verdad son Estado 'Anulado', no éstas.)
+    // (Ok + Check = 8). El "resultado de control" es a NIVEL ÍTEM (ΣOk / Σítems),
+    // igual que Power BI (~85%). NO a nivel visita-perfecta (daba ~50%: castigaba
+    // toda la visita por 1 ítem entre 8). Validado sobre 28 meses.
     const ok = r.Ok ?? 0;
     const chk = r.Check ?? 0;
     if (ok + chk > 0) {
-      if (chk === 0) okCount += 1;
-      else revisarCount += 1;
+      controladas += 1;
+      okItems += ok;
+      revisarItems += chk;
     }
   }
 
-  // Resultado de control = % de visitas controladas que dieron OK (coincide con el donut).
-  const controladas = okCount + revisarCount;
+  const totItems = okItems + revisarItems;
   return {
     visitas: rows.length,
     edificios,
     avgDur: durN ? durSum / durN : null,
-    controlPct: controladas ? (okCount / controladas) * 100 : null,
-    okCount,
-    revisarCount,
+    controlPct: totItems ? (okItems / totItems) * 100 : null,
+    okItems,
+    revisarItems,
+    controladas,
   };
 }
 
@@ -139,9 +142,9 @@ function metricsFor(rows: Registro[]): MonthMetrics {
 const lineConfig: ChartConfig = { control: { label: 'Resultado control' } };
 const donutConfig: ChartConfig = { value: { label: 'Visitas' } };
 const barConfig: ChartConfig = { value: { label: 'Visitas' } };
-// Combo de eficiencia por técnico: barras = cantidad de visitas, línea = % de control OK.
+// Combo de eficiencia por técnico: barras = tiempo prom. de visita (min), línea = % de control OK.
 const comboConfig: ChartConfig = {
-  visitas: { label: 'Visitas', color: C_BRAND },
+  minutos: { label: 'Tiempo prom. (min)', color: C_BRAND },
   control: { label: '% Control OK', color: C_LINE },
 };
 
@@ -333,18 +336,18 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
   );
   const evolucionVacia = evolucion.every((d) => d.control == null);
 
-  // ── Donut Ok / Revisar (todo el rango) ──
+  // ── Donut de ítems de control: Ok vs A revisar (nivel ítem, todo el rango) ──
   const donut = useMemo(
     () => [
-      { name: 'Ok', value: cur.okCount, color: C_OK },
-      { name: 'Revisar', value: cur.revisarCount, color: C_REVISAR },
+      { name: 'Ok', value: cur.okItems, color: C_OK },
+      { name: 'Revisar', value: cur.revisarItems, color: C_REVISAR },
     ],
     [cur]
   );
-  const donutTotal = cur.okCount + cur.revisarCount;
+  const donutTotal = cur.okItems + cur.revisarItems;
 
-  // ── Eficiencia por técnico (todo el rango): cantidad de visitas + % de control OK ──
-  // Combo estilo BI — la barra dice CUÁNTO trabajó y la línea CÓN QUÉ CALIDAD (control sí/no).
+  // ── Eficiencia por técnico (todo el rango): TIEMPO PROMEDIO de visita + % de control OK ──
+  // Combo estilo BI — la barra dice CUÁNTO TARDA en promedio y la línea CÓN QUÉ CALIDAD (% control).
   const porTecnico = useMemo(() => {
     const map = new Map<string, Registro[]>();
     for (const r of registros) {
@@ -358,11 +361,11 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
         const m = metricsFor(rows);
         return {
           name,
-          visitas: rows.length,
+          minutos: m.avgDur != null ? Math.round(m.avgDur / 60) : 0, // tiempo prom. en minutos
           control: m.controlPct != null ? Math.round(m.controlPct) : null,
         };
       })
-      .sort((a, b) => b.visitas - a.visitas)
+      .sort((a, b) => b.minutos - a.minutos)
       .slice(0, 8);
   }, [registros]);
 
@@ -402,7 +405,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
           <ErrorState message={loadError} onRetry={load} />
         </div>
       ) : view === 'grilla' ? (
-        <div className="h-full p-4 pb-4 md:p-6">
+        <div className="h-full p-3 pb-4 md:p-6">
           <GridPanel<Registro>
             rows={registros}
             columns={VISITAS_COLUMNS}
@@ -415,7 +418,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
           />
         </div>
       ) : (
-        <div className="h-full space-y-4 overflow-y-auto p-4 pb-8 md:p-6">
+        <div className="h-full space-y-4 overflow-y-auto p-3 pb-8 md:p-6">
           {/* ── KPIs ── */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard
@@ -435,7 +438,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
               icon={ShieldCheck}
               label="Resultado control"
               value={cur.controlPct != null ? pct(cur.controlPct) : '—'}
-              sub={<span>visitas OK sobre controladas</span>}
+              sub={<span>ítems de control OK sobre el total</span>}
             />
             <KpiCard
               icon={MapPin}
@@ -483,7 +486,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
             <ChartCard
               icon={Activity}
               title="Estado del control"
-              subtitle={`Resultado — ${periodo}`}
+              subtitle={`Ítems de control OK vs a revisar — ${periodo}`}
               empty={donutTotal === 0}
             >
               <div className="flex flex-col items-center gap-4 sm:flex-row">
@@ -509,10 +512,10 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
                   </ChartContainer>
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                     <span className="font-display text-2xl font-bold tabular-nums text-wash-text-strong">
-                      {intFmt(donutTotal)}
+                      {cur.controlPct != null ? `${Math.round(cur.controlPct)}%` : '—'}
                     </span>
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
-                      controladas
+                      ítems OK
                     </span>
                   </div>
                 </div>
@@ -538,7 +541,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
           <ChartCard
             icon={Users}
             title="Eficiencia por técnico"
-            subtitle={`Cantidad de visitas y % de control OK — ${periodo}`}
+            subtitle={`Tiempo promedio de visita y % de control OK — ${periodo}`}
             empty={porTecnico.length === 0}
           >
             <TecnicoCombo data={porTecnico} />
@@ -622,14 +625,14 @@ function ChartCard({
  * línea = % de control OK (eje der, 0–100). Dos ejes a propósito: una es un CONTEO y la
  * otra una TASA — se leen juntas para ver volumen + calidad de cada técnico.
  */
-function TecnicoCombo({ data }: { data: { name: string; visitas: number; control: number | null }[] }) {
+function TecnicoCombo({ data }: { data: { name: string; minutos: number; control: number | null }[] }) {
   return (
     <div>
       {/* Leyenda del combo (aclara qué eje es cada serie) */}
       <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-wash-text-muted">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm" style={{ background: C_BRAND }} />
-          Visitas (cantidad)
+          Tiempo prom. de visita
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-0.5 w-4 rounded-full" style={{ background: C_LINE }} />
@@ -637,7 +640,7 @@ function TecnicoCombo({ data }: { data: { name: string; visitas: number; control
         </span>
       </div>
       <ChartContainer config={comboConfig} className="h-[248px] w-full">
-        <ComposedChart data={data} margin={{ top: 14, right: 6, left: -8, bottom: 4 }}>
+        <ComposedChart data={data} margin={{ top: 14, right: 6, left: -4, bottom: 4 }}>
           <CartesianGrid vertical={false} {...CHART_GRID} />
           <XAxis
             dataKey="name"
@@ -648,7 +651,7 @@ function TecnicoCombo({ data }: { data: { name: string; visitas: number; control
             textAnchor="end"
             height={54}
           />
-          <YAxis yAxisId="left" {...AXIS} tick={X_TICK} allowDecimals={false} width={34} />
+          <YAxis yAxisId="left" {...AXIS} tick={X_TICK} allowDecimals={false} width={40} tickFormatter={(v) => `${v}m`} />
           <YAxis
             yAxisId="right"
             orientation="right"
@@ -659,7 +662,7 @@ function TecnicoCombo({ data }: { data: { name: string; visitas: number; control
             tickFormatter={(v) => `${v}%`}
           />
           <ChartTooltip content={<ChartTooltipContent />} />
-          <Bar yAxisId="left" dataKey="visitas" fill={C_BRAND} radius={[4, 4, 0, 0]} barSize={26} />
+          <Bar yAxisId="left" dataKey="minutos" fill={C_BRAND} radius={[4, 4, 0, 0]} barSize={26} />
           <Line
             yAxisId="right"
             type="monotone"

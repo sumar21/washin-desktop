@@ -467,7 +467,7 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
         </div>
       ) : (
         view === 'grilla' ? (
-          <div className="h-full p-4 pb-4 md:p-6">
+          <div className="h-full p-3 pb-4 md:p-6">
             <GridPanel<Incidente>
               rows={incidentes}
               columns={INCIDENTES_COLUMNS}
@@ -480,7 +480,7 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
             />
           </div>
         ) : (
-          <div className="h-full space-y-4 overflow-y-auto p-4 pb-8 md:p-6">
+          <div className="h-full space-y-4 overflow-y-auto p-3 pb-8 md:p-6">
           {/* ── Fila de KPIs ── */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard

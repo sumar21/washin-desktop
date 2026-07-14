@@ -56,24 +56,28 @@ export function AppShell() {
 
       {/* Columna de contenido: header mobile + main */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Header mobile (<md) — hamburguesa + módulo + usuario */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/15 px-4 text-white lg:hidden">
-          <div className="flex min-w-0 items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setDrawerOpen(true)}
-              aria-label="Abrir menú"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/90 hover:bg-white/10"
-            >
-              <Menu size={22} />
-            </button>
-            <span className="truncate font-display text-lg font-black tracking-tight">
-              {moduleNameForPath(location.pathname)}
-            </span>
+        {/* Header mobile (<md) — hamburguesa + módulo. `pt` = safe-area del notch:
+            con viewport-fit=cover el gradiente de marca llena la barra de estado. */}
+        <header className="shrink-0 pt-[env(safe-area-inset-top)] text-white lg:hidden">
+          <div className="flex h-14 items-center justify-between border-b border-white/15 px-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDrawerOpen(true)}
+                aria-label="Abrir menú"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/90 hover:bg-white/10"
+              >
+                <Menu size={22} />
+              </button>
+              <span className="truncate font-display text-lg font-black tracking-tight">
+                {moduleNameForPath(location.pathname)}
+              </span>
+            </div>
           </div>
         </header>
 
-        <main className="relative flex-1 overflow-hidden bg-wash-canvas">
+        {/* `pb` = safe-area del home-indicator: el canvas gris llena la franja de abajo. */}
+        <main className="relative flex-1 overflow-hidden bg-wash-canvas pb-[env(safe-area-inset-bottom)]">
           <Outlet />
         </main>
       </div>

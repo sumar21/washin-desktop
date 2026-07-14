@@ -86,6 +86,16 @@ export interface Registro {
   Direccion?: string;
 }
 
+/** Descanso de un técnico (14.HorasDescanso). Estado: Activo (en curso) | Finalizado. */
+export interface Descanso {
+  ID: number;
+  Usuario: string;
+  HoraInicio: string;
+  HoraFin: string;
+  Estado: string;
+  Fecha: string;
+}
+
 // 04.Stock
 export interface StockItem {
   ID: number;

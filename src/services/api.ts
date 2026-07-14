@@ -3,6 +3,7 @@ import type {
   CircuitoAbm,
   DetalleCircuitoAbm,
   DetalleCompra,
+  Descanso,
   DetalleMaquina,
   EdificioAbm,
   EdificioVent,
@@ -108,6 +109,7 @@ export function me(): Promise<SessionResponse> {
 export interface HomeResponse {
   visitas: Registro[];
   comprasDelMes: DetalleCompra[];
+  descansosHoy: Descanso[];
 }
 
 export function getHome(): Promise<HomeResponse> {

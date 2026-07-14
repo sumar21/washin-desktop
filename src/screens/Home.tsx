@@ -15,6 +15,7 @@ import {
   Inbox,
   Trash2,
   CheckCircle2,
+  Coffee,
 } from 'lucide-react';
 import {
   Bar,
@@ -28,7 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 import { useAppStore } from '@/store/useAppStore';
-import { proper, currentMonthName, cn } from '@/lib/utils';
+import { proper, currentMonthName, formatToday, cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -40,12 +41,12 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
-import { ConfirmDialog } from '@/components/Modal';
+import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
 import { KpiCard } from '@/components/dashboard/widgets';
 import { CHART_GRID, X_TICK, AXIS, intFmt } from '@/components/dashboard/shared';
-import type { Registro } from '@/types/domain';
+import type { Registro, Descanso } from '@/types/domain';
 
 // Una visita cuenta como finalizada si arrancó (Progreso > 0). Fiel a la lógica
 // de la VisitaCard y de la PowerApp: <100 es parcial pero ya "trabajada".
@@ -83,6 +84,7 @@ export function Home() {
   const CollectResumen = useAppStore((s) => s.CollectResumen);
   const CollectIncidentes = useAppStore((s) => s.CollectIncidentes);
   const CollectVentilaciones = useAppStore((s) => s.CollectVentilaciones);
+  const descansosHoy = useAppStore((s) => s.CollectDescansosHoy);
   const loggedUser = useAppStore((s) => s.loggedUser);
   const VarUsuario = useAppStore((s) => s.VarUsuario);
   const removeRegistro = useAppStore((s) => s.removeRegistro);
@@ -93,6 +95,7 @@ export function Home() {
   const fetchVentilaciones = useAppStore((s) => s.fetchVentilaciones);
 
   const [deletingRegistro, setDeletingRegistro] = useState<Registro | null>(null);
+  const [descansosOpen, setDescansosOpen] = useState(false);
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeError, setHomeError] = useState<string | null>(null);
 
@@ -205,6 +208,13 @@ export function Home() {
     return items.sort((a, b) => a.sort - b.sort).slice(0, 12);
   }, [incidentesAbiertos, ventVencidas]);
 
+  // Descansos de hoy: en curso (Activo) primero, luego finalizados.
+  const descansos = useMemo(() => {
+    const activos = descansosHoy.filter((d) => d.Estado === 'Activo');
+    const finalizados = descansosHoy.filter((d) => d.Estado !== 'Activo');
+    return { activos, finalizados, ordenados: [...activos, ...finalizados] };
+  }, [descansosHoy]);
+
   const nombre = loggedUser?.Nombre?.trim() || (VarUsuario ? proper(VarUsuario) : '');
 
   const tecnicoConfig: ChartConfig = {
@@ -217,13 +227,36 @@ export function Home() {
 
   return (
     <div className="relative flex h-full w-full flex-col">
-      <PageHeader title="Inicio" subtitle={`Resumen operativo · ${proper(currentMonthName())}`} />
+      <PageHeader
+        title="Inicio"
+        subtitle={`Resumen operativo · ${proper(currentMonthName())}`}
+        toolbarExtra={
+          <button
+            type="button"
+            onClick={() => setDescansosOpen(true)}
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-wash-canvas px-3 text-sm font-medium text-wash-text-strong ring-1 ring-wash-border transition-colors hover:bg-wash-border/40"
+          >
+            <Coffee size={15} className="shrink-0 text-wash-brand" />
+            <span>Descansos</span>
+            {descansosHoy.length > 0 && (
+              <span
+                className={cn(
+                  'ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                  descansos.activos.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-wash-surface-2 text-wash-text-muted'
+                )}
+              >
+                {descansosHoy.length}
+              </span>
+            )}
+          </button>
+        }
+      />
       <LoadingOverlay visible={homeLoading} label="Cargando resumen…" />
 
       {homeError ? (
         <ErrorState message={homeError} onRetry={loadHome} />
       ) : (
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
           {/* Hero band ejecutivo — gradiente de marca cian + chips de resumen */}
           <div className="relative mb-5 overflow-hidden rounded-2xl bg-gradient-to-br from-wash-brand via-wash-brand-dark to-wash-accent p-5 shadow-sm ring-1 ring-wash-brand-dark/20 sm:p-6">
             {/* Halo decorativo sutil */}
@@ -494,6 +527,38 @@ export function Home() {
           setDeletingRegistro(null);
         }}
       />
+
+      {/* Descansos de hoy — modal (activos y finalizados) */}
+      <Modal open={descansosOpen} onClose={() => setDescansosOpen(false)} title="Descansos de hoy" width={520}>
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700 ring-1 ring-amber-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            {descansos.activos.length} en curso
+          </span>
+          <span className="rounded-full bg-wash-surface-2 px-2.5 py-1 font-semibold tabular-nums text-wash-text-muted">
+            {descansos.finalizados.length} finalizados
+          </span>
+          <span className="ml-auto tabular-nums text-wash-text-muted">{formatToday()}</span>
+        </div>
+        {descansosHoy.length === 0 ? (
+          <EmptyState icon={Coffee} title="Sin descansos hoy" />
+        ) : (
+          <div className="flex max-h-[58vh] flex-col gap-1.5 overflow-y-auto pr-0.5">
+            {descansos.ordenados.map((d) => (
+              <DescansoRow key={d.ID} descanso={d} />
+            ))}
+          </div>
+        )}
+        <ModalActions>
+          <button
+            type="button"
+            onClick={() => setDescansosOpen(false)}
+            className="rounded-lg border border-wash-border px-5 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          >
+            Cerrar
+          </button>
+        </ModalActions>
+      </Modal>
     </div>
   );
 }
@@ -539,6 +604,70 @@ function AttentionRow({ item }: { item: AttentionItem }) {
         )}
       >
         {item.tag}
+      </span>
+    </div>
+  );
+}
+
+// ---- Descanso row ----
+
+const initials = (name: string) =>
+  (name || '')
+    .trim()
+    .slice(0, 2)
+    .toUpperCase() || '—';
+
+/** 'HH:MM' → minutos del día, o null. */
+function parseHM(s: string): number | null {
+  const m = (s ?? '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** Duración legible del descanso (fin - inicio). '' si cruza medianoche o es inválido. */
+function descansoDur(d: Descanso): string {
+  const a = parseHM(d.HoraInicio);
+  const b = parseHM(d.HoraFin);
+  if (a == null || b == null) return '';
+  const mins = b - a;
+  if (mins < 0 || mins > 12 * 60) return ''; // dato dudoso (cruza medianoche)
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
+}
+
+function DescansoRow({ descanso }: { descanso: Descanso }) {
+  const activo = descanso.Estado === 'Activo';
+  const dur = descansoDur(descanso);
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 ring-1 ring-transparent transition-colors hover:bg-wash-surface-2/60 hover:ring-wash-border">
+      <span
+        className={cn(
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold',
+          activo ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+        )}
+      >
+        {initials(descanso.Usuario)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13px] font-semibold text-wash-text-strong">{proper(descanso.Usuario) || '—'}</div>
+        <div className="mt-0.5 flex items-center gap-1 text-[11px] text-wash-text-muted">
+          <Clock size={11} className="shrink-0" />
+          <span className="tabular-nums">
+            {descanso.HoraInicio || '—'} – {descanso.HoraFin || '—'}
+          </span>
+          {dur && <span className="text-wash-text-faint">· {dur}</span>}
+        </div>
+      </div>
+      <span
+        className={cn(
+          'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1',
+          activo ? 'bg-amber-50 text-amber-700 ring-amber-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+        )}
+      >
+        {activo ? 'En curso' : 'Finalizado'}
       </span>
     </div>
   );
