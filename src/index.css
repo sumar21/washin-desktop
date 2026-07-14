@@ -83,12 +83,18 @@ html, body, #root {
   padding: 0;
 }
 
+html {
+  /* iOS 26 (Safari "Liquid Glass") IGNORA <meta theme-color> en el navegador y
+     deriva el color de las barras (status bar + toolbar) del background-color del
+     <body> (fallback). Por eso el body va en el celeste de marca: las barras salen
+     celeste desde el primer paint y se mantienen (no dependen de theme-color ni de
+     abrir el sidebar). El contenido real (root navy + main gris) va por encima, así
+     que el body sólo se ve en las barras del navegador y el overscroll. */
+  background: var(--color-wash-navy);
+}
+
 body {
-  /* Fondo gris canvas (no navy oscuro): en mobile es lo que el navegador usa para
-     teñir el safe-area de abajo (home-indicator) → gris, igual que el relleno de la
-     pantalla. El celeste de arriba lo aporta el header sobre el gradiente de marca
-     (viewport-fit=cover + padding safe-area en AppShell). */
-  background: var(--color-wash-canvas);
+  background: var(--color-wash-navy);
   color: var(--color-wash-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
