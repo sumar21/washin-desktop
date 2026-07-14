@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CalendarCheck,
   Gauge,
@@ -96,8 +97,15 @@ export function Home() {
 
   const [deletingRegistro, setDeletingRegistro] = useState<Registro | null>(null);
   const [descansosOpen, setDescansosOpen] = useState(false);
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [homeLoading, setHomeLoading] = useState(true);
   const [homeError, setHomeError] = useState<string | null>(null);
+
+  // Slot del header celeste (AppShell) para inyectar el botón de Descansos en mobile.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- capturamos el nodo del portal una vez, al montar.
+    setHeaderSlot(document.getElementById('app-header-actions'));
+  }, []);
 
   const loadHome = useCallback(() => {
     setHomeLoading(true);
@@ -227,30 +235,33 @@ export function Home() {
 
   return (
     <div className="relative flex h-full w-full flex-col">
-      <PageHeader
-        title="Inicio"
-        subtitle={`Resumen operativo · ${proper(currentMonthName())}`}
-        toolbarExtra={
-          <button
-            type="button"
+      {/* Desktop: PageHeader con el botón de Descansos. En mobile el PageHeader se
+          oculta (el título vive en el header celeste) y el botón se inyecta ahí. */}
+      <div className="hidden lg:block">
+        <PageHeader
+          title="Inicio"
+          subtitle={`Resumen operativo · ${proper(currentMonthName())}`}
+          toolbarExtra={
+            <DescansosTrigger
+              tone="light"
+              count={descansosHoy.length}
+              hasActivos={descansos.activos.length > 0}
+              onClick={() => setDescansosOpen(true)}
+            />
+          }
+        />
+      </div>
+      {/* Mobile: botón de Descansos dentro del header celeste (AppShell) vía portal. */}
+      {headerSlot &&
+        createPortal(
+          <DescansosTrigger
+            tone="header"
+            count={descansosHoy.length}
+            hasActivos={descansos.activos.length > 0}
             onClick={() => setDescansosOpen(true)}
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-wash-canvas px-3 text-sm font-medium text-wash-text-strong ring-1 ring-wash-border transition-colors hover:bg-wash-border/40"
-          >
-            <Coffee size={15} className="shrink-0 text-wash-brand" />
-            <span>Descansos</span>
-            {descansosHoy.length > 0 && (
-              <span
-                className={cn(
-                  'ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
-                  descansos.activos.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-wash-surface-2 text-wash-text-muted'
-                )}
-              >
-                {descansosHoy.length}
-              </span>
-            )}
-          </button>
-        }
-      />
+          />,
+          headerSlot
+        )}
       <LoadingOverlay visible={homeLoading} label="Cargando resumen…" />
 
       {homeError ? (
@@ -560,6 +571,54 @@ export function Home() {
         </ModalActions>
       </Modal>
     </div>
+  );
+}
+
+// ---- Botón "Descansos" (desktop: PageHeader claro · mobile: header celeste) ----
+
+function DescansosTrigger({
+  tone,
+  count,
+  hasActivos,
+  onClick,
+}: {
+  tone: 'light' | 'header';
+  count: number;
+  hasActivos: boolean;
+  onClick: () => void;
+}) {
+  const onHeader = tone === 'header';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Ver descansos de hoy"
+      className={cn(
+        'flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors',
+        onHeader
+          ? 'text-white/95 hover:bg-white/10'
+          : 'bg-wash-canvas text-wash-text-strong ring-1 ring-wash-border hover:bg-wash-border/40'
+      )}
+    >
+      <Coffee size={16} className={cn('shrink-0', onHeader ? 'text-white' : 'text-wash-brand')} />
+      <span>Descansos</span>
+      {count > 0 && (
+        <span
+          className={cn(
+            'ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+            onHeader
+              ? hasActivos
+                ? 'bg-amber-300 text-amber-950'
+                : 'bg-white/25 text-white'
+              : hasActivos
+                ? 'bg-amber-100 text-amber-700'
+                : 'bg-wash-surface-2 text-wash-text-muted'
+          )}
+        >
+          {count}
+        </span>
+      )}
+    </button>
   );
 }
 

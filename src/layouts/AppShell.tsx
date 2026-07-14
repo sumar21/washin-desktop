@@ -73,6 +73,9 @@ export function AppShell() {
                 {moduleNameForPath(location.pathname)}
               </span>
             </div>
+            {/* Slot para acciones de la pantalla (ej. botón Descansos del Home) — las
+                pantallas lo llenan por portal para no ocupar espacio en el contenido. */}
+            <div id="app-header-actions" className="flex shrink-0 items-center gap-1.5" />
           </div>
         </header>
 
