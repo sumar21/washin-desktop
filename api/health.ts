@@ -26,7 +26,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
     })
   );
 
-  let token: Record<string, unknown> = { tried: false };
+  let token: Record<string, unknown>;
   try {
     const tenant = (process.env.AZURE_TENANT_ID ?? '').trim();
     const body = new URLSearchParams({

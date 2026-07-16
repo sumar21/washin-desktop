@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createItem, updateItem, getItem, GraphError } from '../_lib/graph.js';
 import { LIST_IDS, mapEdificioAbm, edificioAbmSelectFields, canEditAbm } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { cascadeBajaEdificio, cascadeUpdateEdificio } from '../_lib/cascadas.js';
 
 interface EdificioInput {
   edificio?: string; // Micasa (nombre)
@@ -86,14 +87,22 @@ async function update(body: Body, res: VercelResponse) {
   if (!id) return res.status(400).json({ error: 'invalid_id' });
   const current = await getItem(LIST_IDS.edificios, id, edificioAbmSelectFields());
   if (!current) return res.status(404).json({ error: 'not_found', message: 'El edificio no existe' });
+  const prev = mapEdificioAbm(current);
   await updateItem(LIST_IDS.edificios, id, toFields(body));
   const updated = mapEdificioAbm((await getItem(LIST_IDS.edificios, id, edificioAbmSelectFields()))!);
+  await cascadeUpdateEdificio(prev, updated);
   return res.status(200).json(updated);
 }
 
 async function baja(body: Body, res: VercelResponse) {
   const id = Number(body.id);
   if (!id) return res.status(400).json({ error: 'invalid_id' });
+  const current = await getItem(LIST_IDS.edificios, id, edificioAbmSelectFields());
+  if (!current) return res.status(404).json({ error: 'not_found', message: 'El edificio no existe' });
+  const prev = mapEdificioAbm(current);
+  if (prev.Codigo && String(current.Status) === 'ALTA') {
+    await cascadeBajaEdificio(prev.Codigo);
+  }
   await updateItem(LIST_IDS.edificios, id, { Status: 'BAJA' });
   return res.status(200).json({ ID: id, Status: 'BAJA' });
 }

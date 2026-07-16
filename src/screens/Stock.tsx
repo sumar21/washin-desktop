@@ -6,17 +6,20 @@ import {
   Wind,
   Cog,
   Boxes,
-  Search,
   Plus,
   Minus,
   Check,
   X,
   AlertCircle,
+  SearchX,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal, ModalActions } from '@/components/Modal';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PopoverClose } from '@/components/ui/popover';
@@ -73,6 +76,7 @@ export function Stock() {
   const [editing, setEditing] = useState<StockItem | null>(null);
   const [editQty, setEditQty] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
   const [assigning, setAssigning] = useState<StockItem | null>(null);
   // Multi-select: empty array means "all types".
   const [filterTipos, setFilterTipos] = useState<TipoStock[]>([]);
@@ -105,6 +109,27 @@ export function Stock() {
     );
 
   const canEdit = VarTipoUser === 'Admin' || VarTipoUser === 'Jefe Taller';
+
+  const hasFiltros = query.trim() !== '' || filterTipos.length > 0;
+  const limpiarFiltros = () => {
+    setQuery('');
+    setFilterTipos([]);
+  };
+
+  const emptyStock = (
+    <EmptyState
+      icon={SearchX}
+      title={hasFiltros ? 'No se encontraron items' : 'Sin items en stock'}
+      description="Probá con otros filtros o ajustá la búsqueda."
+      action={
+        hasFiltros && (
+          <Button variant="outline" onClick={limpiarFiltros}>
+            Limpiar filtros
+          </Button>
+        )
+      }
+    />
+  );
 
   // Derived
   const totales = useMemo(() => {
@@ -226,13 +251,7 @@ export function Stock() {
       {/* MOBILE (<lg): una card por item (DESIGN.md §5.4) */}
       <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-4 pt-3 lg:hidden">
         {filtered.length === 0 ? (
-          <div className="flex h-[220px] flex-col items-center justify-center text-center">
-            <div className="mb-3 rounded-2xl bg-wash-surface-2 p-3 text-wash-text-muted">
-              <Search size={26} strokeWidth={1.6} />
-            </div>
-            <p className="text-sm font-semibold text-wash-text-strong">No se encontraron items</p>
-            <p className="mt-1 text-xs text-wash-text-muted">Probá con otros filtros o ajustá la búsqueda.</p>
-          </div>
+          emptyStock
         ) : (
           filtered.map((row) => {
             const meta = tipoMeta[row.Tipo_ST] ?? TIPO_FALLBACK;
@@ -321,17 +340,7 @@ export function Stock() {
           </div>
           <div className="flex-1 overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="flex h-[280px] flex-col items-center justify-center text-center">
-                <div className="mb-3 rounded-2xl bg-wash-surface-2 p-3 text-wash-text-muted">
-                  <Search size={28} strokeWidth={1.6} />
-                </div>
-                <p className="text-sm font-semibold text-wash-text-strong">
-                  No se encontraron items
-                </p>
-                <p className="mt-1 text-xs text-wash-text-muted">
-                  Probá con otros filtros o ajustá la búsqueda.
-                </p>
-              </div>
+              emptyStock
             ) : (
               filtered.map((row) => {
                 // Fallback defensivo: 04.Stock tiene datos sucios (p. ej. filas con Tipo_ST
@@ -420,7 +429,9 @@ export function Stock() {
       {/* --- Edit modal --- */}
       <Modal
         open={!!editing}
-        onClose={() => setEditing(null)}
+        onClose={() => {
+          if (!editSaving) setEditing(null);
+        }}
         title={editing ? `Editar cantidad — ${proper(editing.Item_ST)}` : ''}
         width={420}
       >
@@ -465,26 +476,38 @@ export function Stock() {
         <ModalActions>
           <button
             type="button"
+            disabled={editSaving}
             onClick={() => setEditing(null)}
-            className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+            className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
             type="button"
+            disabled={editSaving}
             onClick={async () => {
               if (!editing) return;
+              setEditSaving(true);
               setEditError(null);
               try {
                 await patchStock(editing.ID, { Cantidad_ST: Number(editQty) || 0 });
                 setEditing(null);
               } catch (err) {
                 setEditError(err instanceof Error ? err.message : 'No se pudo guardar la cantidad.');
+              } finally {
+                setEditSaving(false);
               }
             }}
-            className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark"
+            className="inline-flex items-center rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Guardar
+            {editSaving ? (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" />
+                Guardando…
+              </>
+            ) : (
+              'Guardar'
+            )}
           </button>
         </ModalActions>
       </Modal>

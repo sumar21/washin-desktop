@@ -31,6 +31,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { type Column } from '@/components/DataTable';
 import { GridPanel, type GridView } from '@/components/dashboard/GridPanel';
 import { KpiCard } from '@/components/dashboard/widgets';
+import { EmptyState } from '@/components/EmptyState';
 import { CHART_GRID, X_TICK, AXIS, intFmt, money, pct } from '@/components/dashboard/shared';
 import {
   getDashboardIncidentes,
@@ -613,7 +614,7 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
               icon={PieIcon}
               title="Incidentes de servicio por categoría"
               subtitle="Solo servicio real (excluye cambios de máquina y controles OK)"
-              empty={porCategoria.length === 0}
+              empty={porCategoria.length === 0 && <EmptyState compact icon={PieIcon} title="Sin incidentes de servicio" />}
             >
               <div className="flex flex-col items-center gap-4 sm:flex-row lg:flex-col xl:flex-row">
                 <div className="relative shrink-0">
@@ -669,7 +670,7 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
               icon={Building2}
               title="Top edificios con más incidentes"
               subtitle={edifMetric === 'inc' ? 'Ranking por cantidad — top 8' : 'Ranking por valor de repuestos — top 8'}
-              empty={topEdificios.length === 0}
+              empty={topEdificios.length === 0 && <EmptyState compact icon={Building2} title="Sin edificios con incidentes" />}
               right={
                 <SegToggle
                   value={edifMetric}
@@ -688,7 +689,7 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
               icon={Wrench}
               title="Edificios con más incidentes por máquina"
               subtitle="Promedio de incidentes por máquina — top 8"
-              empty={topMaquinas.length === 0}
+              empty={topMaquinas.length === 0 && <EmptyState compact icon={Wrench} title="Sin datos" />}
             >
               <RankBars data={topMaquinas} />
             </ChartCard>
@@ -743,7 +744,7 @@ function ChartCard({
   title: string;
   subtitle: string;
   className?: string;
-  empty?: boolean;
+  empty?: ReactNode;
   right?: ReactNode;
   children: ReactNode;
 }) {
@@ -760,15 +761,7 @@ function ChartCard({
           </span>
         )}
       </CardHeader>
-      <CardContent>
-        {empty ? (
-          <div className="flex h-[172px] w-full items-center justify-center text-sm text-wash-text-muted">
-            Sin datos para mostrar.
-          </div>
-        ) : (
-          children
-        )}
-      </CardContent>
+      <CardContent>{empty ? empty : children}</CardContent>
     </Card>
   );
 }

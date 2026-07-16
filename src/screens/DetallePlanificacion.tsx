@@ -19,6 +19,7 @@ import { Modal, ModalActions } from '@/components/Modal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
+import { EmptyState } from '@/components/EmptyState';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import type { PlanifRuta, PlanifCircuito, PlanifEdificio } from '@/types/domain';
@@ -261,7 +262,13 @@ export function DetallePlanificacion() {
                 rows={filtered}
                 rowKey={(r) => r.ID}
                 columns={columns}
-                empty="Sin rutas en este mes."
+                empty={
+                  <EmptyState
+                    icon={MapPin}
+                    title="Sin rutas planificadas"
+                    description="Este mes no tiene rutas asignadas todavía."
+                  />
+                }
                 onRowClick={(r) => setViewing(r)}
                 mobileCard={mobileCard}
               />
@@ -404,9 +411,12 @@ function RutaDetailModal({
       {/* Circuitos grid */}
       <div className="mt-3 space-y-2.5">
         {circuitos.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-wash-border bg-wash-surface-2/30 p-8 text-center text-sm text-wash-text-muted">
-            Esta ruta no tiene circuitos planificados.
-          </div>
+          <EmptyState
+            compact
+            icon={MapPin}
+            title="Sin circuitos"
+            description="Esta ruta no tiene circuitos planificados."
+          />
         ) : (
           circuitos.map((c) => {
             const edifs = edificios.filter(
@@ -477,8 +487,9 @@ function RutaDetailModal({
                 {isOpen && (
                 <ul className="divide-y divide-wash-divider/60">
                   {edifs.length === 0 ? (
-                    <li className="px-3 py-3 text-xs italic text-wash-text-muted">
-                      Sin edificios cargados.
+                    <li className="flex items-center gap-1.5 px-3 py-3 text-xs italic text-wash-text-muted">
+                      <Building2 size={12} className="shrink-0" />
+                      Sin edificios cargados en este circuito.
                     </li>
                   ) : (
                     edifs.map((e) => {

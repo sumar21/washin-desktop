@@ -13,9 +13,12 @@ import {
   Clock,
   User2,
   Map as MapIcon,
+  Loader2,
 } from 'lucide-react';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
 import {
   Select,
@@ -245,7 +248,14 @@ export function ConfigCircuitos({ query, addOpen, setAddOpen, canEdit = false }:
             rows={filtered}
             rowKey={(c) => c.ID}
             columns={columns}
-            empty="Sin circuitos registrados."
+            empty={
+              <EmptyState
+                icon={GitBranch}
+                title="Sin circuitos"
+                description="Todavía no hay circuitos configurados."
+                action={canEdit && <Button onClick={() => setAddOpen(true)}>Agregar circuito</Button>}
+              />
+            }
             onRowClick={(c) => setViewing(c)}
             mobileCard={(c) => {
               const es = edifsByCircuito.get(c.NroCircuito) ?? [];
@@ -367,6 +377,8 @@ function CircuitoDetailModal({
 }) {
   const [pickId, setPickId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState<'add' | 'obs' | 'remove' | null>(null);
+  const [removingId, setRemovingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [obs, setObs] = useState('');
   const [obsDirty, setObsDirty] = useState(false);
@@ -379,8 +391,9 @@ function CircuitoDetailModal({
     .filter((e) => e.Codigo && !occupied.has(e.Codigo) && !yaEnEste.has(e.Codigo))
     .map((e) => ({ value: String(e.ID), label: e.Edificio, sublabel: e.Codigo ? `${e.Codigo} · ${e.Direccion}` : e.Direccion }));
 
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (kind: 'add' | 'obs' | 'remove', fn: () => Promise<void>) => {
     setBusy(true);
+    setBusyKind(kind);
     setError(null);
     try {
       await fn();
@@ -388,6 +401,8 @@ function CircuitoDetailModal({
       setError(err instanceof Error ? err.message : 'No se pudo completar la operación.');
     } finally {
       setBusy(false);
+      setBusyKind(null);
+      setRemovingId(null);
     }
   };
 
@@ -435,12 +450,12 @@ function CircuitoDetailModal({
               onClick={() => {
                 const id = Number(pickId);
                 if (!id) return;
-                run(async () => { await onAddEdificio(id); setPickId(null); });
+                run('add', async () => { await onAddEdificio(id); setPickId(null); });
               }}
               className="flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-wash-action px-3.5 text-[12.5px] font-semibold text-white transition hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Plus size={15} />
-              Agregar
+              {busyKind === 'add' ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+              {busyKind === 'add' ? 'Agregando…' : 'Agregar'}
             </button>
           </div>
           <p className="mt-1.5 text-[10.5px] text-wash-text-muted">Solo aparecen edificios que no están en ningún otro circuito.</p>
@@ -451,9 +466,12 @@ function CircuitoDetailModal({
       <div className="mt-4">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">Edificios ({edificiosDelCircuito.length})</p>
         {edificiosDelCircuito.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-wash-border bg-wash-surface-2/30 p-6 text-center text-sm text-wash-text-muted">
-            Este circuito no tiene edificios.
-          </div>
+          <EmptyState
+            compact
+            icon={Building2}
+            title="Sin edificios en este circuito"
+            description="Agregá edificios libres desde el buscador de arriba."
+          />
         ) : (
           <ul className="space-y-2">
             {edificiosDelCircuito.map((e) => (
@@ -477,11 +495,11 @@ function CircuitoDetailModal({
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => run(() => onRemoveEdificio(e.ID))}
+                    onClick={() => { setRemovingId(e.ID); run('remove', () => onRemoveEdificio(e.ID)); }}
                     title="Quitar del circuito"
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-rose-600 ring-1 ring-rose-500/30 transition hover:bg-rose-500/10 hover:ring-rose-500 disabled:opacity-50"
                   >
-                    <X size={14} />
+                    {removingId === e.ID ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
                   </button>
                 )}
               </li>
@@ -507,10 +525,11 @@ function CircuitoDetailModal({
             <button
               type="button"
               disabled={busy}
-              onClick={() => run(async () => { await onUpdateObs(obs); setObsDirty(false); })}
-              className="mt-1.5 rounded-lg bg-wash-action px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-wash-action-dark disabled:opacity-50"
+              onClick={() => run('obs', async () => { await onUpdateObs(obs); setObsDirty(false); })}
+              className="mt-1.5 inline-flex items-center rounded-lg bg-wash-action px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-wash-action-dark disabled:opacity-50"
             >
-              Guardar observaciones
+              {busyKind === 'obs' && <Loader2 size={13} className="mr-1.5 animate-spin" />}
+              {busyKind === 'obs' ? 'Guardando…' : 'Guardar observaciones'}
             </button>
           )}
         </div>
@@ -647,9 +666,12 @@ function AddCircuitoModal({
 
         <div className="mt-3">
           {picked.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-wash-border bg-wash-surface/60 px-3 py-4 text-center text-[11.5px] italic text-wash-text-muted">
-              Agregá al menos un edificio.
-            </p>
+            <EmptyState
+              compact
+              icon={Building2}
+              title="Todavía no elegiste edificios"
+              description="Un circuito necesita al menos un edificio."
+            />
           ) : (
             <ul className="space-y-1.5">
               {picked.map((e, i) => (
@@ -674,7 +696,7 @@ function AddCircuitoModal({
       </div>
 
       <ModalActions>
-        <button type="button" onClick={() => { reset(); onClose(); }} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2">
+        <button type="button" disabled={saving} onClick={() => { reset(); onClose(); }} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:opacity-50">
           Cancelar
         </button>
         <button
@@ -692,8 +714,9 @@ function AddCircuitoModal({
               setSaving(false);
             }
           }}
-          className="rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
+          {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
           {saving ? 'Creando…' : 'Crear circuito'}
         </button>
       </ModalActions>

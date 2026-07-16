@@ -43,6 +43,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
+import { EmptyState } from '@/components/EmptyState';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
 import { KpiCard } from '@/components/dashboard/widgets';
@@ -88,6 +89,7 @@ export function Home() {
   const descansosHoy = useAppStore((s) => s.CollectDescansosHoy);
   const loggedUser = useAppStore((s) => s.loggedUser);
   const VarUsuario = useAppStore((s) => s.VarUsuario);
+  const VarTipoUser = useAppStore((s) => s.VarTipoUser);
   const removeRegistro = useAppStore((s) => s.removeRegistro);
   const fetchHome = useAppStore((s) => s.fetchHome);
   const fetchStock = useAppStore((s) => s.fetchStock);
@@ -96,6 +98,8 @@ export function Home() {
   const fetchVentilaciones = useAppStore((s) => s.fetchVentilaciones);
 
   const [deletingRegistro, setDeletingRegistro] = useState<Registro | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [descansosOpen, setDescansosOpen] = useState(false);
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [homeLoading, setHomeLoading] = useState(true);
@@ -224,6 +228,23 @@ export function Home() {
   }, [descansosHoy]);
 
   const nombre = loggedUser?.Nombre?.trim() || (VarUsuario ? proper(VarUsuario) : '');
+
+  // PowerApp: la baja de una visita sólo es visible para Admin y sobre visitas Pendientes.
+  const isAdmin = VarTipoUser === 'Admin';
+
+  const handleDeleteRegistro = useCallback(async () => {
+    if (!deletingRegistro) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await removeRegistro(deletingRegistro.ID);
+      setDeletingRegistro(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'No se pudo eliminar la visita.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [deletingRegistro, removeRegistro]);
 
   const tecnicoConfig: ChartConfig = {
     total: { label: 'Visitas', color: 'var(--color-wash-brand)' },
@@ -397,7 +418,12 @@ export function Home() {
                     </BarChart>
                   </ChartContainer>
                 ) : (
-                  <p className="py-16 text-center text-sm text-wash-text-muted">Sin visitas este mes</p>
+                  <EmptyState
+                    compact
+                    icon={Users}
+                    title="Sin actividad este mes"
+                    description="Todavía no hay visitas registradas por técnico."
+                  />
                 )}
               </CardContent>
             </Card>
@@ -478,7 +504,12 @@ export function Home() {
               </CardHeader>
               <CardContent className="flex-1">
                 {atencion.length === 0 ? (
-                  <EmptyState icon={CheckCircle2} title="Todo al día" />
+                  <EmptyState
+                    tone="emerald"
+                    icon={CheckCircle2}
+                    title="Todo al día"
+                    description="No hay incidentes ni ventilaciones que requieran acción."
+                  />
                 ) : (
                   <div className="flex max-h-[380px] flex-col gap-1.5 overflow-y-auto pr-0.5">
                     {atencion.map((a) => (
@@ -507,11 +538,20 @@ export function Home() {
               </CardHeader>
               <CardContent className="flex-1">
                 {CollectResumen.length === 0 ? (
-                  <EmptyState icon={Inbox} title="Sin visitas este mes" />
+                  <EmptyState
+                    icon={Inbox}
+                    title="Sin visitas este mes"
+                    description="Cuando se registren visitas van a aparecer acá."
+                  />
                 ) : (
                   <div className="grid max-h-[440px] grid-cols-1 gap-2 overflow-y-auto pr-0.5 md:grid-cols-2">
                     {CollectResumen.slice(0, 12).map((r) => (
-                      <VisitaCard key={r.ID} registro={r} onDelete={() => setDeletingRegistro(r)} />
+                      <VisitaCard
+                        key={r.ID}
+                        registro={r}
+                        canDelete={isAdmin && r.Estado === 'Pendiente'}
+                        onDelete={() => setDeletingRegistro(r)}
+                      />
                     ))}
                   </div>
                 )}
@@ -530,13 +570,15 @@ export function Home() {
             ? `¿Deseás eliminar la visita a ${deletingRegistro.Edificio}? Esta acción no se puede deshacer.`
             : ''
         }
-        confirmLabel="Eliminar"
+        confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
         cancelLabel="Cancelar"
-        onCancel={() => setDeletingRegistro(null)}
-        onConfirm={() => {
-          if (deletingRegistro) removeRegistro(deletingRegistro.ID);
+        busy={deleteBusy}
+        error={deleteError}
+        onCancel={() => {
           setDeletingRegistro(null);
+          setDeleteError(null);
         }}
+        onConfirm={handleDeleteRegistro}
       />
 
       {/* Descansos de hoy — modal (activos y finalizados) */}
@@ -552,7 +594,12 @@ export function Home() {
           <span className="ml-auto tabular-nums text-wash-text-muted">{formatToday()}</span>
         </div>
         {descansosHoy.length === 0 ? (
-          <EmptyState icon={Coffee} title="Sin descansos hoy" />
+          <EmptyState
+            compact
+            icon={Coffee}
+            title="Sin descansos hoy"
+            description="Ningún técnico registró un descanso en el día."
+          />
         ) : (
           <div className="flex max-h-[58vh] flex-col gap-1.5 overflow-y-auto pr-0.5">
             {descansos.ordenados.map((d) => (
@@ -734,7 +781,15 @@ function DescansoRow({ descanso }: { descanso: Descanso }) {
 
 // ---- Visita card ----
 
-function VisitaCard({ registro, onDelete }: { registro: Registro; onDelete: () => void }) {
+function VisitaCard({
+  registro,
+  canDelete,
+  onDelete,
+}: {
+  registro: Registro;
+  canDelete: boolean;
+  onDelete: () => void;
+}) {
   // Clamp a [0,100]: la data real trae Progreso sucio (p. ej. 700) que rompía la barra.
   const progreso = Math.max(0, Math.min(100, registro.Progreso ?? (registro.Estado === 'Finalizado' ? 100 : 0)));
   // Pendiente sólo si no empezó. Con progreso > 0 ya cuenta como Finalizado.
@@ -752,15 +807,17 @@ function VisitaCard({ registro, onDelete }: { registro: Registro; onDelete: () =
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <StatusBadge status={status} />
-          <button
-            type="button"
-            onClick={onDelete}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-wash-text-faint transition-colors hover:bg-rose-50 hover:text-rose-600"
-            title="Eliminar visita"
-            aria-label="Eliminar visita"
-          >
-            <Trash2 size={13} />
-          </button>
+          {canDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex h-6 w-6 items-center justify-center rounded-md text-wash-text-faint transition-colors hover:bg-rose-50 hover:text-rose-600"
+              title="Eliminar visita"
+              aria-label="Eliminar visita"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -806,23 +863,6 @@ function KV({
       <Icon size={12} className="shrink-0 text-wash-text-faint" />
       <dt className="sr-only">{label}</dt>
       <dd className="truncate font-medium text-wash-text-strong">{value}</dd>
-    </div>
-  );
-}
-
-// ---- Empty state ----
-
-function EmptyState({
-  icon: Icon,
-  title,
-}: {
-  icon: typeof Inbox;
-  title: string;
-}) {
-  return (
-    <div className="flex min-h-[180px] flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-wash-border py-10 text-center text-wash-text-muted">
-      <Icon size={28} strokeWidth={1.6} className="opacity-30" />
-      <p className="mt-2 text-xs font-medium">{title}</p>
     </div>
   );
 }

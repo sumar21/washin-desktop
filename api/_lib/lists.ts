@@ -1,4 +1,7 @@
 import type { SharePointItem } from './graph.js';
+import { abmAccessMatrix, type AbmTab } from '../../src/lib/abmAccessMatrix.js';
+
+export type { AbmTab };
 
 /**
  * GUIDs de listas y mapeo de campos reales de SharePoint -> shapes del frontend
@@ -90,6 +93,15 @@ export function fechasHoy(now = new Date()) {
     // Sufijo único para IDUnivoco (equivale a HHmmmsms de la PowerApp).
     stamp: `${HH}${min}${ss}${ms}`,
   };
+}
+
+/** ['mm/yyyy' de hoy, 'mm/yyyy' de hoy+1 mes] en hora de Argentina (es-ES). */
+export function ventanaMesActualYSiguiente(now = new Date()): [string, string] {
+  const { mesAno } = fechasHoy(now); // mm/yyyy de hoy (ya tz-safe)
+  const [mm, yyyy] = mesAno.split('/').map(Number);
+  const nextMm = mm === 12 ? 1 : mm + 1;
+  const nextYyyy = mm === 12 ? yyyy + 1 : yyyy;
+  return [mesAno, `${String(nextMm).padStart(2, '0')}/${nextYyyy}`];
 }
 
 /** Segmentos que se reciben como "repuesto simple" (solo suman a 04.Stock, sin crear máquina en 08). */
@@ -1025,19 +1037,10 @@ export function desglosarFechaDDMMYYYY(ddmmyyyy: string): { mesAno: string; ano:
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── Control de acceso por rol a los ABMs (fiel a cmbox_tipo_CR + DisplayMode) ──
-export type AbmTab = 'Rutas' | 'Circuitos' | 'Edificios' | 'Repuestos';
-
-const ABM_EDIT_ROLES = new Set(['Admin', 'Supervisor Mantenimiento', 'Supervisor Lider']);
-const ABM_READONLY_EDIFICIOS_ROLES = new Set(['Supervisor Ventilaciones', 'Atencion Al Cliente']);
-// El catálogo de repuestos lo maneja el taller: Jefe Taller ve SOLO esa pestaña.
-const REPUESTOS_ONLY_ROLES = new Set(['Jefe Taller']);
-
-/** Pestañas ABM visibles + si el rol puede editar (o es solo-lectura). */
+// La matriz vive en src/lib/abmAccessMatrix.ts (único origen de verdad, compartido
+// con el front) para evitar drift entre los gates de UI y de escritura.
 export function abmAccess(rol: string | undefined): { tabs: AbmTab[]; canEdit: boolean } {
-  if (rol && ABM_EDIT_ROLES.has(rol)) return { tabs: ['Rutas', 'Circuitos', 'Edificios', 'Repuestos'], canEdit: true };
-  if (rol && REPUESTOS_ONLY_ROLES.has(rol)) return { tabs: ['Repuestos'], canEdit: true };
-  if (rol && ABM_READONLY_EDIFICIOS_ROLES.has(rol)) return { tabs: ['Edificios'], canEdit: false };
-  return { tabs: [], canEdit: false };
+  return abmAccessMatrix(rol);
 }
 
 /** ¿El rol puede EDITAR el ABM `tab`? Gate server-side de los writes. */

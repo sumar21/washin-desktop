@@ -7,8 +7,11 @@ import {
   MapPin,
   Hash,
   GitBranch,
+  Loader2,
 } from 'lucide-react';
 import { DataTable, type Column } from '@/components/DataTable';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -190,7 +193,14 @@ export function ConfigRutas({ query, addOpen, setAddOpen, canEdit = false }: Con
             rows={rows}
             rowKey={(r) => r.ID}
             columns={columns}
-            empty="Sin rutas registradas."
+            empty={
+              <EmptyState
+                icon={MapIcon}
+                title="Sin rutas"
+                description="Creá tu primera ruta para empezar a armar circuitos."
+                action={canEdit && <Button onClick={() => setAddOpen(true)}>Agregar ruta</Button>}
+              />
+            }
             onRowClick={(r) => setViewing(r)}
             mobileCard={(r) => {
               const cs = circuitsByRuta.get(r.NroRuta) ?? [];
@@ -330,8 +340,13 @@ function DetalleRutaModal({
 
       <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {circuitosRuta.length === 0 ? (
-          <div className="col-span-full rounded-xl border border-dashed border-wash-border bg-wash-surface-2/30 p-8 text-center text-sm text-wash-text-muted">
-            Esta ruta no tiene circuitos asignados.
+          <div className="col-span-full">
+            <EmptyState
+              compact
+              icon={GitBranch}
+              title="Ruta sin circuitos"
+              description="Asigná circuitos a esta ruta desde la pestaña Circuitos."
+            />
           </div>
         ) : (
           circuitosRuta.map((c) => {
@@ -436,7 +451,7 @@ function AddRutaModal({
       {error && <p className="mt-3 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">{error}</p>}
 
       <ModalActions>
-        <button type="button" onClick={() => { reset(); onClose(); }} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2">
+        <button type="button" onClick={() => { reset(); onClose(); }} disabled={saving} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50">
           Cancelar
         </button>
         <button
@@ -454,8 +469,9 @@ function AddRutaModal({
               setSaving(false);
             }
           }}
-          className="rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
+          {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
           {saving ? 'Creando…' : 'Crear ruta'}
         </button>
       </ModalActions>

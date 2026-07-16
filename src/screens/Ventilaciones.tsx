@@ -9,8 +9,12 @@ import {
   Plus,
   CheckCircle2,
   Zap,
+  Wind,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -425,9 +429,18 @@ export function Ventilaciones() {
               rowKey={(r) => r.ID}
               columns={columns}
               empty={
-                isProximas
-                  ? 'No hay ventilaciones próximas (90 días) para los filtros aplicados.'
-                  : 'No hay ventilaciones en el mes elegido para los filtros aplicados.'
+                <EmptyState
+                  icon={Wind}
+                  title={isProximas ? 'Sin ventilaciones próximas' : 'Sin ventilaciones este mes'}
+                  description={
+                    hasFilters
+                      ? 'Probá quitar algunos filtros.'
+                      : isProximas
+                        ? 'No hay ventilaciones dentro de la ventana de 90 días.'
+                        : 'No hay ventilaciones programadas para el período elegido.'
+                  }
+                  action={hasFilters ? <Button variant="outline" onClick={clearFilters}>Limpiar filtros</Button> : undefined}
+                />
               }
               mobileCard={(v) => {
                 const shown = v.FechaProgramada_VE || v.ProximaLimpieza_VE;
@@ -830,7 +843,8 @@ function AssignModal({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          disabled={saving}
+          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -864,7 +878,7 @@ function AssignModal({
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <UserCog size={15} />
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <UserCog size={15} />}
           {saving ? 'Asignando…' : 'Asignar'}
         </button>
       </ModalActions>
@@ -1034,7 +1048,8 @@ function AddEdificioModal({
             reset();
             onClose();
           }}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          disabled={saving}
+          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -1063,7 +1078,7 @@ function AddEdificioModal({
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Plus size={15} />
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
           {saving ? 'Agregando…' : 'Agregar'}
         </button>
       </ModalActions>

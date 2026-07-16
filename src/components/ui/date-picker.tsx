@@ -66,6 +66,7 @@ export function DatePicker({
 }
 
 /** Parse a DD/MM/YYYY string into a Date, or return undefined if invalid. */
+// eslint-disable-next-line react-refresh/only-export-components -- date helpers are co-located with the DatePicker primitive and imported by consumers.
 export function parseDateString(value: string): Date | undefined {
   if (!value) return undefined;
   const parts = value.split('/');
@@ -77,4 +78,5 @@ export function parseDateString(value: string): Date | undefined {
   return date;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- date helpers are co-located with the DatePicker primitive and imported by consumers.
 export { formatDate as formatDateDDMMYYYY };

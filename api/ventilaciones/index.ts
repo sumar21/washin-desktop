@@ -11,6 +11,7 @@ import {
   desglosarFechaDDMMYYYY,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { puedeAccederModulo } from '../_lib/permisos.js';
 
 const ESTADOS_ABIERTOS_FILTER =
   `fields/Estado_VE eq 'Pendiente' or fields/Estado_VE eq 'Asignada' or fields/Estado_VE eq 'Programada'`;
@@ -87,6 +88,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { mesAno, ano } = desglosarFechaDDMMYYYY(proxima);
 
     try {
+      if (!(await puedeAccederModulo(session.rol, 'Ventilacion'))) {
+        return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Ventilacion.' });
+      }
       // 1) Marca el edificio como parte del circuito (frecuencia + grupo + flag).
       await updateItem(LIST_IDS.edificios, idEdificio, {
         Frecuencia_ED: frecuencia,

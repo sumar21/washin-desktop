@@ -31,7 +31,10 @@ async function ajustarStock(key: string, delta: number): Promise<void> {
   const rows = (await listItems(LIST_IDS.stock, { select: stockSelectFields(), filter: `fields/Status_ST eq 'Activo'` })).map(mapStock);
   const k = key.trim().toLowerCase();
   const row = rows.find((r) => r.Item_ST.trim().toLowerCase() === k);
-  if (!row) return;
+  if (!row) {
+    console.warn(`ajustarStock: no se encontró fila de stock para Item_ST='${key}' (delta ${delta > 0 ? '+' : ''}${delta}); el ajuste se omitió`);
+    return;
+  }
   await updateItem(LIST_IDS.stock, row.ID, { Cantidad_ST: String(Math.max(0, row.Cantidad_ST + delta)) });
 }
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Trash2, Plus, HelpCircle } from 'lucide-react';
+import { Trash2, Plus, PackagePlus, Loader2 } from 'lucide-react';
 import { ModalActions } from '@/components/Modal';
+import { EmptyState } from '@/components/EmptyState';
 import { Combobox } from '@/components/ui/combobox';
 import { tipoLabel } from '@/lib/utils';
 import type {
@@ -36,7 +37,7 @@ export function EditCompraForm({
   initialDetalles: DetalleCompra[];
   catalog: StockCatalogItem[];
   onCancel: () => void;
-  onSave: (changes: EditCompraChanges) => void;
+  onSave: (changes: EditCompraChanges) => void | Promise<void>;
 }) {
   const [lines, setLines] = useState<EditLine[]>(() =>
     initialDetalles.map((d) => ({
@@ -49,6 +50,7 @@ export function EditCompraForm({
   );
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   const [obs, setObs] = useState(pedido.Observaciones_PC ?? '');
+  const [saving, setSaving] = useState(false);
 
   // Composer for new lines
   const [newCatalogId, setNewCatalogId] = useState<number | ''>('');
@@ -124,17 +126,12 @@ export function EditCompraForm({
         </div>
         <div className="rounded-xl border border-wash-border bg-wash-surface-2/30 p-2">
           {lines.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-3 py-6 text-center">
-              <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
-                <HelpCircle size={18} strokeWidth={1.7} />
-              </div>
-              <p className="text-[12.5px] font-bold text-wash-text-strong">
-                Sin items
-              </p>
-              <p className="mt-0.5 text-[11px] text-wash-text-muted">
-                Agregá al menos un ítem desde el composer de abajo.
-              </p>
-            </div>
+            <EmptyState
+              compact
+              icon={PackagePlus}
+              title="Sin items"
+              description="Agregá al menos un ítem desde el composer de abajo."
+            />
           ) : (
             <ul className="space-y-1.5">
               {lines.map((l, idx) => (
@@ -276,17 +273,33 @@ export function EditCompraForm({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          disabled={saving}
+          className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
         <button
           type="button"
-          disabled={!canSave}
-          onClick={() => onSave({ obs, lines, removedIds })}
-          className="rounded-lg bg-wash-action px-4 py-2 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!canSave || saving}
+          onClick={async () => {
+            if (!canSave || saving) return;
+            setSaving(true);
+            try {
+              await onSave({ obs, lines, removedIds });
+            } finally {
+              setSaving(false);
+            }
+          }}
+          className="flex items-center rounded-lg bg-wash-action px-4 py-2 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Guardar cambios
+          {saving ? (
+            <>
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Guardando…
+            </>
+          ) : (
+            'Guardar cambios'
+          )}
         </button>
       </ModalActions>
     </div>

@@ -510,6 +510,11 @@ export function bajaEdificio(id: number): Promise<{ ID: number; Status: string }
   return request('/abm/edificios', { method: 'POST', body: JSON.stringify({ action: 'baja', id }) });
 }
 
+// ── Registros (01.Registros) — baja lógica de una visita (Estado -> "Anulado") ──
+export function anularRegistro(id: number): Promise<{ ID: number; Estado: string }> {
+  return request('/home', { method: 'POST', body: JSON.stringify({ id }) });
+}
+
 // ── Stock Técnico (99.ABMRepuestos_Tecnico) ──────────────────────────────
 export interface StockTecnicosResponse {
   stockTecnicos: RepuestoTecnico[];

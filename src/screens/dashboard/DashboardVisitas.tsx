@@ -35,6 +35,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { type Column } from '@/components/DataTable';
 import { GridPanel, type GridView } from '@/components/dashboard/GridPanel';
 import { KpiCard } from '@/components/dashboard/widgets';
+import { EmptyState } from '@/components/EmptyState';
 import { CHART_GRID, X_TICK, AXIS, intFmt, pct } from '@/components/dashboard/shared';
 import { useAppStore } from '@/store/useAppStore';
 import { proper } from '@/lib/utils';
@@ -459,9 +460,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
               {months.length <= 1 ? (
                 <SingleMonthNote text="Ampliá el período a varios meses en Filtrar para ver la evolución mes a mes." />
               ) : evolucionVacia ? (
-                <div className="flex h-[220px] w-full items-center justify-center text-sm text-wash-text-muted">
-                  Sin datos para mostrar.
-                </div>
+                <EmptyState compact icon={TrendingUp} title="Sin resultados de control" />
               ) : (
                 <ChartContainer config={lineConfig} className="h-[220px] w-full">
                   <LineChart data={evolucion} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
@@ -487,7 +486,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
               icon={Activity}
               title="Estado del control"
               subtitle={`Ítems de control OK vs a revisar — ${periodo}`}
-              empty={donutTotal === 0}
+              empty={donutTotal === 0 && <EmptyState compact icon={ShieldCheck} title="Sin ítems de control" />}
             >
               <div className="flex flex-col items-center gap-4 sm:flex-row">
                 <div className="relative shrink-0">
@@ -542,7 +541,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
             icon={Users}
             title="Eficiencia por técnico"
             subtitle={`Tiempo promedio de visita y % de control OK — ${periodo}`}
-            empty={porTecnico.length === 0}
+            empty={porTecnico.length === 0 && <EmptyState compact icon={Users} title="Sin datos por técnico" />}
           >
             <TecnicoCombo data={porTecnico} />
           </ChartCard>
@@ -552,7 +551,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
             icon={AlertTriangle}
             title="Edificios por debajo del 100%"
             subtitle="Resultado de control incompleto"
-            empty={edificiosBajo.length === 0}
+            empty={edificiosBajo.length === 0 && <EmptyState compact icon={AlertTriangle} title="Sin edificios por debajo" />}
           >
             <HBar data={edificiosBajo} color={C_BRAND} suffix="%" domainMax={100} />
           </ChartCard>
@@ -593,7 +592,7 @@ function ChartCard({
   title: string;
   subtitle: string;
   className?: string;
-  empty?: boolean;
+  empty?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -607,15 +606,7 @@ function ChartCard({
           <Icon size={16} />
         </span>
       </CardHeader>
-      <CardContent>
-        {empty ? (
-          <div className="flex h-[172px] w-full items-center justify-center text-sm text-wash-text-muted">
-            Sin datos para mostrar.
-          </div>
-        ) : (
-          children
-        )}
-      </CardContent>
+      <CardContent>{empty ? empty : children}</CardContent>
     </Card>
   );
 }

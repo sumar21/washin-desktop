@@ -8,8 +8,12 @@ import {
   Wrench,
   UserCircle2,
   AlertCircle,
+  PackageOpen,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions } from '@/components/Modal';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
@@ -84,6 +88,31 @@ export function StockTecnicos() {
       )
       .sort((a, b) => a.Tecnico_RT.localeCompare(b.Tecnico_RT));
   }, [stockT, query, filterTecnico, filterRepuesto]);
+
+  const hasFiltros = filterTecnico.length > 0 || filterRepuesto.length > 0;
+  const limpiarFiltros = () => {
+    setFilterTecnico([]);
+    setFilterRepuesto([]);
+  };
+
+  const emptyStock = (
+    <EmptyState
+      icon={PackageOpen}
+      title="Sin repuestos asignados"
+      description={
+        hasFiltros
+          ? 'Ningún repuesto coincide con los filtros aplicados.'
+          : 'Ningún técnico tiene repuestos en su poder.'
+      }
+      action={
+        hasFiltros ? (
+          <Button variant="outline" onClick={limpiarFiltros}>
+            Limpiar filtros
+          </Button>
+        ) : undefined
+      }
+    />
+  );
 
   const columns: Column<RepuestoTecnico>[] = [
     {
@@ -194,7 +223,7 @@ export function StockTecnicos() {
         <ErrorState message={loadError} onRetry={load} />
       ) : (
         <>
-      {(filterTecnico.length > 0 || filterRepuesto.length > 0) && (
+      {hasFiltros && (
         <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-6 py-2 text-xs text-wash-text-muted">
           <span className="font-semibold uppercase tracking-wider">Filtros:</span>
           {[...filterTecnico, ...filterRepuesto].map((v) => (
@@ -207,10 +236,7 @@ export function StockTecnicos() {
           ))}
           <button
             type="button"
-            onClick={() => {
-              setFilterTecnico([]);
-              setFilterRepuesto([]);
-            }}
+            onClick={limpiarFiltros}
             className="ml-auto text-wash-text-muted hover:text-wash-text-strong"
           >
             Limpiar
@@ -223,7 +249,7 @@ export function StockTecnicos() {
           rows={filtered}
           rowKey={(r) => r.ID}
           columns={columns}
-          empty="Sin repuestos asignados"
+          empty={emptyStock}
           mobileCard={(r) => (
             <div className="rounded-xl border border-wash-border bg-wash-surface p-2.5 shadow-sm transition active:scale-[0.99]">
               {/* Fila 1: técnico (identificador) + acciones */}
@@ -515,12 +541,13 @@ function AssignModal({
       <ModalActions>
         <button
           type="button"
+          disabled={saving}
           onClick={() => {
             setTecnico('');
             setQty('1');
             onClose();
           }}
-          className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -542,7 +569,7 @@ function AssignModal({
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-6 py-3 text-[14px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <UserCog size={16} />
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <UserCog size={16} />}
           {saving ? 'Transfiriendo…' : 'Asignar'}
         </button>
       </ModalActions>
@@ -631,12 +658,13 @@ function ReingressModal({
       <ModalActions>
         <button
           type="button"
+          disabled={saving}
           onClick={() => {
             setQty('1');
             setError(null);
             onClose();
           }}
-          className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -657,7 +685,7 @@ function ReingressModal({
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-6 py-3 text-[14px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <ArrowLeftRight size={16} />
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeftRight size={16} />}
           {saving ? 'Reingresando…' : 'Aceptar'}
         </button>
       </ModalActions>
@@ -729,8 +757,9 @@ function EditQtyModal({
       <ModalActions>
         <button
           type="button"
+          disabled={saving}
           onClick={onClose}
-          className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          className="rounded-lg border border-wash-border px-6 py-3 text-[14px] font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -750,7 +779,7 @@ function EditQtyModal({
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-6 py-3 text-[14px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Pencil size={15} />
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <Pencil size={15} />}
           {saving ? 'Guardando…' : 'Guardar'}
         </button>
       </ModalActions>

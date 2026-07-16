@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, GraphError } from './_lib/graph.js';
+import { listItems, getItem, updateItem, GraphError } from './_lib/graph.js';
 import {
   LIST_IDS,
   mapRegistro,
@@ -17,13 +17,19 @@ function currentMesAno(): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'method_not_allowed' });
+  const session = readSession(req.headers.cookie);
+  if (!session) {
+    return res.status(401).json({ error: 'no_session' });
   }
 
-  if (!readSession(req.headers.cookie)) {
-    return res.status(401).json({ error: 'no_session' });
+  // Baja lógica de una visita: Estado -> "Anulado" (PowerApp: bt_cerrarPopUpFCE_5).
+  if (req.method === 'POST') {
+    return anularRegistro(req, res, session.rol);
+  }
+
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET, POST');
+    return res.status(405).json({ error: 'method_not_allowed' });
   }
 
   const mesAno = currentMesAno();
@@ -31,9 +37,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const [registrosRows, comprasRows, descansosRows] = await Promise.all([
+      // PowerApp (Screen_Home, CollectResumen): el resumen del mes excluye los
+      // registros "Anulado" — Filter('01.Registros', MesAño = ... And (Estado =
+      // "Pendiente" Or Estado = "Finalizado")).
       listItems(LIST_IDS.registros, {
         select: registrosSelectFields(),
-        filter: `fields/MesA_x00f1_o eq '${mesAno}'`,
+        filter: `fields/MesA_x00f1_o eq '${mesAno}' and (fields/Estado eq 'Pendiente' or fields/Estado eq 'Finalizado')`,
       }),
       listItems(LIST_IDS.detalleCompra, {
         select: detalleCompraSelectFields(),
@@ -53,6 +62,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (err) {
     console.error('home error', err);
+    const status = err instanceof GraphError ? 502 : 500;
+    return res.status(status).json({ error: 'server_error' });
+  }
+}
+
+// PowerApp (Screen_Home): la baja sólo es visible/ejecutable para Admin y sobre
+// visitas en estado "Pendiente" (Visible: VarTipoUser = "Admin" And Estado = "Pendiente").
+async function anularRegistro(req: VercelRequest, res: VercelResponse, rol: string | undefined) {
+  if (rol !== 'Admin') {
+    return res.status(403).json({ error: 'forbidden', message: 'Sólo un Admin puede anular visitas.' });
+  }
+
+  const id = Number((req.body as { id?: number | string } | undefined)?.id);
+  if (!id) return res.status(400).json({ error: 'invalid_id' });
+
+  try {
+    const current = await getItem(LIST_IDS.registros, id, registrosSelectFields());
+    if (!current) return res.status(404).json({ error: 'not_found', message: 'La visita no existe.' });
+    if (String(current.Estado ?? '') !== 'Pendiente') {
+      return res.status(409).json({ error: 'invalid_state', message: 'Sólo se pueden anular visitas pendientes.' });
+    }
+    await updateItem(LIST_IDS.registros, id, { Estado: 'Anulado' });
+    return res.status(200).json({ ID: id, Estado: 'Anulado' });
+  } catch (err) {
+    console.error('home anular error', err);
     const status = err instanceof GraphError ? 502 : 500;
     return res.status(status).json({ error: 'server_error' });
   }

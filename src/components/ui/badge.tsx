@@ -46,4 +46,5 @@ function Badge({
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- badgeVariants (cva) is intentionally co-located with the Badge primitive; moving it would touch imports across the app.
 export { Badge, badgeVariants }

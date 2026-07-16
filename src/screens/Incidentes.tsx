@@ -13,8 +13,12 @@ import {
   WashingMachine,
   Check,
   AlertCircle,
+  ClipboardCheck,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { Modal, ModalActions } from '@/components/Modal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
@@ -54,6 +58,11 @@ const ESTADOS_IN = ['A Revisar', 'Pendiente', 'Asignado', 'En Aprobacion'];
 // de resueltos (por mes) que se mergean con los abiertos.
 const ESTADOS_IN_RESUELTOS = ['Resuelto', 'Aprobada', 'Rechazada'];
 
+// Una compra "abierta" para un incidente bloquea generar otra (guard anti-duplicado del
+// msapp: Screen_Incidentes.pa.yaml:192, CollectAUX filtra 05.PedidoCompras por
+// IDIncidenteCompra_PC con Status Pendiente/En Aprobacion/Aprobada).
+const ESTADOS_COMPRA_ABIERTA = ['Pendiente', 'En Aprobacion', 'Aprobada'];
+
 const dedupeById = (arr: Incidente[]): Incidente[] => {
   const seen = new Set<number>();
   return arr.filter((i) => (seen.has(i.ID) ? false : (seen.add(i.ID), true)));
@@ -66,10 +75,12 @@ export function Incidentes() {
   const maquinas = useAppStore((s) => s.CollectMaquinas);
   const edificios = useAppStore((s) => s.CollectEdificiosMaquina);
   const tecnicos = useAppStore((s) => s.CollectTecnicosDisponibles);
+  const compras = useAppStore((s) => s.CollectCompras);
   const fetchIncidentes = useAppStore((s) => s.fetchIncidentes);
   const fetchStock = useAppStore((s) => s.fetchStock);
   const fetchMaquinas = useAppStore((s) => s.fetchMaquinas);
   const fetchTecnicos = useAppStore((s) => s.fetchTecnicos);
+  const fetchCompras = useAppStore((s) => s.fetchCompras);
   const createIncidente = useAppStore((s) => s.createIncidente);
   const assignIncidente = useAppStore((s) => s.assignIncidente);
   const cambiarTecnicoIncidente = useAppStore((s) => s.cambiarTecnicoIncidente);
@@ -100,10 +111,10 @@ export function Incidentes() {
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    return Promise.all([fetchIncidentes(), fetchStock(), fetchMaquinas(), fetchTecnicos()])
+    return Promise.all([fetchIncidentes(), fetchStock(), fetchMaquinas(), fetchTecnicos(), fetchCompras()])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar los incidentes.'))
       .finally(() => setLoading(false));
-  }, [fetchIncidentes, fetchStock, fetchMaquinas, fetchTecnicos]);
+  }, [fetchIncidentes, fetchStock, fetchMaquinas, fetchTecnicos, fetchCompras]);
 
   // Trae los resueltos de los meses dados (GET /incidentes?resueltos=MM/YYYY) y los guarda en
   // el estado local (mergea incidentes + repuestos de todos los meses, dedupe por ID).
@@ -160,6 +171,15 @@ export function Incidentes() {
       });
     },
     [repuestosDe, stock]
+  );
+
+  // Guard anti-duplicado: ¿ya hay una compra abierta generada desde este incidente?
+  const yaHayCompra = useCallback(
+    (id: number): boolean =>
+      compras.some(
+        (c) => c.IDIncidenteCompra_PC === String(id) && ESTADOS_COMPRA_ABIERTA.includes(c.Status_PC)
+      ),
+    [compras]
   );
 
   const mesAnoOpts = useMemo(() => last12MesesOptions(), []);
@@ -234,13 +254,47 @@ export function Incidentes() {
     const reps = repuestosDe(i.ID);
     const sinStock = requiereRepuesto(i) && reps.length > 0 && !hasStock(i);
     const asignado = !!i.TecnicoAsignado_IN && i.Status_IN === 'Asignado';
+    // 'En Aprobacion' → esperando resolución en Aprobaciones (read-only). Solo ocurre en cambio de máquina.
     if (i.Status_IN === 'En Aprobacion')
       return <IconBtn icon={AlertCircle} tone="violet" title="En aprobación de cambio de máquina" onClick={() => setDetail(i)} />;
-    if (sinStock) return <IconBtn icon={ShoppingCart} tone="warning" title="Sin stock — Generar compra" onClick={() => setComprar(i)} />;
-    if (esCambioMaquina(i)) return <IconBtn icon={WashingMachine} tone="violet" title="Gestionar cambio de máquina" onClick={() => setCambioMaq(i)} />;
+    if (sinStock) {
+      // Guard: si ya hay una compra abierta para este incidente, no se genera otra.
+      if (yaHayCompra(i.ID))
+        return <IconBtn icon={Check} tone="neutral" title="Compra ya generada — pendiente de reposición" onClick={() => setDetail(i)} />;
+      return <IconBtn icon={ShoppingCart} tone="warning" title="Sin stock — Generar compra" onClick={() => setComprar(i)} />;
+    }
+    if (esCambioMaquina(i)) {
+      // Pre-aprobación: generar la solicitud de cambio (elegir máquina de reemplazo en depósito).
+      if (i.Status_IN === 'Pendiente')
+        return <IconBtn icon={WashingMachine} tone="violet" title="Gestionar cambio de máquina" onClick={() => setCambioMaq(i)} />;
+      // Aprobada: finalizar = asignar técnico (msapp Screen_Incidentes línea 501/2640).
+      if (i.Status_IN === 'Aprobada')
+        return <IconBtn icon={UserCog} tone="brand" title="Asignar técnico (finalizar cambio)" onClick={() => abrirAsignar(i, false)} />;
+      // Ya asignado: permitir cambiar técnico (igual que cualquier incidente).
+      if (asignado)
+        return <IconBtn icon={UserCog} tone="brand" title="Cambiar técnico" onClick={() => abrirAsignar(i, true)} />;
+      // 'A Revisar': asignar/transferir técnico (msapp IMG_TransferirTecnico, visible para
+      // Status ≠ Pendiente/Resuelto/Anulado/Aprobada/En Aprobacion → 'A Revisar' y 'Asignado').
+      if (i.Status_IN === 'A Revisar')
+        return <IconBtn icon={UserCog} tone="brand" title="Asignar técnico" onClick={() => abrirAsignar(i, false)} />;
+      return null; // otros estados de cambio: sin acción de mutación.
+    }
     if (asignado) return <IconBtn icon={UserCog} tone="brand" title="Cambiar técnico" onClick={() => abrirAsignar(i, true)} />;
     return <IconBtn icon={UserCog} tone="brand" title="Asignar técnico" onClick={() => abrirAsignar(i, false)} />;
   };
+
+  const emptyInc = (
+    <EmptyState
+      icon={ClipboardCheck}
+      title="Sin incidentes pendientes"
+      description={
+        hasFilters
+          ? 'Ningún incidente coincide con los filtros aplicados.'
+          : 'No hay reportes abiertos por el momento.'
+      }
+      action={hasFilters && <Button variant="outline" onClick={clearFilters}>Limpiar filtros</Button>}
+    />
+  );
 
   return (
     <div className="relative flex h-full w-full flex-col">
@@ -302,9 +356,7 @@ export function Incidentes() {
             {/* MOBILE (<lg): una card por incidente (DESIGN.md §5.4) */}
             <div className="flex h-full flex-col gap-2 overflow-y-auto lg:hidden">
               {filtered.length === 0 ? (
-                <div className="flex h-[200px] items-center justify-center text-sm text-wash-text-muted">
-                  No hay incidentes pendientes.
-                </div>
+                <div className="flex h-full items-center justify-center">{emptyInc}</div>
               ) : (
                 filtered.map((i) => {
                   return (
@@ -381,9 +433,7 @@ export function Incidentes() {
 
               <div className="flex-1 overflow-auto">
                 {filtered.length === 0 ? (
-                  <div className="flex h-[280px] items-center justify-center text-sm text-wash-text-muted">
-                    No hay incidentes pendientes.
-                  </div>
+                  <div className="flex h-full items-center justify-center">{emptyInc}</div>
                 ) : (
                   filtered.map((i) => {
                     return (
@@ -489,6 +539,7 @@ export function Incidentes() {
       <CambioMaquinaModal
         incidente={cambioMaq}
         maquinas={maquinas}
+        yaHayCompra={cambioMaq ? yaHayCompra(cambioMaq.ID) : false}
         onClose={() => setCambioMaq(null)}
         onAprobacion={async (m) => {
           if (!cambioMaq) return;
@@ -582,7 +633,7 @@ function AsignarModal({
         )}
       </div>
       <ModalActions>
-        <button type="button" onClick={onClose} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2">
+        <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50">
           Cancelar
         </button>
         <button
@@ -601,7 +652,7 @@ function AsignarModal({
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <UserCog size={15} /> {saving ? 'Guardando…' : reassign ? 'Cambiar' : 'Asignar'}
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <UserCog size={15} />} {saving ? 'Guardando…' : reassign ? 'Cambiar' : 'Asignar'}
         </button>
       </ModalActions>
     </Modal>
@@ -611,12 +662,14 @@ function AsignarModal({
 function CambioMaquinaModal({
   incidente,
   maquinas,
+  yaHayCompra,
   onClose,
   onAprobacion,
   onComprar,
 }: {
   incidente: Incidente | null;
   maquinas: { ID: number; Segmento_DM: string; Status_DM: string; ConcatMaquina_DM: string; ConcatMaquinaIncidente_DM: string; Edificio_DM: string; IDMaquina_DM: string }[];
+  yaHayCompra: boolean;
   onClose: () => void;
   onAprobacion: (m: { concat: string; id: string }) => Promise<void>;
   onComprar: (segmento: string) => Promise<void>;
@@ -677,17 +730,23 @@ function CambioMaquinaModal({
           </p>
         </div>
       ) : (
-        <div className="mt-5 rounded-xl border border-dashed border-wash-border bg-amber-50/40 px-4 py-5 text-center">
-          <AlertTriangle size={24} className="mx-auto mb-2 text-amber-500" />
-          <p className="text-sm font-semibold text-wash-text-strong">Sin máquinas disponibles en depósito</p>
-          <p className="mt-1 text-xs text-wash-text-muted">
-            No hay {segmento || 'máquinas'} en depósito. Podés generar una compra.
-          </p>
+        <div className="mt-5">
+          <EmptyState
+            compact
+            tone="amber"
+            icon={AlertTriangle}
+            title="Sin máquinas en depósito"
+            description={
+              yaHayCompra
+                ? `No hay ${segmento || 'máquinas'} disponibles. Ya existe una compra abierta para este incidente.`
+                : `No hay ${segmento || 'máquinas'} disponibles. Podés generar una compra abajo.`
+            }
+          />
         </div>
       )}
 
       <ModalActions>
-        <button type="button" onClick={onClose} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2">
+        <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50">
           Cancelar
         </button>
         {disponibles.length > 0 ? (
@@ -706,14 +765,15 @@ function CambioMaquinaModal({
                 setSaving(false);
               }
             }}
-            className="rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? 'Generando…' : 'Generar aprobación'}
+            {saving && <Loader2 size={15} className="animate-spin" />} {saving ? 'Generando…' : 'Generar aprobación'}
           </button>
         ) : (
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || yaHayCompra}
+            title={yaHayCompra ? 'Ya existe una compra abierta para este incidente' : undefined}
             onClick={async () => {
               setSaving(true);
               setError(null);
@@ -727,7 +787,7 @@ function CambioMaquinaModal({
             }}
             className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <ShoppingCart size={15} /> {saving ? 'Generando…' : 'Generar compra'}
+            {saving ? <Loader2 size={15} className="animate-spin" /> : <ShoppingCart size={15} />} {saving ? 'Generando…' : yaHayCompra ? 'Compra ya generada' : 'Generar compra'}
           </button>
         )}
       </ModalActions>
@@ -777,7 +837,7 @@ function ComprarRepuestoModal({
         </ul>
       </div>
       <ModalActions>
-        <button type="button" onClick={onClose} className="rounded-lg border border-wash-border px-5 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2">
+        <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-wash-border px-5 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50">
           Cancelar
         </button>
         <button
@@ -796,7 +856,7 @@ function ComprarRepuestoModal({
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <ShoppingCart size={15} /> {saving ? 'Generando…' : 'Generar compra'}
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <ShoppingCart size={15} />} {saving ? 'Generando…' : 'Generar compra'}
         </button>
       </ModalActions>
     </Modal>
@@ -843,10 +903,12 @@ function DetailModal({
           Repuestos ({repuestos.length})
         </p>
         {repuestos.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-wash-border py-6 text-center">
-            <Wrench size={22} className="mx-auto mb-1.5 text-wash-text-faint" strokeWidth={1.5} />
-            <p className="text-[13px] font-semibold text-wash-text-strong">Sin repuestos cargados</p>
-          </div>
+          <EmptyState
+            compact
+            icon={Wrench}
+            title="Sin repuestos cargados"
+            description="Este incidente no requiere repuestos."
+          />
         ) : (
           <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {repuestos.map((r) => {
@@ -998,7 +1060,7 @@ function NuevoIncidenteModal({
         </div>
       </div>
       <ModalActions>
-        <button type="button" onClick={onClose} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2">
+        <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50">
           Cancelar
         </button>
         <button
@@ -1035,7 +1097,7 @@ function NuevoIncidenteModal({
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Plus size={15} /> {saving ? 'Creando…' : 'Crear incidente'}
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} {saving ? 'Creando…' : 'Crear incidente'}
         </button>
       </ModalActions>
     </Modal>

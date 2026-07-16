@@ -11,9 +11,14 @@ import {
   ArrowRight,
   Check,
   AlertCircle,
+  SearchX,
+  History,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
@@ -61,6 +66,9 @@ export function DetalleMaquina() {
   const VarTipoUser = useAppStore((s) => s.VarTipoUser);
 
   const canManage = VarTipoUser === 'Admin';
+  // Fidelidad al msapp (Screen_DetalleMaquina: img_transferir Visible = Admin || Jefe Taller):
+  // el Jefe Taller puede transferir; su transferencia genera una aprobación (backend maneja la rama).
+  const canTransfer = VarTipoUser === 'Admin' || VarTipoUser === 'Jefe Taller';
 
   const [query, setQuery] = useState('');
   const [fEdificio, setFEdificio] = useState('');
@@ -210,7 +218,13 @@ export function DetalleMaquina() {
             <VirtualMachineTable
               rows={filtered}
               resetKey={`${query}|${fEdificio}|${fSegmento}|${fMarca}|${fEncendido}`}
+              hasFiltros={activeFilters > 0 || query.trim() !== ''}
+              onClearFilters={() => {
+                clearFilters();
+                setQuery('');
+              }}
               canManage={canManage}
+              canTransfer={canTransfer}
               onView={setViewing}
               onTransfer={(m) => setTransferring(m)}
               onBaja={(m) => setBaja(m)}
@@ -294,7 +308,10 @@ function useIsMobileList() {
 function VirtualMachineTable({
   rows,
   resetKey,
+  hasFiltros,
+  onClearFilters,
   canManage,
+  canTransfer,
   onView,
   onTransfer,
   onBaja,
@@ -302,7 +319,10 @@ function VirtualMachineTable({
   rows: Maquina[];
   /** Cambia cuando cambian filtros/búsqueda → scrollea al tope (no cambia al refrescar datos). */
   resetKey: string;
+  hasFiltros: boolean;
+  onClearFilters: () => void;
   canManage: boolean;
+  canTransfer: boolean;
   onView: (m: Maquina) => void;
   onTransfer: (m: Maquina) => void;
   onBaja: (m: Maquina) => void;
@@ -368,8 +388,23 @@ function VirtualMachineTable({
 
       {/* Body */}
       {total === 0 ? (
-        <div className="flex flex-1 items-center justify-center px-4 text-sm text-wash-text-muted">
-          No hay máquinas que coincidan con el filtro.
+        <div className="flex flex-1 items-center justify-center px-4">
+          <EmptyState
+            icon={hasFiltros ? SearchX : WashingMachine}
+            title="Sin máquinas"
+            description={
+              hasFiltros
+                ? 'Ninguna máquina coincide con los filtros aplicados.'
+                : 'Todavía no hay máquinas cargadas.'
+            }
+            action={
+              hasFiltros && (
+                <Button variant="outline" onClick={onClearFilters}>
+                  Limpiar filtros
+                </Button>
+              )
+            }
+          />
         </div>
       ) : (
         <div
@@ -405,11 +440,11 @@ function VirtualMachineTable({
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
                             <IconBtn icon={Eye} tone="neutral" title="Ver detalle / historial" onClick={() => onView(m)} />
+                            {canTransfer && (
+                              <IconBtn icon={ArrowLeftRight} tone="brand" title="Transferir" onClick={() => onTransfer(m)} />
+                            )}
                             {canManage && (
-                              <>
-                                <IconBtn icon={ArrowLeftRight} tone="brand" title="Transferir" onClick={() => onTransfer(m)} />
-                                <IconBtn icon={Trash2} tone="danger" title="Dar de baja" onClick={() => onBaja(m)} />
-                              </>
+                              <IconBtn icon={Trash2} tone="danger" title="Dar de baja" onClick={() => onBaja(m)} />
                             )}
                           </div>
                         </div>
@@ -480,11 +515,11 @@ function VirtualMachineTable({
                     </div>
                     <div className="flex items-center justify-end gap-1.5">
                       <IconBtn icon={Eye} tone="neutral" title="Ver detalle / historial" onClick={() => onView(m)} />
+                      {canTransfer && (
+                        <IconBtn icon={ArrowLeftRight} tone="brand" title="Transferir" onClick={() => onTransfer(m)} />
+                      )}
                       {canManage && (
-                        <>
-                          <IconBtn icon={ArrowLeftRight} tone="brand" title="Transferir" onClick={() => onTransfer(m)} />
-                          <IconBtn icon={Trash2} tone="danger" title="Dar de baja" onClick={() => onBaja(m)} />
-                        </>
+                        <IconBtn icon={Trash2} tone="danger" title="Dar de baja" onClick={() => onBaja(m)} />
                       )}
                     </div>
                   </div>
@@ -568,10 +603,12 @@ function DetailModal({ maquina, onClose }: { maquina: Maquina | null; onClose: (
               {error}
             </div>
           ) : historial.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-wash-border px-3 py-8 text-center">
-              <p className="text-sm font-semibold text-wash-text-strong">Sin historial</p>
-              <p className="mt-1 text-xs text-wash-text-muted">No hay incidentes registrados para esta máquina.</p>
-            </div>
+            <EmptyState
+              compact
+              icon={History}
+              title="Sin historial"
+              description="No hay incidentes registrados para esta máquina."
+            />
           ) : (
             <ul className="space-y-2">
               {historial.map((i) => (
@@ -868,7 +905,8 @@ function TransferModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+              disabled={saving}
+              className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Cancelar
             </button>
@@ -893,9 +931,16 @@ function TransferModal({
                   setSaving(false);
                 }
               }}
-              className="rounded-lg bg-wash-action px-5 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center justify-center rounded-lg bg-wash-action px-5 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {saving ? 'Transfiriendo…' : 'Transferir'}
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Transfiriendo…
+                </>
+              ) : (
+                'Transferir'
+              )}
             </button>
           </>
         )}

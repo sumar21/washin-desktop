@@ -13,6 +13,7 @@ import {
   APP_VERSION,
 } from '../_lib/lists.js';
 import { readSession, type SessionPayload } from '../_lib/session.js';
+import { puedeAccederModulo } from '../_lib/permisos.js';
 
 function odataEscape(v: string): string {
   return v.replace(/'/g, "''");
@@ -39,6 +40,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!id) return res.status(400).json({ error: 'invalid_id', message: 'Identificador de compra inválido' });
 
   try {
+    if (!(await puedeAccederModulo(session.rol, 'Compras'))) {
+      return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Compras.' });
+    }
     if (req.method === 'PATCH') return await editCompra(id, req, res);
     if (req.method === 'POST') {
       const action = (req.body as ActionBody)?.action;
@@ -140,6 +144,9 @@ async function anular(id: number, res: VercelResponse) {
   const pedidoRaw = await getItem(LIST_IDS.pedidoCompras, id, pedidoCompraSelectFields());
   if (!pedidoRaw) return res.status(404).json({ error: 'not_found', message: 'La compra no existe' });
   const pedido = mapPedidoCompra(pedidoRaw);
+  if (pedido.Status_PC !== 'Pendiente') {
+    return res.status(409).json({ error: 'conflict', message: 'Solo se pueden anular compras pendientes' });
+  }
 
   const detalles = await listItems(LIST_IDS.detalleCompra, {
     select: detalleCompraSelectFields(),

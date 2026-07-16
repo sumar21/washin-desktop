@@ -17,6 +17,7 @@ import {
   cambioMaquinaAprobacionSelectFields,
 } from '../_lib/maquinaMoves.js';
 import { readSession, type SessionPayload } from '../_lib/session.js';
+import { puedeAccederModulo } from '../_lib/permisos.js';
 
 function odataEscape(v: string): string {
   return v.replace(/'/g, "''");
@@ -43,6 +44,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { action, reason } = (req.body ?? {}) as Body;
 
   try {
+    if (!(await puedeAccederModulo(session.rol, 'Mis Aprobaciones'))) {
+      return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Mis Aprobaciones.' });
+    }
     const aprobRaw = await getItem(LIST_IDS.aprobaciones, id, aprobacionSelectFields());
     if (!aprobRaw) return res.status(404).json({ error: 'not_found', message: 'La solicitud no existe' });
     const aprob = mapAprobacion(aprobRaw);
@@ -151,6 +155,17 @@ async function reject(
       for (const d of detalles.map(mapDetalleCompra)) {
         await updateItem(LIST_IDS.detalleCompra, d.ID, { Status_DC: 'Rechazada', Rechazada_DC: 'SI' });
       }
+    }
+  }
+
+  // Cambio de Maquina: al rechazar, se revierte el incidente a 'Pendiente' (limpiando la máquina
+  // de reemplazo) para poder gestionar otro cambio. Mejora sobre el msapp, que lo dejaba atascado
+  // en 'En Aprobacion' sin salida. El incidente se referencia por IDMaquina_AP.
+  if (aprob.TipoAprobacion_AP === 'Cambio de Maquina') {
+    const raw = await getItem(LIST_IDS.aprobaciones, id, cambioMaquinaAprobacionSelectFields());
+    const incidenteId = Number(raw?.IDMaquina_AP);
+    if (incidenteId) {
+      await updateItem(LIST_IDS.incidentes, incidenteId, { Status_IN: 'Pendiente', MaquinaAsignada_IN: '' });
     }
   }
 

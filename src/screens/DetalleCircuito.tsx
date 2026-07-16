@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Building, Wind } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 
 export function DetalleCircuito() {
   const navigate = useNavigate();
@@ -24,7 +26,16 @@ export function DetalleCircuito() {
   if (!NroCircuitoDetail) {
     return (
       <div className="flex h-full w-full items-center justify-center">
-        <p className="text-wash-text-muted">No hay circuito seleccionado.</p>
+        <EmptyState
+          icon={MapPin}
+          title="Sin circuito seleccionado"
+          description="Elegí un circuito desde Configuración."
+          action={
+            <Button onClick={() => navigate('/configuracion')}>
+              Volver a Configuración
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -73,6 +84,14 @@ export function DetalleCircuito() {
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-wash-text-muted">
             Edificios del circuito
           </h2>
+          {edificiosEnCircuito.length === 0 ? (
+            <EmptyState
+              compact
+              icon={Building}
+              title="Sin edificios en el circuito"
+              description="Este circuito no tiene edificios activos."
+            />
+          ) : (
           <div className="grid grid-cols-2 gap-4">
             {edificiosEnCircuito.map((e) => {
               const maqs = maquinas.filter(
@@ -110,6 +129,7 @@ export function DetalleCircuito() {
               );
             })}
           </div>
+          )}
         </section>
       </div>
     </div>

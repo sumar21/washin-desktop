@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { updateItem, GraphError } from '../_lib/graph.js';
+import { updateItem, getItem, GraphError } from '../_lib/graph.js';
 import { LIST_IDS, fechasHoy, desglosarFechaDDMMYYYY, APP_VERSION } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { puedeAccederModulo } from '../_lib/permisos.js';
 
 interface Body {
   action?: 'assign' | 'delete';
@@ -29,6 +30,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const body = (req.body ?? {}) as Body;
 
   try {
+    if (!(await puedeAccederModulo(session.rol, 'Ventilacion'))) {
+      return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Ventilacion.' });
+    }
     if (body.action === 'assign') return await assign(id, body, res);
     if (body.action === 'delete') return await softDelete(id, res);
     return res.status(400).json({ error: 'invalid', message: 'Acción de ventilación desconocida' });
@@ -79,7 +83,14 @@ async function assign(id: number, body: Body, res: VercelResponse) {
 }
 
 // ── Baja lógica (Estado_VE="Eliminada", como la PowerApp) ─────────────────
+// Fiel a la PowerApp: además de marcar la ventilación como Eliminada, resetea
+// el flag del edificio (Ventilaciones_ED="NO") para sacarlo del circuito.
 async function softDelete(id: number, res: VercelResponse) {
+  const ventilacion = await getItem(LIST_IDS.ventilaciones, id, ['IDEdificio_VE']);
   await updateItem(LIST_IDS.ventilaciones, id, { Estado_VE: 'Eliminada' });
+  const idEdificio = Number(ventilacion?.IDEdificio_VE ?? 0) || 0;
+  if (idEdificio) {
+    await updateItem(LIST_IDS.edificios, idEdificio, { Ventilaciones_ED: 'NO' });
+  }
   return res.status(200).json({ ID: id, Estado_VE: 'Eliminada' });
 }

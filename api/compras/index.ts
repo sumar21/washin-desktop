@@ -10,6 +10,7 @@ import {
   APP_VERSION,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { puedeAccederModulo } from '../_lib/permisos.js';
 
 interface NewLine {
   item?: string;
@@ -86,6 +87,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const idUnivoco = `${session.usuario.slice(0, 3)} - ${f.stamp} - ${f.fecha}`;
 
     try {
+      if (!(await puedeAccederModulo(session.rol, 'Compras'))) {
+        return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Compras.' });
+      }
       const createdPedido = await createItem(LIST_IDS.pedidoCompras, {
         Title: 'Washinn',
         Status_PC: 'Pendiente',

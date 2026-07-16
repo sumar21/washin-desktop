@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Wrench, Pencil, Trash2, Hash, Tag, DollarSign, AlertCircle } from 'lucide-react';
+import { Wrench, Pencil, Trash2, Hash, Tag, DollarSign, AlertCircle, Loader2 } from 'lucide-react';
 import { DataTable, type Column } from '@/components/DataTable';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
@@ -166,7 +168,14 @@ export function ConfigRepuestos({ query, addOpen, setAddOpen, canEdit = false }:
             rows={rows}
             rowKey={(r) => r.ID}
             columns={columns}
-            empty="Sin repuestos en el catálogo."
+            empty={
+              <EmptyState
+                icon={Wrench}
+                title="Sin repuestos"
+                description="No encontramos repuestos que coincidan."
+                action={canEdit && <Button onClick={() => setAddOpen(true)}>Agregar repuesto</Button>}
+              />
+            }
             onRowClick={canEdit ? (r) => setEditing(r) : undefined}
             mobileCard={(r) => (
               <div
@@ -420,7 +429,8 @@ function RepuestoFormModal({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          disabled={saving}
+          className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -428,8 +438,9 @@ function RepuestoFormModal({
           type="button"
           disabled={!valido || saving}
           onClick={handleSave}
-          className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
+          {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
           {saving ? 'Guardando…' : repuesto ? 'Guardar cambios' : 'Crear repuesto'}
         </button>
       </ModalActions>

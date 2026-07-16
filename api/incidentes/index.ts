@@ -10,6 +10,7 @@ import {
   APP_VERSION,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { puedeAccederModulo } from '../_lib/permisos.js';
 
 interface NewIncidentBody {
   edificio?: string;
@@ -61,6 +62,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const f = fechasHoy();
     const concatAux = `${session.usuario.slice(0, 3)} - ${f.stamp} - INC`;
     try {
+      if (!(await puedeAccederModulo(session.rol, 'Incidentes'))) {
+        return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Incidentes.' });
+      }
       const created = mapIncidente(
         await createItem(LIST_IDS.incidentes, {
           Title: 'Wash Inn',

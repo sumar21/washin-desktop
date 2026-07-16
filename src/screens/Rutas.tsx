@@ -15,6 +15,8 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -237,7 +239,14 @@ export function Rutas() {
             rows={filteredMeses}
             rowKey={(r) => r.ID}
             columns={columns}
-            empty="Sin planificaciones registradas."
+            empty={
+              <EmptyState
+                icon={CalendarDays}
+                title="Sin planificaciones"
+                description="Todavía no creaste ninguna planificación mensual."
+                action={<Button onClick={() => setCreateOpen(true)}>Crear planificación</Button>}
+              />
+            }
             onRowClick={(m) => goDetail(m)}
             mobileCard={(m) => {
               return (
@@ -541,7 +550,17 @@ function CreatePlanificacionModal({
           )}
         >
           {lines.length === 0 ? (
-            <EmptyState />
+            <EmptyState
+              pulse
+              icon={ClipboardEdit}
+              title="Aún no agregaste rutas"
+              description={
+                <>
+                  Completá los campos de arriba y tocá el botón <strong>+</strong> para sumar una
+                  ruta a la planificación.
+                </>
+              }
+            />
           ) : (
             <ul className="divide-y divide-wash-divider/60">
               {lines.map((l, i) => (
@@ -596,25 +615,5 @@ function CreatePlanificacionModal({
         </button>
       </ModalActions>
     </Modal>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex h-full min-h-[240px] flex-col items-center justify-center px-6 text-center">
-      <div className="relative mb-4">
-        <span className="absolute inset-0 animate-ping rounded-2xl bg-wash-brand/15" />
-        <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/25">
-          <ClipboardEdit size={28} strokeWidth={1.6} />
-        </div>
-      </div>
-      <p className="font-display text-[15px] font-bold text-wash-text-strong">
-        Aún no agregaste rutas
-      </p>
-      <p className="mt-1 max-w-[280px] text-[12px] leading-relaxed text-wash-text-muted">
-        Completá los campos de arriba y tocá el botón <strong>+</strong> para sumar una
-        ruta a la planificación.
-      </p>
-    </div>
   );
 }

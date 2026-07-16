@@ -8,6 +8,7 @@ import {
   resumenPlanifSelectFields,
   mapDetallePlanif,
   detallePlanifSelectFields,
+  type DetallePlanifRow,
   mapEdificioVisitar,
   edificioVisitarSelectFields,
   mapResumenCircuito,
@@ -22,6 +23,7 @@ import {
   APP_VERSION,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { puedeAccederModulo } from '../_lib/permisos.js';
 
 const odataEscape = (v: string) => v.replace(/'/g, "''");
 // Estados "vivos" de una planificación (se excluye Anulado).
@@ -111,6 +113,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const body = (req.body ?? {}) as CreateBody;
   try {
+    if (!(await puedeAccederModulo(session.rol, 'Planificaciones'))) {
+      return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Planificaciones.' });
+    }
     if (body.action === 'create') return await create(body, res, session.usuario);
     if (body.action === 'delete') return await remove(body, res);
     return res.status(400).json({ error: 'invalid', message: 'Acción de planificación desconocida' });
@@ -129,14 +134,43 @@ async function create(body: CreateBody, res: VercelResponse, usuario: string) {
   if (!mesAno || !/^\d{2}\/\d{4}$/.test(mesAno)) return res.status(400).json({ error: 'invalid', message: 'Mes inválido (mm/yyyy)' });
   if (lines.length === 0) return res.status(400).json({ error: 'invalid', message: 'Agregá al menos una ruta a un técnico' });
 
-  const [circAll, detAll, resExist] = await Promise.all([
+  const escMes = odataEscape(mesAno);
+  const [circAll, detAll, resExist, detExistRaw, edifExistRaw] = await Promise.all([
     listItems(LIST_IDS.resumenCircuito, { select: resumenCircuitoSelectFields(), filter: `fields/Status_RC eq 'Activo'`, top: 999 }),
     listItems(LIST_IDS.detalleCircuito, { select: detalleCircuitoSelectFields(), filter: `fields/Status_DC eq 'Activo'`, top: 2000 }),
-    listItems(LIST_IDS.resumenPlanif, { select: resumenPlanifSelectFields(), filter: `fields/MesAnoRuta_RP eq '${odataEscape(mesAno)}' and ${VIVOS}`, top: 999 }),
+    listItems(LIST_IDS.resumenPlanif, { select: resumenPlanifSelectFields(), filter: `fields/MesAnoRuta_RP eq '${escMes}' and ${VIVOS}`, top: 999 }),
+    // 16.DetallePlanificaciones y 18.EdificiosVisitar ya existentes del mes: sirven para
+    // DETECTAR un resumen (15) huérfano de un intento previo cortado a la mitad y REANUDARLO,
+    // creando sólo los 16/18 que faltan en vez de saltar la línea entera (idempotencia real).
+    listItems(LIST_IDS.detallePlanif, { select: detallePlanifSelectFields(), filter: `fields/MesAno_DP eq '${escMes}'`, top: 2000 }),
+    listItems(LIST_IDS.edificiosVisitar, { select: edificioVisitarSelectFields(), filter: `fields/MesAno_EV eq '${escMes}'`, top: 4000 }),
   ]);
   const circuitos = circAll.map(mapResumenCircuito);
   const detalles = detAll.map(mapDetalleCircuito);
-  const yaAsignadas = new Set(resExist.map(mapResumenPlanif).map((r) => `${r.NroRuta}|${r.Tecnico}`));
+
+  // Resúmenes (15) ya asignados del mes → 'NroRuta|Tecnico' ⟶ { idUnivocoRuta, circuitosEsperados }.
+  // El idUnivocoRuta guardado es la fuente de verdad para reanudar (NO se reconstruye el stamp time-based).
+  const resumenMap = new Map<string, { idUnivocoRuta: string; circuitosEsperados: number }>();
+  for (const r of resExist.map(mapResumenPlanif)) {
+    resumenMap.set(`${r.NroRuta}|${r.Tecnico}`, { idUnivocoRuta: r.IDUnivocoRuta, circuitosEsperados: r.Circuitos });
+  }
+
+  // 16 vivos agrupados por IDUnivocoRuta (para contar cuántos circuitos ya se crearon y reutilizar su IDUnivocoCircuito).
+  const detPorRuta = new Map<string, DetallePlanifRow[]>();
+  for (const d of detExistRaw.map(mapDetallePlanif)) {
+    if (d.Status === 'Anulado') continue;
+    const arr = detPorRuta.get(d.IDUnivocoRuta);
+    if (arr) arr.push(d);
+    else detPorRuta.set(d.IDUnivocoRuta, [d]);
+  }
+
+  // 18 ya creados agrupados por IDUnivocoCircuito → set de códigos de edificio (para no duplicar al reanudar).
+  const edifPorCircuito = new Map<string, Set<string>>();
+  for (const e of edifExistRaw.map(mapEdificioVisitar)) {
+    const s = edifPorCircuito.get(e.IDUnivocoCircuito);
+    if (s) s.add(e.Codigo);
+    else edifPorCircuito.set(e.IDUnivocoCircuito, new Set([e.Codigo]));
+  }
 
   const f = fechasHoy();
   const ano = mesAno.split('/')[1];
@@ -145,9 +179,77 @@ async function create(body: CreateBody, res: VercelResponse, usuario: string) {
   for (const line of lines) {
     const tecnico = line.tecnico.trim();
     const nroRuta = line.nroRuta.trim();
-    if (yaAsignadas.has(`${nroRuta}|${tecnico}`)) continue; // idempotente: no dupliques la misma ruta/técnico
-    const idUnivocoRuta = `R${nroRuta} - ${tecnico} - ${f.stamp}`;
     const circuitosRuta = circuitos.filter((c) => String(c.NroRuta) === nroRuta);
+
+    const existente = resumenMap.get(`${nroRuta}|${tecnico}`);
+    if (existente) {
+      // Ya hay un 15.Resumen vivo para esta ruta/técnico en el mes.
+      const detActuales = detPorRuta.get(existente.idUnivocoRuta) ?? [];
+      if (detActuales.length === existente.circuitosEsperados) continue; // completo → nada que hacer (idempotente, comportamiento actual)
+
+      // ── REANUDAR: resumen huérfano de un intento previo cortado. Reutilizamos el idUnivocoRuta
+      //    guardado en el 15 (NO reconstruimos el stamp) y creamos SÓLO los 16/18 faltantes; el 15 NO se recrea.
+      const detPorCircuito = new Map<number, DetallePlanifRow>();
+      for (const d of detActuales) detPorCircuito.set(d.NroCircuito, d);
+
+      for (const c of circuitosRuta) {
+        const edifs = detalles.filter((d) => d.NroCircuito === c.NroCircuito);
+        const detExistente = detPorCircuito.get(c.NroCircuito);
+        let idUnivocoCircuito: string;
+        if (detExistente) {
+          // El 16 de este circuito ya existe → reutilizamos su IDUnivocoCircuito para linkear los 18 que falten.
+          idUnivocoCircuito = detExistente.IDUnivocoCircuito;
+        } else {
+          // Falta el 16 de este circuito → lo creamos (stamp nuevo) colgando del idUnivocoRuta existente.
+          idUnivocoCircuito = `C${c.NroCircuito} - ${f.stamp} - ${tecnico}`;
+          await createItem(LIST_IDS.detallePlanif, {
+            Title: 'sumar',
+            IDUnivoco_DP: existente.idUnivocoRuta,
+            IDUnivocoCircuito_DP: idUnivocoCircuito,
+            NroRuta_DP: Number(nroRuta) || 0,
+            NroCircuito_DP: c.NroCircuito,
+            Circuito_DP: c.NroCircuito,
+            CantidadEdificios_DP: edifs.length,
+            Status_DP: 'Pendiente',
+            Tecnico_DP: tecnico,
+            MesAno_DP: mesAno,
+            Mes_DP: mesNombre ?? '',
+            ObservacionCircuito_DP: c.Observaciones,
+          });
+        }
+
+        // 18: creamos sólo los edificios que aún no existen para este IDUnivocoCircuito.
+        const yaCreados = edifPorCircuito.get(idUnivocoCircuito) ?? new Set<string>();
+        for (const e of edifs) {
+          if (yaCreados.has(e.CodigoEdificio)) continue;
+          await createItem(LIST_IDS.edificiosVisitar, {
+            Title: 'sumar',
+            TecnicoAsignado_EV: tecnico,
+            CodigoEdificio_EV: e.CodigoEdificio,
+            Edificio_EV: e.Edificio,
+            Direccion_EV: e.Direccion,
+            ConcatEdificio_EV: `${e.Edificio} - ${e.Direccion}`,
+            Estado_EV: 'Pendiente',
+            MesAno_EV: mesAno,
+            NroCircuito_EV: String(c.NroCircuito),
+            NroRuta_EV: nroRuta,
+            HoraSugerida_EV: e.Horario,
+            IDUnivocoCircuito_EV: idUnivocoCircuito,
+            IDUnivocoRuta_EV: existente.idUnivocoRuta,
+            Encargado_EV: e.Encargado,
+            Celular_EV: e.NroCelular,
+            Mail_EV: e.MailEdificio,
+            Latitud_EV: e.Latitud,
+            Longitud_EV: e.Longitud,
+          });
+        }
+      }
+      rutasCreadas++;
+      continue;
+    }
+
+    // ── No existe resumen → crear todo fresco (flujo original completo 15 → 16 → 18) ──
+    const idUnivocoRuta = `R${nroRuta} - ${tecnico} - ${f.stamp}`;
 
     await createItem(LIST_IDS.resumenPlanif, {
       Title: 'sumar',

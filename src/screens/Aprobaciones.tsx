@@ -9,9 +9,11 @@ import {
   ClipboardList,
   Clock,
   AlertCircle,
+  CheckCircle2,
   Info as InfoIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
+import { EmptyState } from '@/components/EmptyState';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions } from '@/components/Modal';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -153,10 +155,6 @@ export function Aprobaciones() {
       align: 'right',
       truncate: false,
       render: (a) => {
-        // Aprobar implementado para Compra y Transferencia de Maquina; Cambio de Maquina
-        // (originado en Incidentes) todavía no.
-        const canApprove =
-          a.TipoAprobacion_AP === 'Compra' || a.TipoAprobacion_AP === 'Transferencia de Maquina';
         return (
           <div className="flex items-center justify-end gap-1.5">
             <ActionButton
@@ -171,8 +169,7 @@ export function Aprobaciones() {
             <ActionButton
               icon={Check}
               tone="approve"
-              title={canApprove ? 'Aprobar' : 'Se gestiona desde el módulo de Incidentes'}
-              disabled={!canApprove}
+              title="Aprobar"
               onClick={(e) => {
                 e.stopPropagation();
                 setApproving(a);
@@ -293,8 +290,6 @@ export function Aprobaciones() {
               mobileCard={(a) => {
                 const meta = tipoMeta[a.TipoAprobacion_AP];
                 const Icon = meta.icon;
-                const canApprove =
-                  a.TipoAprobacion_AP === 'Compra' || a.TipoAprobacion_AP === 'Transferencia de Maquina';
                 return (
                   <div className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
                     {/* Fila 1: tipo + estado + acciones */}
@@ -324,8 +319,7 @@ export function Aprobaciones() {
                         <ActionButton
                           icon={Check}
                           tone="approve"
-                          title={canApprove ? 'Aprobar' : 'Se gestiona desde el módulo de Incidentes'}
-                          disabled={!canApprove}
+                          title="Aprobar"
                           onClick={(e) => {
                             e.stopPropagation();
                             setApproving(a);
@@ -362,17 +356,16 @@ export function Aprobaciones() {
                 );
               }}
               empty={
-                <div className="flex flex-col items-center justify-center text-center">
-                  <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/20">
-                    <Check size={22} />
-                  </div>
-                  <p className="text-sm font-semibold text-wash-text-strong">Sin aprobaciones pendientes</p>
-                  <p className="mt-1 text-xs text-wash-text-muted">
-                    {activeFilters === 0
-                      ? 'Todas las solicitudes fueron resueltas.'
-                      : 'No hay solicitudes que coincidan con los filtros.'}
-                  </p>
-                </div>
+                <EmptyState
+                  tone="emerald"
+                  icon={CheckCircle2}
+                  title="Sin aprobaciones pendientes"
+                  description={
+                    activeFilters
+                      ? 'No hay solicitudes que coincidan con los filtros.'
+                      : 'Todas las solicitudes fueron resueltas.'
+                  }
+                />
               }
             />
           </div>
@@ -484,8 +477,9 @@ function DecisionModal({
             rows={3}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
+            disabled={saving}
             placeholder="Detallá el motivo del rechazo…"
-            className="mt-1.5 w-full resize-none rounded-lg border border-wash-border bg-wash-surface px-3 py-2 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15"
+            className="mt-1.5 w-full resize-none rounded-lg border border-wash-border bg-wash-surface px-3 py-2 text-sm outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-500/15 disabled:opacity-60"
           />
         </div>
       )}
@@ -504,7 +498,8 @@ function DecisionModal({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          disabled={saving}
+          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -609,9 +604,13 @@ function CompraDetail({
 }) {
   if (!pedido) {
     return (
-      <div className="rounded-lg border border-dashed border-wash-border px-3 py-4 text-center text-xs text-wash-text-muted">
-        No se encontró el pedido asociado.
-      </div>
+      <EmptyState
+        compact
+        tone="amber"
+        icon={AlertCircle}
+        title="Pedido no disponible"
+        description="No se encontró el pedido asociado a esta solicitud."
+      />
     );
   }
   const total = detalles.reduce((acc, d) => acc + d.Cantidad_DC, 0);
@@ -630,18 +629,29 @@ function CompraDetail({
           <span className="text-center">Cant.</span>
           <span className="text-right">Estado</span>
         </div>
-        {detalles.map((d) => (
-          <div
-            key={d.ID}
-            className="grid grid-cols-[1fr_80px_120px] items-center border-t border-wash-divider/60 px-3 py-2 text-sm"
-          >
-            <div className="min-w-0 truncate font-semibold text-wash-text-strong">{d.Item_DC}</div>
-            <span className="text-center font-bold text-wash-text-strong tabular-nums">{d.Cantidad_DC}</span>
-            <span className="text-right">
-              <StatusBadge status={d.Status_DC} />
-            </span>
+        {detalles.length === 0 ? (
+          <div className="border-t border-wash-divider/60 px-3 py-4">
+            <EmptyState
+              compact
+              icon={ClipboardList}
+              title="Sin items cargados"
+              description="Este pedido no tiene items registrados."
+            />
           </div>
-        ))}
+        ) : (
+          detalles.map((d) => (
+            <div
+              key={d.ID}
+              className="grid grid-cols-[1fr_80px_120px] items-center border-t border-wash-divider/60 px-3 py-2 text-sm"
+            >
+              <div className="min-w-0 truncate font-semibold text-wash-text-strong">{d.Item_DC}</div>
+              <span className="text-center font-bold text-wash-text-strong tabular-nums">{d.Cantidad_DC}</span>
+              <span className="text-right">
+                <StatusBadge status={d.Status_DC} />
+              </span>
+            </div>
+          ))
+        )}
       </div>
 
       {pedido.Observaciones_PC && (

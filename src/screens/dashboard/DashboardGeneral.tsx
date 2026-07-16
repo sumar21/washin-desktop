@@ -35,6 +35,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
 import { KpiCard } from '@/components/dashboard/widgets';
+import { EmptyState } from '@/components/EmptyState';
 import { chartColor, CHART_GRID, X_TICK, AXIS, intFmt, pct } from '@/components/dashboard/shared';
 import { useAppStore } from '@/store/useAppStore';
 import { proper } from '@/lib/utils';
@@ -229,7 +230,11 @@ export default function DashboardGeneral() {
               icon={TrendingUp}
               title="Ingreso de incidentes"
               subtitle="Nuevos incidentes por día — últimos 14 días"
-              empty={trend.every((d) => d.cantidad === 0)}
+              empty={
+                trend.every((d) => d.cantidad === 0) && (
+                  <EmptyState compact icon={TrendingUp} title="Sin ingresos de incidentes" />
+                )
+              }
             >
               <ChartContainer config={trendConfig} className="h-[220px] w-full">
                 <AreaChart data={trend} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
@@ -260,7 +265,7 @@ export default function DashboardGeneral() {
               icon={Activity}
               title="Por estado"
               subtitle="Mix de incidentes abiertos"
-              empty={porEstado.length === 0}
+              empty={porEstado.length === 0 && <EmptyState compact icon={Activity} title="Sin incidentes abiertos" />}
             >
               <div className="flex items-center gap-4">
                 <div className="relative shrink-0">
@@ -317,7 +322,7 @@ export default function DashboardGeneral() {
               icon={Building2}
               title="Edificios más afectados"
               subtitle="Top 7 por incidentes abiertos"
-              empty={porEdificio.length === 0}
+              empty={porEdificio.length === 0 && <EmptyState compact icon={Building2} title="Sin edificios afectados" />}
             >
               <RankBars data={porEdificio} />
             </ChartCard>
@@ -326,7 +331,7 @@ export default function DashboardGeneral() {
               icon={ClipboardCheck}
               title="Cumplimiento de visitas"
               subtitle="Finalizadas sobre el total del mes"
-              empty={regTotal === 0}
+              empty={regTotal === 0 && <EmptyState compact icon={ClipboardCheck} title="Sin visitas registradas" />}
             >
               <div className="flex flex-col items-center">
                 <div className="relative">
@@ -371,7 +376,7 @@ export default function DashboardGeneral() {
               icon={Layers}
               title="Incidentes por tipo"
               subtitle="Origen del incidente"
-              empty={porTipo.length === 0}
+              empty={porTipo.length === 0 && <EmptyState compact icon={Layers} title="Sin datos por tipo" />}
             >
               <RankBars data={porTipo} height={200} />
             </ChartCard>
@@ -380,7 +385,7 @@ export default function DashboardGeneral() {
               icon={Users}
               title="Carga por técnico"
               subtitle="Incidentes asignados — top 6"
-              empty={porTecnico.length === 0}
+              empty={porTecnico.length === 0 && <EmptyState compact icon={Users} title="Sin datos por técnico" />}
             >
               <RankBars data={porTecnico} height={200} />
             </ChartCard>
@@ -406,7 +411,7 @@ function ChartCard({
   title: string;
   subtitle: string;
   className?: string;
-  empty?: boolean;
+  empty?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -420,15 +425,7 @@ function ChartCard({
           <Icon size={16} />
         </span>
       </CardHeader>
-      <CardContent>
-        {empty ? (
-          <div className="flex h-[172px] w-full items-center justify-center text-sm text-wash-text-muted">
-            Sin datos para mostrar.
-          </div>
-        ) : (
-          children
-        )}
-      </CardContent>
+      <CardContent>{empty ? empty : children}</CardContent>
     </Card>
   );
 }

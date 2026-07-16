@@ -12,6 +12,7 @@ import {
   APP_VERSION,
 } from '../_lib/lists.js';
 import { readSession, type SessionPayload } from '../_lib/session.js';
+import { puedeAccederModulo } from '../_lib/permisos.js';
 
 interface Body {
   action?: 'assign' | 'cambiar-tecnico' | 'cambio-maquina' | 'generar-compra';
@@ -59,6 +60,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const body = (req.body ?? {}) as Body;
 
   try {
+    if (!(await puedeAccederModulo(session.rol, 'Incidentes'))) {
+      return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Incidentes.' });
+    }
     if (body.action === 'assign') return await assign(id, body, res);
     if (body.action === 'cambiar-tecnico') return await cambiarTecnico(id, body, res);
     if (body.action === 'cambio-maquina') return await cambioMaquina(id, body, res);

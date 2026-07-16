@@ -64,4 +64,5 @@ function Button({
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- buttonVariants (cva) is intentionally co-located with the Button primitive; moving it would touch imports across the app.
 export { Button, buttonVariants }

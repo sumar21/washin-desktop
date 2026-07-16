@@ -15,8 +15,11 @@ import {
   GitBranch,
   Wind,
   CalendarClock,
+  Loader2,
 } from 'lucide-react';
 import { DataTable, type Column } from '@/components/DataTable';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import {
   Select,
@@ -256,7 +259,14 @@ export function ConfigEdificios({
           rows={rows}
           rowKey={(r) => r.ID}
           columns={columns}
-          empty="Sin edificios registrados."
+          empty={
+            <EmptyState
+              icon={Building2}
+              title="Sin edificios"
+              description="No encontramos edificios que coincidan con la búsqueda."
+              action={canEdit && <Button onClick={() => setAddOpen(true)}>Agregar edificio</Button>}
+            />
+          }
           onRowClick={(r) => setViewing(r)}
           mobileCard={(e) => {
             const cs = circuitosDe(e);
@@ -738,7 +748,8 @@ function EdificioFormModal({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          disabled={saving}
+          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -746,8 +757,9 @@ function EdificioFormModal({
           type="button"
           disabled={!canSave || saving}
           onClick={handleSubmit}
-          className="rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
+          {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
           {saving ? 'Guardando…' : mode === 'create' ? 'Guardar' : 'Guardar cambios'}
         </button>
       </ModalActions>

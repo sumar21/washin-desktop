@@ -14,6 +14,7 @@ import {
   type EdificioAbmRow,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { cascadeEliminarCircuito } from '../_lib/cascadas.js';
 
 interface Body {
   action?: 'create' | 'delete' | 'add-edificio' | 'remove-edificio' | 'update-obs';
@@ -176,6 +177,7 @@ async function remove(body: Body, res: VercelResponse) {
     await updateItem(LIST_IDS.detalleCircuito, d.ID, { Status_DC: 'Eliminado' });
   }
   await recomputarContadores(circuito.NroRuta);
+  await cascadeEliminarCircuito(nroCircuito, circuito.NroRuta);
   return res.status(200).json({ nroCircuito, deleted: true });
 }
 

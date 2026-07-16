@@ -4,16 +4,20 @@ import {
   Pencil,
   Trash2,
   PackageCheck,
+  PackageX,
+  PackagePlus,
   SendHorizonal,
   Plus,
-  HelpCircle,
   AlertCircle,
   X,
   Check,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
+import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
@@ -312,7 +316,14 @@ export function Compras() {
             rows={filtered}
             rowKey={(r) => r.ID}
             columns={columns}
-            empty="Sin pedidos"
+            empty={
+              <EmptyState
+                icon={PackageX}
+                title="Sin compras activas"
+                description="No hay pedidos para los filtros seleccionados. Probá cambiar el mes o crear una compra nueva."
+                action={<Button onClick={() => setNewOpen(true)}>Crear compra</Button>}
+              />
+            }
             mobileCard={(r) => (
               <div className="rounded-xl border border-wash-border bg-wash-surface p-3 shadow-sm transition active:scale-[0.99]">
                 {/* Fila 1: #ID + estado + acciones (mismas que la columna Acciones) */}
@@ -834,9 +845,12 @@ function RecibirModal({
           );
         })}
         {rows.length === 0 && (
-          <div className="rounded-xl border border-dashed border-wash-border px-3 py-6 text-center text-sm text-wash-text-muted">
-            No hay líneas aprobadas para recibir.
-          </div>
+          <EmptyState
+            compact
+            icon={PackageCheck}
+            title="Nada para recibir"
+            description="Este pedido no tiene líneas en estado Aprobada."
+          />
         )}
       </div>
 
@@ -855,7 +869,8 @@ function RecibirModal({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          disabled={saving}
+          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -881,9 +896,16 @@ function RecibirModal({
               setSaving(false);
             }
           }}
-          className="rounded-lg bg-emerald-600 px-5 py-2.5 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center rounded-lg bg-emerald-600 px-5 py-2.5 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {saving ? 'Recibiendo…' : 'Confirmar recepción'}
+          {saving ? (
+            <>
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Recibiendo…
+            </>
+          ) : (
+            'Confirmar recepción'
+          )}
         </button>
       </ModalActions>
     </Modal>
@@ -1104,7 +1126,17 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
           <Label>Items agregados</Label>
           <div className="mt-1.5 rounded-xl border border-wash-border bg-wash-surface-2/40 p-2">
             {lines.length === 0 ? (
-              <EmptyComposeList />
+              <EmptyState
+                compact
+                pulse
+                icon={PackagePlus}
+                title="Sin items agregados"
+                description={
+                  <>
+                    Agregá items con el botón <strong>+</strong>.
+                  </>
+                }
+              />
             ) : (
               <ul className="space-y-1.5">
                 {lines.map((l, idx) =>
@@ -1202,7 +1234,8 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
         <button
           type="button"
           onClick={close}
-          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          disabled={saving}
+          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -1222,23 +1255,18 @@ function NuevaCompraModal({ open, onClose, catalog, segmentos, onSubmit }: Nueva
               setSaving(false);
             }
           }}
-          className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {saving ? 'Guardando…' : 'Guardar'}
+          {saving ? (
+            <>
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Creando…
+            </>
+          ) : (
+            'Guardar'
+          )}
         </button>
       </ModalActions>
     </Modal>
-  );
-}
-
-function EmptyComposeList() {
-  return (
-    <div className="flex flex-col items-center justify-center px-3 py-8 text-center">
-      <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
-        <HelpCircle size={24} strokeWidth={1.7} />
-      </div>
-      <p className="text-sm font-bold text-wash-text-strong">Sin items agregados</p>
-      <p className="mt-0.5 text-[11px] text-wash-text-muted">Aún no se agregó ningún ítem al pedido.</p>
-    </div>
   );
 }

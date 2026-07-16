@@ -19,6 +19,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { DataTable, type Column } from '@/components/DataTable';
+import { EmptyState } from '@/components/EmptyState';
 import { Modal, ModalActions } from '@/components/Modal';
 import { StatusBadge } from '@/components/StatusBadge';
 import {
@@ -500,7 +501,13 @@ export function ConfigReportes({ query }: ConfigReportesProps) {
             rows={filteredRegistros}
             rowKey={(r) => r.ID}
             columns={generalColumns}
-            empty="Sin reportes generales registrados."
+            empty={
+              <EmptyState
+                icon={FileText}
+                title="Sin reportes generales"
+                description="No hay visitas registradas para el filtro seleccionado."
+              />
+            }
             onRowClick={(r) => setViewingChecklist(r)}
           />
         ) : (
@@ -508,7 +515,14 @@ export function ConfigReportes({ query }: ConfigReportesProps) {
             rows={filteredIncidentes}
             rowKey={(i) => i.ID}
             columns={incidentesColumns}
-            empty="Sin incidentes registrados."
+            empty={
+              <EmptyState
+                tone="rose"
+                icon={AlertOctagon}
+                title="Sin incidentes"
+                description="No hay incidentes para el estado/búsqueda actual."
+              />
+            }
             onRowClick={(i) => setViewingIncidente(i)}
           />
         )}

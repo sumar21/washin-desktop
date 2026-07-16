@@ -5,6 +5,7 @@ import {
   applyMaquinaTransfer,
   applyMaquinaBaja,
   buildTransferAprobacionFields,
+  DEPOSITO,
 } from '../_lib/maquinaMoves.js';
 import { readSession } from '../_lib/session.js';
 
@@ -48,6 +49,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (body.action === 'baja') {
       if (!canDirect(session.rol)) {
         return res.status(403).json({ error: 'forbidden', message: 'Solo un Admin puede dar de baja una máquina.' });
+      }
+      // Fidelidad al msapp: la baja solo se habilita cuando la máquina está en depósito (Wash Inn).
+      if (maquina.Edificio_DM.trim() !== DEPOSITO) {
+        return res.status(409).json({ error: 'conflict', message: 'Solo se puede dar de baja una máquina que esté en depósito (Wash Inn).' });
       }
       await applyMaquinaBaja(maquina, body.motivo?.trim() ?? '', session.usuario);
       return res.status(200).json({ ID: id, Status_DM: 'ELIMINADA' });

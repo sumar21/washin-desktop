@@ -218,7 +218,7 @@ interface AppState {
     cantidad: number,
     extras?: { NroSerie?: string; IDMaquina?: string }
   ) => Promise<void>;
-  removeRegistro: (id: number) => void;
+  removeRegistro: (id: number) => Promise<void>;
 
   // Stock técnicos (real: 99.ABMRepuestos_Tecnico)
   fetchStockTecnicos: () => Promise<void>;
@@ -799,6 +799,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   generarCompraIncidente: async (id, payload) => {
     try {
       await api.generarCompraIncidente(id, payload);
+      // Refresca las compras del mes para que el guard anti-duplicado del front
+      // vea la compra recién generada y no permita generar otra para el mismo
+      // incidente (msapp Screen_Incidentes.pa.yaml:192, CollectAUX).
+      await get().fetchCompras();
     } catch (err) {
       handleAuthError(err, set);
       throw err;
@@ -1046,10 +1050,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  removeRegistro: (id) =>
-    set((s) => ({
-      CollectResumen: s.CollectResumen.filter((r) => r.ID !== id),
-    })),
+  removeRegistro: async (id) => {
+    try {
+      // Baja lógica en 01.Registros (Estado -> "Anulado"). El backend valida rol
+      // Admin y estado Pendiente (PowerApp: bt_cerrarPopUpFCE_5).
+      await api.anularRegistro(id);
+      set((s) => ({
+        CollectResumen: s.CollectResumen.filter((r) => r.ID !== id),
+      }));
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
 
   fetchStockTecnicos: async () => {
     try {
