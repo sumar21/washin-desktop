@@ -123,7 +123,7 @@ export interface RepuestoTecnico {
   ID: number;
   Tecnico_RT: string;
   Concat_RT: string;
-  Codigo_RT: string;
+  Codigo_RT?: string;
   Cantidad_RT: number;
   Status_RT: 'Activo' | 'Inactivo';
 }

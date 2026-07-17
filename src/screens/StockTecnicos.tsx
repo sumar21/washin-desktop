@@ -84,7 +84,7 @@ export function StockTecnicos() {
         (r) =>
           r.Tecnico_RT.toLowerCase().includes(q) ||
           r.Concat_RT.toLowerCase().includes(q) ||
-          r.Codigo_RT.toLowerCase().includes(q)
+          (r.Codigo_RT ?? '').toLowerCase().includes(q)
       )
       .sort((a, b) => a.Tecnico_RT.localeCompare(b.Tecnico_RT));
   }, [stockT, query, filterTecnico, filterRepuesto]);
