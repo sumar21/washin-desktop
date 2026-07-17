@@ -80,8 +80,13 @@ async function anularRegistro(req: VercelRequest, res: VercelResponse, rol: stri
   try {
     const current = await getItem(LIST_IDS.registros, id, registrosSelectFields());
     if (!current) return res.status(404).json({ error: 'not_found', message: 'La visita no existe.' });
-    if (String(current.Estado ?? '') !== 'Pendiente') {
+    const reg = mapRegistro(current);
+    if (reg.Estado !== 'Pendiente') {
       return res.status(409).json({ error: 'invalid_state', message: 'Sólo se pueden anular visitas pendientes.' });
+    }
+    // "No en proceso": una visita pendiente ya iniciada (Progreso > 0, con control cargado) no se anula.
+    if ((reg.Progreso ?? 0) > 0) {
+      return res.status(409).json({ error: 'invalid_state', message: 'No se puede anular una visita ya iniciada (en proceso).' });
     }
     await updateItem(LIST_IDS.registros, id, { Estado: 'Anulado' });
     return res.status(200).json({ ID: id, Estado: 'Anulado' });

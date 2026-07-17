@@ -100,6 +100,7 @@ export function Home() {
   const [deletingRegistro, setDeletingRegistro] = useState<Registro | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [visitFilter, setVisitFilter] = useState<'todas' | 'pendientes'>('todas');
   const [descansosOpen, setDescansosOpen] = useState(false);
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const [homeLoading, setHomeLoading] = useState(true);
@@ -231,6 +232,25 @@ export function Home() {
 
   // PowerApp: la baja de una visita sólo es visible para Admin y sobre visitas Pendientes.
   const isAdmin = VarTipoUser === 'Admin';
+  // Cancelable = Admin + pendiente + NO iniciada (progreso 0). Fiel al gate del msapp
+  // (Estado="Pendiente") más la restricción pedida: no cancelar en proceso ni finalizadas.
+  const puedeCancelar = (r: Registro) => isAdmin && r.Estado === 'Pendiente' && !visitaFinalizada(r);
+  const pendientesCancelables = useMemo(
+    () => CollectResumen.filter((r) => r.Estado === 'Pendiente' && !visitaFinalizada(r)).length,
+    [CollectResumen]
+  );
+  // Grilla: pendientes NO iniciadas primero (para poder anularlas), luego por ID desc (recientes).
+  // El filtro "pendientes" muestra sólo esas.
+  const visitasVisibles = useMemo(() => {
+    const noIniciada = (r: Registro) => r.Estado === 'Pendiente' && !visitaFinalizada(r);
+    const base = visitFilter === 'pendientes' ? CollectResumen.filter(noIniciada) : CollectResumen;
+    return [...base].sort((a, b) => {
+      const pa = noIniciada(a) ? 1 : 0;
+      const pb = noIniciada(b) ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      return b.ID - a.ID;
+    });
+  }, [CollectResumen, visitFilter]);
 
   const handleDeleteRegistro = useCallback(async () => {
     if (!deletingRegistro) return;
@@ -528,13 +548,41 @@ export function Home() {
                     <Activity size={16} />
                   </span>
                   <div>
-                    <CardTitle>Actividad reciente</CardTitle>
-                    <p className="text-xs text-wash-text-muted">Últimas visitas registradas</p>
+                    <CardTitle>Visitas del mes</CardTitle>
+                    <p className="text-xs text-wash-text-muted">Pendientes primero · el admin puede cancelarlas</p>
                   </div>
                 </div>
-                <Badge variant="outline" className="text-wash-text-muted">
-                  {intFmt(visitas.total)} este mes
-                </Badge>
+                <div className="flex items-center gap-1 rounded-lg bg-wash-canvas p-0.5 ring-1 ring-wash-border">
+                  <button
+                    type="button"
+                    onClick={() => setVisitFilter('todas')}
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-xs font-semibold transition',
+                      visitFilter === 'todas'
+                        ? 'bg-wash-surface text-wash-text-strong shadow-sm'
+                        : 'text-wash-text-muted hover:text-wash-text-strong'
+                    )}
+                  >
+                    Todas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVisitFilter('pendientes')}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition',
+                      visitFilter === 'pendientes'
+                        ? 'bg-wash-surface text-wash-text-strong shadow-sm'
+                        : 'text-wash-text-muted hover:text-wash-text-strong'
+                    )}
+                  >
+                    Pendientes
+                    {pendientesCancelables > 0 && (
+                      <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-wash-brand/15 px-1.5 text-[10px] font-bold text-wash-brand">
+                        {pendientesCancelables}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </CardHeader>
               <CardContent className="flex-1">
                 {CollectResumen.length === 0 ? (
@@ -543,13 +591,19 @@ export function Home() {
                     title="Sin visitas este mes"
                     description="Cuando se registren visitas van a aparecer acá."
                   />
+                ) : visitasVisibles.length === 0 ? (
+                  <EmptyState
+                    icon={Inbox}
+                    title="Sin visitas pendientes"
+                    description="No hay visitas pendientes por cancelar este mes."
+                  />
                 ) : (
                   <div className="grid max-h-[440px] grid-cols-1 gap-2 overflow-y-auto pr-0.5 md:grid-cols-2">
-                    {CollectResumen.slice(0, 12).map((r) => (
+                    {visitasVisibles.slice(0, 50).map((r) => (
                       <VisitaCard
                         key={r.ID}
                         registro={r}
-                        canDelete={isAdmin && r.Estado === 'Pendiente'}
+                        canDelete={puedeCancelar(r)}
                         onDelete={() => setDeletingRegistro(r)}
                       />
                     ))}
@@ -564,14 +618,14 @@ export function Home() {
       <ConfirmDialog
         open={!!deletingRegistro}
         tone="danger"
-        title="Eliminar visita"
+        title="Cancelar visita pendiente"
         message={
           deletingRegistro
-            ? `¿Deseás eliminar la visita a ${deletingRegistro.Edificio}? Esta acción no se puede deshacer.`
+            ? `¿Cancelás la visita pendiente a ${deletingRegistro.Edificio}? Queda anulada (baja lógica) y deja de contarse en el mes.`
             : ''
         }
-        confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
-        cancelLabel="Cancelar"
+        confirmLabel={deleteBusy ? 'Cancelando…' : 'Cancelar visita'}
+        cancelLabel="Volver"
         busy={deleteBusy}
         error={deleteError}
         onCancel={() => {
@@ -812,8 +866,8 @@ function VisitaCard({
               type="button"
               onClick={onDelete}
               className="flex h-6 w-6 items-center justify-center rounded-md text-wash-text-faint transition-colors hover:bg-rose-50 hover:text-rose-600"
-              title="Eliminar visita"
-              aria-label="Eliminar visita"
+              title="Cancelar visita"
+              aria-label="Cancelar visita"
             >
               <Trash2 size={13} />
             </button>

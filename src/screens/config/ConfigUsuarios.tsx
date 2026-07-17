@@ -3,6 +3,7 @@ import { UserCog, User, Pencil, Trash2, Phone, Mail, KeyRound, Shield, AlertCirc
 import { DataTable, type Column } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
@@ -293,7 +294,7 @@ function UsuarioFormModal({
   const [contrasena, setContrasena] = useState('');
   const [nombre, setNombre] = useState('');
   const [apellido, setApellido] = useState('');
-  const [rol, setRol] = useState<string>(USER_ROLES[0]);
+  const [rol, setRol] = useState<string>('');
   const [telefono, setTelefono] = useState('');
   const [email, setEmail] = useState('');
   const [saving, setSaving] = useState(false);
@@ -306,7 +307,7 @@ function UsuarioFormModal({
     setContrasena('');
     setNombre(usuario?.Nombre ?? '');
     setApellido(usuario?.Apellido ?? '');
-    setRol(usuario?.Rol ?? USER_ROLES[0]);
+    setRol(usuario?.Rol ?? '');
     setTelefono(usuario?.Telefono ?? '');
     setEmail(usuario?.Email ?? '');
     setError(null);
@@ -314,6 +315,15 @@ function UsuarioFormModal({
   }, [open, usuario]);
 
   const esNuevo = !usuario;
+  // Catálogo real de roles (ABM.Roles, cargado por fetchAbm en el shell de Configuración);
+  // USER_ROLES queda solo como fallback defensivo si el catálogo todavía no llegó.
+  const abmRoles = useAppStore((s) => s.AbmRoles);
+  // + el rol actual del usuario si fuera uno legacy (fuera del catálogo), para no forzar
+  // un cambio silencioso al editar.
+  const rolesDisponibles = useMemo(() => {
+    const base = abmRoles.length ? abmRoles : (USER_ROLES as string[]);
+    return usuario?.Rol && !base.includes(usuario.Rol) ? [...base, usuario.Rol] : base;
+  }, [abmRoles, usuario]);
   const valido = user.trim() !== '' && nombre.trim() !== '' && rol !== '' && (!esNuevo || contrasena.trim() !== '');
 
   const handleSave = async () => {
@@ -373,21 +383,19 @@ function UsuarioFormModal({
 
         <div>
           <label className="text-xs font-semibold uppercase tracking-wider text-wash-text-muted">Rol</label>
-          <div className="mt-1.5 flex items-stretch overflow-hidden rounded-lg border border-wash-border focus-within:border-wash-brand focus-within:ring-2 focus-within:ring-wash-brand/15">
-            <span className="flex w-10 shrink-0 items-center justify-center bg-wash-surface-2 text-wash-text-muted">
-              <Shield size={15} />
-            </span>
-            <select
-              value={rol}
-              onChange={(e) => setRol(e.target.value)}
-              className="w-full min-w-0 flex-1 bg-wash-surface px-3 py-2 text-sm outline-none"
-            >
-              {USER_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+          <div className="mt-1.5">
+            <Select value={rol || undefined} onValueChange={setRol}>
+              <SelectTrigger className="h-10 w-full">
+                <SelectValue placeholder="Seleccionar rol…" />
+              </SelectTrigger>
+              <SelectContent>
+                {rolesDisponibles.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

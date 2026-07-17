@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { listItems, createItem, updateItem, getItem, GraphError } from '../_lib/graph.js';
-import { LIST_IDS, mapUsuario, usuarioAbmSelectFields, canEditAbm, ROLE_TO_LPP_COLUMN } from '../_lib/lists.js';
+import { LIST_IDS, mapUsuario, usuarioAbmSelectFields, canEditAbm, mapRolesActivos } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
 
 /**
@@ -20,8 +20,10 @@ import { readSession } from '../_lib/session.js';
  * = se mantiene la actual.
  */
 
-// Los 8 roles válidos (mismas claves que el mapeo LPP).
-const ROLES = new Set(Object.keys(ROLE_TO_LPP_COLUMN));
+/** Roles válidos = catálogo activo de ABM.Roles (el mismo que puebla el desplegable del front). */
+async function rolesValidos(): Promise<string[]> {
+  return mapRolesActivos(await listItems(LIST_IDS.roles, { top: 999 }));
+}
 
 interface UsuarioInput {
   usuario?: string;
@@ -115,7 +117,7 @@ async function create(body: Body, res: VercelResponse) {
   if (!usuario) return res.status(400).json({ error: 'invalid', message: 'Falta el usuario' });
   if (!nombre) return res.status(400).json({ error: 'invalid', message: 'Falta el nombre' });
   if (!body.contrasena) return res.status(400).json({ error: 'invalid', message: 'Falta la contraseña' });
-  if (!body.rol || !ROLES.has(body.rol)) return res.status(400).json({ error: 'invalid', message: 'Rol inválido' });
+  if (!body.rol || !(await rolesValidos()).includes(body.rol)) return res.status(400).json({ error: 'invalid', message: 'Rol inválido' });
 
   // Usuario (field_1) único.
   const existentes = (await listItems(LIST_IDS.usuarios, { select: usuarioAbmSelectFields() })).map(mapUsuario);
@@ -138,7 +140,7 @@ async function create(body: Body, res: VercelResponse) {
 async function update(body: Body, res: VercelResponse) {
   const id = Number(body.id);
   if (!id) return res.status(400).json({ error: 'invalid_id' });
-  if (body.rol !== undefined && !ROLES.has(body.rol)) {
+  if (body.rol !== undefined && !(await rolesValidos()).includes(body.rol)) {
     return res.status(400).json({ error: 'invalid', message: 'Rol inválido' });
   }
   const current = await getItem(LIST_IDS.usuarios, id, usuarioAbmSelectFields());

@@ -30,7 +30,8 @@ export const USER_ROLES: UserRole[] = [
 export interface Usuario {
   ID: number;
   Usuario: string;
-  Contrasena: string;
+  /** Solo presente en el mock/login; el ABM y el backend nunca la exponen al front. */
+  Contrasena?: string;
   Nombre: string;
   Apellido: string;
   Concat_Nombre_Apellido: string;

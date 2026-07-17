@@ -135,7 +135,7 @@ export function mapUsuario(item: SharePointItem): UsuarioRow {
     Nombre: String(item.Nombre ?? ''),
     Apellido: String(item.Apellido ?? ''),
     Concat_Nombre_Apellido: String(item.Concat_Nombre_Apellido ?? ''),
-    Rol: String(item.Rol ?? ''),
+    Rol: String(item.Rol ?? '').trim(),
     Status: (item.Status as 'ALTA' | 'BAJA') ?? 'BAJA',
     Telefono: item.Telefono ? String(item.Telefono) : undefined,
     Email: item.Correo ? String(item.Correo) : undefined,
