@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Map, GitBranch, Building2, Wrench, Search, Plus, Lock } from 'lucide-react';
+import { Map, GitBranch, Building2, Wrench, UserCog, Search, Plus, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
 import { abmAccess, type AbmTab } from '@/lib/abmAccess';
@@ -9,8 +9,9 @@ import { ConfigRutas } from './config/ConfigRutas';
 import { ConfigCircuitos } from './config/ConfigCircuitos';
 import { ConfigEdificios } from './config/ConfigEdificios';
 import { ConfigRepuestos } from './config/ConfigRepuestos';
+import { ConfigUsuarios } from './config/ConfigUsuarios';
 
-type ConfigTab = 'rutas' | 'circuitos' | 'edificios' | 'repuestos';
+type ConfigTab = 'rutas' | 'circuitos' | 'edificios' | 'repuestos' | 'usuarios';
 
 interface TabDef {
   key: ConfigTab;
@@ -27,6 +28,7 @@ const TABS: TabDef[] = [
   { key: 'circuitos', label: 'Circuitos', icon: GitBranch, addLabel: 'Agregar Circuito', placeholder: 'Buscar circuito o edificio…', abm: 'Circuitos' },
   { key: 'edificios', label: 'Edificios', icon: Building2, addLabel: 'Agregar Edificio', placeholder: 'Buscar edificio…', abm: 'Edificios' },
   { key: 'repuestos', label: 'Repuestos', icon: Wrench, addLabel: 'Agregar Repuesto', placeholder: 'Buscar repuesto, código, marca…', abm: 'Repuestos' },
+  { key: 'usuarios', label: 'Usuarios', icon: UserCog, addLabel: 'Agregar Usuario', placeholder: 'Buscar usuario, nombre, rol…', abm: 'Usuarios' },
 ];
 
 export function Configuracion() {
@@ -38,7 +40,7 @@ export function Configuracion() {
   const visibleTabs = TABS.filter((t) => t.abm === null || access.tabs.includes(t.abm));
 
   const [tab, setTab] = useState<ConfigTab | null>(null);
-  const [queries, setQueries] = useState<Record<ConfigTab, string>>({ rutas: '', circuitos: '', edificios: '', repuestos: '' });
+  const [queries, setQueries] = useState<Record<ConfigTab, string>>({ rutas: '', circuitos: '', edificios: '', repuestos: '', usuarios: '' });
   const [addOpen, setAddOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -144,6 +146,7 @@ export function Configuracion() {
           )}
           {active.key === 'edificios' && <ConfigEdificios query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} />}
           {active.key === 'repuestos' && <ConfigRepuestos query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} />}
+          {active.key === 'usuarios' && <ConfigUsuarios query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} />}
         </div>
       )}
     </div>

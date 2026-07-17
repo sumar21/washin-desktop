@@ -142,6 +142,12 @@ export function mapUsuario(item: SharePointItem): UsuarioRow {
   };
 }
 
+// Proyección para el ABM de Usuarios (Configuración, solo Admin).
+const USUARIO_ABM_SELECT = ['field_1', 'field_4', 'Nombre', 'Apellido', 'Concat_Nombre_Apellido', 'Rol', 'Status', 'Telefono', 'Correo'];
+export function usuarioAbmSelectFields(): string[] {
+  return USUARIO_ABM_SELECT;
+}
+
 /** Rol (tal como se guarda en Usuarios.Rol) -> columna booleana ("SI"/"NO") de 99.ListaPermisosDesktop. */
 export const ROLE_TO_LPP_COLUMN: Record<string, string | null> = {
   Admin: 'Admin_LPP',

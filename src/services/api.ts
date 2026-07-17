@@ -20,6 +20,7 @@ import type {
   RepuestoTecnico,
   RutaAbm,
   StockItem,
+  Usuario,
   UserRole,
   Ventilacion,
 } from '@/types/domain';
@@ -593,4 +594,31 @@ export function updateRepuesto(id: number, payload: RepuestoAbmInput): Promise<R
 
 export function bajaRepuesto(id: number): Promise<{ ID: number; Status_RP: string }> {
   return request('/repuestos', { method: 'POST', body: JSON.stringify({ action: 'baja', id }) });
+}
+
+// ── ABM de Usuarios (lista Usuarios) — solo Admin ─────────────────────────
+export interface UsuarioAbmInput {
+  usuario: string;
+  contrasena?: string; // opcional en edición (vacío = se mantiene)
+  nombre: string;
+  apellido?: string;
+  rol: string;
+  telefono?: string;
+  email?: string;
+}
+
+export function getUsuarios(): Promise<Usuario[]> {
+  return request('/abm/usuarios');
+}
+
+export function createUsuario(payload: UsuarioAbmInput): Promise<Usuario> {
+  return request('/abm/usuarios', { method: 'POST', body: JSON.stringify({ action: 'create', ...payload }) });
+}
+
+export function updateUsuario(id: number, payload: UsuarioAbmInput): Promise<Usuario> {
+  return request('/abm/usuarios', { method: 'POST', body: JSON.stringify({ action: 'update', id, ...payload }) });
+}
+
+export function bajaUsuario(id: number): Promise<{ ID: number; Status: string }> {
+  return request('/abm/usuarios', { method: 'POST', body: JSON.stringify({ action: 'baja', id }) });
 }

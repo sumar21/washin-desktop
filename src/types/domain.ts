@@ -14,6 +14,18 @@ export type UserRole =
   | 'Supervisor Ventilaciones'
   | 'Tecnico';
 
+/** Los 8 roles, en orden, para los pickers (ABM de Usuarios). */
+export const USER_ROLES: UserRole[] = [
+  'Admin',
+  'Supervisor Lider',
+  'Supervisor',
+  'Supervisor Mantenimiento',
+  'Supervisor Ventilaciones',
+  'Jefe Taller',
+  'Atencion Al Cliente',
+  'Tecnico',
+];
+
 // Usuarios
 export interface Usuario {
   ID: number;

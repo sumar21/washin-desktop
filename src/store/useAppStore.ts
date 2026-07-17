@@ -86,6 +86,8 @@ interface AppState {
   CollectStockTecnicos: RepuestoTecnico[];
   /** Catálogo de repuestos con precio (11.Respuestos). */
   CollectRepuestos: Repuesto[];
+  /** Usuarios del sistema (lista Usuarios) — ABM de Configuración, solo Admin. */
+  CollectUsuarios: Usuario[];
   CollectCompras: PedidoCompra[];
   CollectDetalleCompras: DetalleCompra[];
   CollectAprobaciones: Aprobacion[];
@@ -171,6 +173,12 @@ interface AppState {
   createRepuesto: (payload: api.RepuestoAbmInput) => Promise<void>;
   updateRepuesto: (id: number, payload: api.RepuestoAbmInput) => Promise<void>;
   bajaRepuesto: (id: number) => Promise<void>;
+  /** Real: GET /api/abm/usuarios — usuarios del sistema (solo Admin). */
+  fetchUsuarios: () => Promise<void>;
+  /** Real: POST /api/abm/usuarios — ABM de usuarios (gate Admin). */
+  createUsuario: (payload: api.UsuarioAbmInput) => Promise<void>;
+  updateUsuario: (id: number, payload: api.UsuarioAbmInput) => Promise<void>;
+  bajaUsuario: (id: number) => Promise<void>;
   /** Real: GET /api/catalog — segmentos + items (11.Respuestos + 99.ABM_MaquinasCompra). */
   fetchCatalog: () => Promise<void>;
   /** Real: GET /api/compras — cabeceras + sus líneas. `meses` (varios mm/yyyy) mergea; `mes` un mes puntual. */
@@ -282,6 +290,10 @@ const initialState: Omit<
   | 'createRepuesto'
   | 'updateRepuesto'
   | 'bajaRepuesto'
+  | 'fetchUsuarios'
+  | 'createUsuario'
+  | 'updateUsuario'
+  | 'bajaUsuario'
   | 'fetchCatalog'
   | 'fetchCompras'
   | 'fetchAprobaciones'
@@ -343,6 +355,7 @@ const initialState: Omit<
   CollectStock: mockStock,
   CollectStockTecnicos: [],
   CollectRepuestos: [],
+  CollectUsuarios: [],
   CollectCompras: [],
   CollectDetalleCompras: [],
   CollectAprobaciones: [],
@@ -547,6 +560,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await api.bajaRepuesto(id);
       await get().fetchRepuestos();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  fetchUsuarios: async () => {
+    try {
+      const usuarios = await api.getUsuarios();
+      set({ CollectUsuarios: usuarios });
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  createUsuario: async (payload) => {
+    try {
+      await api.createUsuario(payload);
+      await get().fetchUsuarios();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  updateUsuario: async (id, payload) => {
+    try {
+      await api.updateUsuario(id, payload);
+      await get().fetchUsuarios();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  bajaUsuario: async (id) => {
+    try {
+      await api.bajaUsuario(id);
+      await get().fetchUsuarios();
     } catch (err) {
       handleAuthError(err, set);
       throw err;

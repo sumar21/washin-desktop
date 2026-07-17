@@ -5,7 +5,7 @@
 // drift entre los dos gates. Módulo puro (solo strings) — sin deps de dominio,
 // node ni DOM — para que compile en ambos tsconfig (app + api).
 
-export type AbmTab = 'Rutas' | 'Circuitos' | 'Edificios' | 'Repuestos';
+export type AbmTab = 'Rutas' | 'Circuitos' | 'Edificios' | 'Repuestos' | 'Usuarios';
 
 const ABM_EDIT_ROLES = new Set(['Admin', 'Supervisor Mantenimiento', 'Supervisor Lider']);
 const ABM_READONLY_EDIFICIOS_ROLES = new Set(['Supervisor Ventilaciones', 'Atencion Al Cliente']);
@@ -14,6 +14,8 @@ const REPUESTOS_ONLY_ROLES = new Set(['Jefe Taller']);
 
 /** Pestañas ABM visibles + si el rol puede editar (o es solo-lectura). */
 export function abmAccessMatrix(rol: string | null | undefined): { tabs: AbmTab[]; canEdit: boolean } {
+  // El ABM de Usuarios administra credenciales/roles → SOLO Admin.
+  if (rol === 'Admin') return { tabs: ['Rutas', 'Circuitos', 'Edificios', 'Repuestos', 'Usuarios'], canEdit: true };
   if (rol && ABM_EDIT_ROLES.has(rol)) return { tabs: ['Rutas', 'Circuitos', 'Edificios', 'Repuestos'], canEdit: true };
   if (rol && REPUESTOS_ONLY_ROLES.has(rol)) return { tabs: ['Repuestos'], canEdit: true };
   if (rol && ABM_READONLY_EDIFICIOS_ROLES.has(rol)) return { tabs: ['Edificios'], canEdit: false };
