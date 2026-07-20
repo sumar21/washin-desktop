@@ -254,6 +254,9 @@ export function Incidentes() {
     const pass = (arr: string[], v: string) => arr.length === 0 || arr.includes(v);
     return displayList
       .filter((i) => pass(filterMesAno, i.FechaMesAno_IN))
+      // Los anulados no ensucian la grilla por defecto: solo se ven si se piden
+      // explícitamente desde el filtro de estado (que sigue ofreciendo 'Anulado').
+      .filter((i) => filterEstado.length > 0 || i.Status_IN !== 'Anulado')
       .filter((i) => pass(filterEstado, i.Status_IN))
       .filter((i) => pass(filterEdificio, i.NombreEdificio_IN))
       .filter((i) => pass(filterTipo, i.NoResuelto_IN))
