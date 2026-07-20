@@ -15,6 +15,21 @@ import {
 import { readSession, type SessionPayload } from '../_lib/session.js';
 import { puedeAccederModulo } from '../_lib/permisos.js';
 
+/**
+ * Modelo de la máquina a partir del nombre del ítem comprado: le saca el prefijo
+ * "{Segmento} - " y, si viene, "{Marca} - ".
+ *   "Lavadora - S.Queen - SWT111WN3028" (seg=Lavadora, marca=S.Queen) → "SWT111WN3028"
+ *   "Lavadora - FWNE52SP303BW01"        (seg=Lavadora, marca=Huebsch) → "FWNE52SP303BW01"
+ */
+function modeloDesdeItem(item: string, segmento: string, marca: string): string {
+  let s = String(item ?? '').trim();
+  for (const p of [segmento, marca]) {
+    const pre = `${String(p ?? '').trim()} - `;
+    if (pre.trim() !== '-' && s.toLowerCase().startsWith(pre.toLowerCase())) s = s.slice(pre.length).trim();
+  }
+  return s;
+}
+
 function odataEscape(v: string): string {
   return v.replace(/'/g, "''");
 }
@@ -269,6 +284,7 @@ async function recibir(id: number, req: VercelRequest, res: VercelResponse, sess
           Edificio_DM: 'Wash Inn',
           ConcatMaquina_DM: d.Item_DC,
           Marca_DM: d.Marca_DC ?? '',
+          Modelo_DM: modeloDesdeItem(d.Item_DC, d.Segmento_DC, d.Marca_DC ?? ''),
         });
         const rowId = Number(createdMaq.id);
         // Serie/ID propios de ESTA unidad (validados como obligatorios arriba); fallback al RowID.
@@ -278,8 +294,13 @@ async function recibir(id: number, req: VercelRequest, res: VercelResponse, sess
         await updateItem(LIST_IDS.detalleMaquina, rowId, {
           IDMaquina_DM: idMaquina,
           NroSerie_DM: nroSerie,
-          ConcatMaquina_DM: `${d.Segmento_DC} - ${idMaquina}`,
-          ConcatMaquinaIncidente_DM: `${d.Segmento_DC} - ${idMaquina}`,
+          // OJO: ConcatMaquina_DM NO se toca acá — ya quedó = Item_DC en el create, y ESA es la
+          // clave con la que 04.Stock identifica el ítem (ajustarStock matchea por Item_ST).
+          // Pisarlo con `Segmento - IDMaquina` dejaba la máquina huérfana del stock y sin modelo.
+          // ConcatMaquinaIncidente_DM identifica la UNIDAD: "Segmento - Marca - Serie - ID".
+          ConcatMaquinaIncidente_DM: [d.Segmento_DC, (d.Marca_DC ?? '').trim(), nroSerie, idMaquina]
+            .filter((p) => String(p).trim() !== '')
+            .join(' - '),
         });
       }
     }
