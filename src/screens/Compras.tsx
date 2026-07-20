@@ -718,9 +718,23 @@ function FilterContent({
 
 // ----- Recibir modal (captura cantidad real + serie/id para máquinas) -----
 
+interface ReceiveUnidad {
+  nroSerie: string;
+  idMaquina: string;
+}
+
 interface ReceiveRow extends ReceiveLine {
   item: string;
   segmento: string;
+  /** Para máquinas: una serie+ID por unidad (largo === cantidadReal). Vacío en repuestos/simples. */
+  unidades: ReceiveUnidad[];
+}
+
+/** Ajusta el array de unidades al largo `n` conservando lo ya cargado. */
+function resizeUnidades(current: ReceiveUnidad[], n: number): ReceiveUnidad[] {
+  const next = current.slice(0, n);
+  while (next.length < n) next.push({ nroSerie: '', idMaquina: '' });
+  return next;
 }
 
 function RecibirModal({
@@ -748,8 +762,7 @@ function RecibirModal({
         cantidadReal: d.Cantidad_DC,
         item: d.Item_DC,
         segmento: d.Segmento_DC,
-        nroSerie: '',
-        idMaquina: '',
+        unidades: isMachineSeg(d.Segmento_DC) ? resizeUnidades([], d.Cantidad_DC) : [],
       }))
     );
     setObs('');
@@ -757,10 +770,39 @@ function RecibirModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reinicia solo al abrir para un pedido distinto.
   }, [pedido]);
 
-  const setRow = (id: number, patch: Partial<ReceiveRow>) =>
-    setRows((arr) => arr.map((r) => (r.detalleId === id ? { ...r, ...patch } : r)));
+  // Cambia la cantidad recibida y, para máquinas, redimensiona las unidades (serie/ID por unidad).
+  const setCantidad = (id: number, next: number) =>
+    setRows((arr) =>
+      arr.map((r) => {
+        if (r.detalleId !== id) return r;
+        const cantidadReal = Math.max(0, next);
+        return {
+          ...r,
+          cantidadReal,
+          unidades: isMachineSeg(r.segmento) ? resizeUnidades(r.unidades, cantidadReal) : [],
+        };
+      })
+    );
 
-  const canSave = rows.length > 0 && rows.every((r) => r.cantidadReal > 0);
+  const setUnidad = (id: number, idx: number, patch: Partial<ReceiveUnidad>) =>
+    setRows((arr) =>
+      arr.map((r) =>
+        r.detalleId === id
+          ? { ...r, unidades: r.unidades.map((u, i) => (i === idx ? { ...u, ...patch } : u)) }
+          : r
+      )
+    );
+
+  // Cada línea de máquina exige serie + ID (ambos no vacíos) para TODAS sus unidades.
+  const canSave =
+    rows.length > 0 &&
+    rows.every(
+      (r) =>
+        r.cantidadReal > 0 &&
+        (!isMachineSeg(r.segmento) ||
+          (r.unidades.length === r.cantidadReal &&
+            r.unidades.every((u) => u.nroSerie.trim() && u.idMaquina.trim())))
+    );
 
   return (
     <Modal
@@ -798,7 +840,7 @@ function RecibirModal({
                   <div className="mt-1 flex h-9 w-[120px] items-stretch overflow-hidden rounded-lg border border-wash-border bg-wash-surface focus-within:border-wash-brand focus-within:ring-2 focus-within:ring-wash-brand/15">
                     <button
                       type="button"
-                      onClick={() => setRow(r.detalleId, { cantidadReal: Math.max(0, r.cantidadReal - 1) })}
+                      onClick={() => setCantidad(r.detalleId, r.cantidadReal - 1)}
                       className="flex w-8 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
                       aria-label="Restar uno"
                     >
@@ -808,13 +850,13 @@ function RecibirModal({
                       type="number"
                       min={0}
                       value={r.cantidadReal}
-                      onChange={(e) => setRow(r.detalleId, { cantidadReal: Math.max(0, Number(e.target.value) || 0) })}
+                      onChange={(e) => setCantidad(r.detalleId, Number(e.target.value) || 0)}
                       className="w-full min-w-0 flex-1 bg-transparent text-center text-sm font-bold tabular-nums outline-none"
                       aria-label={`Cantidad recibida de ${r.item}`}
                     />
                     <button
                       type="button"
-                      onClick={() => setRow(r.detalleId, { cantidadReal: r.cantidadReal + 1 })}
+                      onClick={() => setCantidad(r.detalleId, r.cantidadReal + 1)}
                       className="flex w-8 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
                       aria-label="Sumar uno"
                     >
@@ -823,22 +865,34 @@ function RecibirModal({
                   </div>
                 </div>
               </div>
-              {machine && (
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={r.nroSerie}
-                    onChange={(e) => setRow(r.detalleId, { nroSerie: e.target.value })}
-                    placeholder="Nro serie (opcional)"
-                    className="h-9 w-full rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
-                  />
-                  <input
-                    type="text"
-                    value={r.idMaquina}
-                    onChange={(e) => setRow(r.detalleId, { idMaquina: e.target.value })}
-                    placeholder="ID máquina (opcional)"
-                    className="h-9 w-full rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
-                  />
+              {machine && r.cantidadReal > 0 && (
+                <div className="mt-3 space-y-2 border-t border-wash-divider/60 pt-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+                    Serie e ID por unidad ({r.unidades.length}) — obligatorio
+                  </p>
+                  {r.unidades.map((u, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="flex h-9 w-7 shrink-0 items-center justify-center rounded-md bg-wash-action/10 text-[11px] font-bold text-wash-action tabular-nums">
+                        {idx + 1}
+                      </span>
+                      <input
+                        type="text"
+                        value={u.nroSerie}
+                        onChange={(e) => setUnidad(r.detalleId, idx, { nroSerie: e.target.value })}
+                        placeholder="Nº de serie"
+                        aria-label={`Nº de serie de la unidad ${idx + 1} de ${r.item}`}
+                        className="h-9 w-full flex-1 rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+                      />
+                      <input
+                        type="text"
+                        value={u.idMaquina}
+                        onChange={(e) => setUnidad(r.detalleId, idx, { idMaquina: e.target.value })}
+                        placeholder="ID de máquina"
+                        aria-label={`ID de máquina de la unidad ${idx + 1} de ${r.item}`}
+                        className="h-9 w-full flex-1 rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -886,8 +940,9 @@ function RecibirModal({
                 lines: rows.map((r) => ({
                   detalleId: r.detalleId,
                   cantidadReal: r.cantidadReal,
-                  nroSerie: r.nroSerie?.trim() || undefined,
-                  idMaquina: r.idMaquina?.trim() || undefined,
+                  unidades: isMachineSeg(r.segmento)
+                    ? r.unidades.map((u) => ({ nroSerie: u.nroSerie.trim(), idMaquina: u.idMaquina.trim() }))
+                    : undefined,
                 })),
               });
             } catch (err) {

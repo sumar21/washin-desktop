@@ -4,6 +4,7 @@ import type {
   PermisoModulo,
   Edificio,
   Registro,
+  DetalleVisita,
   Descanso,
   StockItem,
   StockCatalogItem,
@@ -82,6 +83,8 @@ interface AppState {
   CollectDescansosHoy: Descanso[];
   /** Registros del rango de meses elegido para el Dashboard de Visitas. */
   CollectDashboardVisitas: Registro[];
+  /** Detalle por ÍTEM (02.Detalles) del rango — Dashboard de Visitas, vista Detalle (lazy). */
+  CollectDashboardDetalles: DetalleVisita[];
   CollectStock: StockItem[];
   CollectStockTecnicos: RepuestoTecnico[];
   /** Catálogo de repuestos con precio (11.Respuestos). */
@@ -165,6 +168,8 @@ interface AppState {
   fetchHome: () => Promise<void>;
   /** Real: GET /api/dashboard/visitas — registros del rango [desde..hasta] (mm/yyyy). */
   fetchDashboardVisitas: (desde?: string, hasta?: string) => Promise<void>;
+  /** Real: GET /api/dashboard/detalles — detalle por ítem del rango (lazy, vista Detalle). */
+  fetchDashboardDetalles: (desde?: string, hasta?: string) => Promise<void>;
   fetchStock: () => Promise<void>;
   fetchTecnicos: () => Promise<void>;
   /** Real: GET /api/repuestos — catálogo de repuestos (11.Respuestos). */
@@ -209,6 +214,8 @@ interface AppState {
     id: number,
     payload: { tipoCompra: 'repuesto' | 'maquina'; item: string; segmento: string }
   ) => Promise<void>;
+  /** Baja lógica de un incidente (Status_IN -> 'Anulado'). Solo Admin (gate server-side). */
+  anularIncidente: (id: number) => Promise<void>;
 
   // ── Detalle de Máquinas (08) — API real ───────────────────────────────
   /** Real: GET /api/maquinas — todas las máquinas activas, ordenadas edificio→segmento→alfabético. */
@@ -227,6 +234,8 @@ interface AppState {
     extras?: { NroSerie?: string; IDMaquina?: string }
   ) => Promise<void>;
   removeRegistro: (id: number) => Promise<void>;
+  /** H13: el Admin cierra/finaliza una visita en curso (Estado -> "Finalizado"). */
+  cerrarRegistro: (id: number) => Promise<void>;
 
   // Stock técnicos (real: 99.ABMRepuestos_Tecnico)
   fetchStockTecnicos: () => Promise<void>;
@@ -284,6 +293,7 @@ const initialState: Omit<
   | 'setLoading'
   | 'fetchHome'
   | 'fetchDashboardVisitas'
+  | 'fetchDashboardDetalles'
   | 'fetchStock'
   | 'fetchTecnicos'
   | 'fetchRepuestos'
@@ -311,12 +321,14 @@ const initialState: Omit<
   | 'cambiarTecnicoIncidente'
   | 'cambioMaquinaIncidente'
   | 'generarCompraIncidente'
+  | 'anularIncidente'
   | 'fetchMaquinas'
   | 'transferMaquina'
   | 'bajaMaquina'
   | 'patchStock'
   | 'addStock'
   | 'removeRegistro'
+  | 'cerrarRegistro'
   | 'fetchStockTecnicos'
   | 'patchStockTecnico'
   | 'reingressStockTecnico'
@@ -352,6 +364,7 @@ const initialState: Omit<
   CollectResumen: mockRegistros,
   CollectDescansosHoy: [],
   CollectDashboardVisitas: [],
+  CollectDashboardDetalles: [],
   CollectStock: mockStock,
   CollectStockTecnicos: [],
   CollectRepuestos: [],
@@ -500,6 +513,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const { visitas } = await api.getDashboardVisitas(desde, hasta);
       set({ CollectDashboardVisitas: visitas });
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  fetchDashboardDetalles: async (desde, hasta) => {
+    try {
+      const { detalles } = await api.getDashboardDetalles(desde, hasta);
+      set({ CollectDashboardDetalles: detalles });
     } catch (err) {
       handleAuthError(err, set);
       throw err;
@@ -823,10 +846,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   cambiarTecnicoIncidente: async (id, tecnico) => {
     try {
-      await api.cambiarTecnicoIncidente(id, tecnico);
+      // El estado destino lo decide el server (fiel al msapp): 'A Revisar' para
+      // Atencion al Cliente / Reportado Por Tecnico, 'Asignado' para el resto.
+      const r = await api.cambiarTecnicoIncidente(id, tecnico);
       set((s) => ({
         CollectIncidentes: s.CollectIncidentes.map((it) =>
-          it.ID === id ? { ...it, TecnicoAsignado_IN: tecnico, Status_IN: 'Asignado' } : it
+          it.ID === id ? { ...it, TecnicoAsignado_IN: tecnico, Status_IN: r.Status_IN } : it
         ),
       }));
     } catch (err) {
@@ -856,6 +881,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       // vea la compra recién generada y no permita generar otra para el mismo
       // incidente (msapp Screen_Incidentes.pa.yaml:192, CollectAUX).
       await get().fetchCompras();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  anularIncidente: async (id) => {
+    try {
+      // Baja lógica (Status_IN -> 'Anulado'). El backend valida rol Admin y estado.
+      await api.anularIncidente(id);
+      // Sale de la lista de abiertos (mismo criterio que otras pantallas).
+      set((s) => ({ CollectIncidentes: s.CollectIncidentes.filter((it) => it.ID !== id) }));
     } catch (err) {
       handleAuthError(err, set);
       throw err;
@@ -1110,6 +1147,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       await api.anularRegistro(id);
       set((s) => ({
         CollectResumen: s.CollectResumen.filter((r) => r.ID !== id),
+      }));
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  cerrarRegistro: async (id) => {
+    try {
+      // H13: cierre forzado por el Admin. El backend valida rol + estado Pendiente
+      // y setea Estado="Finalizado" + sellos de fin. Reflejamos el cambio local:
+      // la visita pasa a Finalizado (deja de estar "en curso").
+      const { Estado, HoraSalida } = await api.cerrarRegistro(id);
+      set((s) => ({
+        CollectResumen: s.CollectResumen.map((r) =>
+          r.ID === id
+            ? { ...r, Estado: (Estado as Registro['Estado']) ?? 'Finalizado', HoraSalida: HoraSalida ?? r.HoraSalida }
+            : r
+        ),
       }));
     } catch (err) {
       handleAuthError(err, set);

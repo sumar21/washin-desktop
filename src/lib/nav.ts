@@ -35,12 +35,30 @@ export const moduleMeta: Record<ModuloNombre, { icon: typeof Home; path: string 
 const DASHBOARD_ROLES: UserRole[] = [
   'Admin',
   'Supervisor Lider',
-  'Supervisor',
   'Supervisor Mantenimiento',
   'Supervisor Ventilaciones',
 ];
 export function canSeeDashboard(rol: UserRole | null | undefined): boolean {
   return !!rol && DASHBOARD_ROLES.includes(rol);
+}
+
+/** Tabs del Dashboard (deben coincidir con los `TabId` de Dashboard.tsx). */
+export type DashboardTabId = 'general' | 'visitas' | 'incidentes';
+const ALL_DASHBOARD_TABS: DashboardTabId[] = ['general', 'visitas', 'incidentes'];
+// Roles con acceso PARCIAL al dashboard: solo ven un subconjunto de tabs.
+const DASHBOARD_TABS_BY_ROLE: Partial<Record<UserRole, DashboardTabId[]>> = {
+  'Supervisor Lider': ['visitas'],
+};
+/** Tabs del Dashboard que el rol puede ver (vacío ⇒ sin acceso). */
+export function dashboardTabsForRole(rol: UserRole | null | undefined): DashboardTabId[] {
+  if (!canSeeDashboard(rol)) return [];
+  return DASHBOARD_TABS_BY_ROLE[rol!] ?? ALL_DASHBOARD_TABS;
+}
+
+/** Roles que pueden crear/borrar/modificar planificaciones. Supervisor + Jefe Taller: solo-lectura. */
+const PLANIF_READONLY_ROLES: UserRole[] = ['Supervisor', 'Jefe Taller'];
+export function canEditPlanif(rol: UserRole | null | undefined): boolean {
+  return !!rol && !PLANIF_READONLY_ROLES.includes(rol);
 }
 
 /** Nombre del módulo cuya ruta matchea el pathname actual (para el título del header mobile). */

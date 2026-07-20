@@ -1,5 +1,5 @@
 import type { SharePointItem } from './graph.js';
-import { abmAccessMatrix, type AbmTab } from '../../src/lib/abmAccessMatrix.js';
+import { abmAccessMatrix, canEditAbmTab, canDeleteAbmTab, type AbmMatrix, type AbmTab } from '../../src/lib/abmAccessMatrix.js';
 
 export type { AbmTab };
 
@@ -38,6 +38,7 @@ export const LIST_IDS = {
   detallePlanif: 'bf4452b0-50b8-406c-8988-3c57b393a195',
   edificiosVisitar: '717028c9-9949-494b-9ee8-a1a7089f6f5b',
   horasDescanso: 'e1361cec-5651-44bc-93b4-44e94e4caeee', // 14.HorasDescanso
+  detalles: '259530ec-a7e0-4cdd-a2fd-310b80ddc6aa', // 02.Detalles (detalle por ÍTEM de cada visita)
 } as const;
 
 /**
@@ -278,6 +279,12 @@ export interface RegistroRow {
   HoraVisita?: string;
   HoraSalida?: string;
   FechaTerminada_R?: string;
+  /** Fecha exacta del día de la visita (col. `Fecha0`, display "Fecha", dd/mm/yyyy). */
+  FechaVisita?: string;
+  /** Observación general de la visita (col. `ObservacionFinal`, display "ObservacionGeneral"). */
+  ObservacionGeneral?: string;
+  /** Observación del edificio registrada en la visita (col. `ObservacionEdificio_R`). */
+  ObservacionEdificio?: string;
   /** Ítems controlados OK y total de ítems chequeados de la visita. */
   Ok?: number;
   Check?: number;
@@ -294,11 +301,14 @@ const REGISTROS_SELECT = [
   'MesA_x00f1_o',
   'Hora',
   'Fecha',
+  'Fecha0',
   'Check',
   'Ok',
   'HoraVisita',
   'HoraSalida',
   'FechaTerminada_R',
+  'ObservacionFinal',
+  'ObservacionEdificio_R',
   'Codigo',
   'Direccion',
 ];
@@ -323,6 +333,9 @@ export function mapRegistro(item: SharePointItem): RegistroRow {
     HoraVisita: item.HoraVisita ? String(item.HoraVisita) : undefined,
     HoraSalida: item.HoraSalida ? String(item.HoraSalida) : undefined,
     FechaTerminada_R: item.FechaTerminada_R ? String(item.FechaTerminada_R) : undefined,
+    FechaVisita: item.Fecha0 ? String(item.Fecha0) : undefined,
+    ObservacionGeneral: item.ObservacionFinal ? String(item.ObservacionFinal).trim() : undefined,
+    ObservacionEdificio: item.ObservacionEdificio_R ? String(item.ObservacionEdificio_R).trim() : undefined,
     Ok: check > 0 || item.Ok != null ? ok : undefined,
     Check: item.Check != null ? check : undefined,
     Codigo: item.Codigo ? String(item.Codigo) : undefined,
@@ -332,6 +345,55 @@ export function mapRegistro(item: SharePointItem): RegistroRow {
 
 export function registrosSelectFields(): string[] {
   return REGISTROS_SELECT;
+}
+
+// ── Detalles (02.Detalles) — detalle por ÍTEM del checklist de cada visita ──
+// Cada fila = un ítem del checklist de una visita. Los ~8 ítems de una misma visita
+// comparten IDUnico (linkea con 01.Registros.IDUnico). Es ~8x el volumen de
+// 01.Registros → se trae LAZY (solo al abrir la vista Detalle) y acotado por rango de
+// meses vía FechaMesAno_D (mm/yyyy), igual que el Dashboard de Visitas.
+export interface DetalleRow {
+  ID: number;
+  Item: string; // nombre del ítem del checklist
+  Check: string; // 'Ok' | 'No'
+  Observacion: string; // ObservacionUnica
+  IDUnico: string; // linkea con 01.Registros.IDUnico
+  Edificio: string;
+  Tecnico: string; // Nombre (técnico)
+  Fecha: string; // Fecha_D (dd/mm/yyyy)
+  MesAno: string; // FechaMesAno_D (mm/yyyy)
+  Estado: string; // Status_D
+}
+
+const DETALLE_SELECT = [
+  'Item',
+  'Check',
+  'ObservacionUnica',
+  'IDUnico',
+  'Edificio',
+  'Nombre',
+  'Fecha_D',
+  'FechaMesAno_D',
+  'Status_D',
+];
+
+export function detalleSelectFields(): string[] {
+  return DETALLE_SELECT;
+}
+
+export function mapDetalle(item: SharePointItem): DetalleRow {
+  return {
+    ID: Number(item.id),
+    Item: String(item.Item ?? '').trim(),
+    Check: String(item.Check ?? '').trim(),
+    Observacion: String(item.ObservacionUnica ?? '').trim(),
+    IDUnico: String(item.IDUnico ?? '').trim(),
+    Edificio: String(item.Edificio ?? '').trim(),
+    Tecnico: String(item.Nombre ?? '').trim(),
+    Fecha: String(item.Fecha_D ?? '').trim(),
+    MesAno: String(item.FechaMesAno_D ?? '').trim(),
+    Estado: String(item.Status_D ?? '').trim(),
+  };
 }
 
 // ── Descansos (14.HorasDescanso) — pausas de los técnicos ─────────────────
@@ -1045,14 +1107,24 @@ export function desglosarFechaDDMMYYYY(ddmmyyyy: string): { mesAno: string; ano:
 // ── Control de acceso por rol a los ABMs (fiel a cmbox_tipo_CR + DisplayMode) ──
 // La matriz vive en src/lib/abmAccessMatrix.ts (único origen de verdad, compartido
 // con el front) para evitar drift entre los gates de UI y de escritura.
-export function abmAccess(rol: string | undefined): { tabs: AbmTab[]; canEdit: boolean } {
+export function abmAccess(rol: string | undefined): AbmMatrix {
   return abmAccessMatrix(rol);
 }
 
 /** ¿El rol puede EDITAR el ABM `tab`? Gate server-side de los writes. */
 export function canEditAbm(rol: string | undefined, tab: AbmTab): boolean {
-  const a = abmAccess(rol);
-  return a.canEdit && a.tabs.includes(tab);
+  return canEditAbmTab(rol, tab);
+}
+
+/** ¿El rol puede BORRAR (baja) en el ABM `tab`? Gate server-side de las bajas. */
+export function canDeleteAbm(rol: string | undefined, tab: AbmTab): boolean {
+  return canDeleteAbmTab(rol, tab);
+}
+
+/** Roles que pueden crear/borrar/modificar planificaciones. Supervisor + Jefe Taller: solo-lectura. */
+const PLANIF_READONLY_ROLES = new Set(['Supervisor', 'Jefe Taller']);
+export function canEditPlanif(rol: string | null | undefined): boolean {
+  return !!rol && !PLANIF_READONLY_ROLES.has(rol);
 }
 
 // ── 99.ABM_Rutas ──

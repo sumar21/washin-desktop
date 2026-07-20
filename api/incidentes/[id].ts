@@ -14,8 +14,14 @@ import {
 import { readSession, type SessionPayload } from '../_lib/session.js';
 import { puedeAccederModulo } from '../_lib/permisos.js';
 
+// Estados desde los que un Admin puede anular (baja lógica) un incidente: los
+// abiertos. Los resueltos/cerrados (Resuelto, Aprobada, Rechazada) y los ya
+// anulados no se tocan.
+// 'En Aprobacion' excluido: un reclamo que ya avanzó a aprobación no se anula.
+const ESTADOS_ANULABLES = ['A Revisar', 'Pendiente', 'Asignado'];
+
 interface Body {
-  action?: 'assign' | 'cambiar-tecnico' | 'cambio-maquina' | 'generar-compra';
+  action?: 'assign' | 'cambiar-tecnico' | 'cambio-maquina' | 'generar-compra' | 'anular';
   tecnico?: string;
   fechaAsignada?: string;
   maquinaConcat?: string; // ConcatMaquinaIncidente de la máquina de reemplazo
@@ -67,6 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (body.action === 'cambiar-tecnico') return await cambiarTecnico(id, body, res);
     if (body.action === 'cambio-maquina') return await cambioMaquina(id, body, res);
     if (body.action === 'generar-compra') return await generarCompra(id, body, res, session);
+    if (body.action === 'anular') return await anular(id, res, session);
     return res.status(400).json({ error: 'invalid', message: 'Acción de incidente desconocida' });
   } catch (err) {
     console.error('incidentes [id] POST error', err);
@@ -89,12 +96,24 @@ async function assign(id: number, body: Body, res: VercelResponse) {
   return res.status(200).json({ ID: id, Status_IN: 'Asignado', TecnicoAsignado_IN: tecnico });
 }
 
-// ── Cambiar técnico (sin tocar stock ni status más allá de Asignado) ─────
+// ── Transferir / cambiar técnico (NO toca stock ni el tipo NoResuelto_IN) ─
+// Fiel al msapp (Screen_Incidentes PopUpCambiarTecnico / IMG_TransferirTecnico):
+// sólo reasigna el técnico y define el estado destino como
+//   Status_IN = If(AC, 'A Revisar', 'Asignado'),
+//   AC = NoResuelto_IN ∈ {'Atencion al Cliente', 'Reportado Por Tecnico'}.
+// Los incidentes 'A Revisar' (triaje pendiente en la MOBILE) conservan su estado
+// 'A Revisar': el desktop NO presume repuesto (no descuenta stock) ni fuerza el tipo.
 async function cambiarTecnico(id: number, body: Body, res: VercelResponse) {
   const tecnico = body.tecnico?.trim();
   if (!tecnico) return res.status(400).json({ error: 'invalid', message: 'Falta el técnico' });
-  await updateItem(LIST_IDS.incidentes, id, { TecnicoAsignado_IN: tecnico, Status_IN: 'Asignado' });
-  return res.status(200).json({ ID: id, TecnicoAsignado_IN: tecnico });
+  const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
+  if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
+  const inc = mapIncidente(incRaw);
+  const esAtencionCliente =
+    inc.NoResuelto_IN === 'Atencion al Cliente' || inc.NoResuelto_IN === 'Reportado Por Tecnico';
+  const status = esAtencionCliente ? 'A Revisar' : 'Asignado';
+  await updateItem(LIST_IDS.incidentes, id, { TecnicoAsignado_IN: tecnico, Status_IN: status });
+  return res.status(200).json({ ID: id, Status_IN: status, TecnicoAsignado_IN: tecnico });
 }
 
 // ── Cambio de máquina → genera 07.Aprobaciones + incidente En Aprobacion ─
@@ -170,4 +189,21 @@ async function generarCompra(id: number, body: Body, res: VercelResponse, sessio
   });
 
   return res.status(201).json({ ID: id, compra: idUnivoco });
+}
+
+// ── Anular incidente (baja lógica) — SOLO Admin, Status_IN -> 'Anulado' ───
+// Mismo patrón que la anulación de visitas del Home (baja lógica + gate Admin
+// server-side). El estado 'Anulado' ya existe en el msapp (Screen_Incidentes).
+async function anular(id: number, res: VercelResponse, session: SessionPayload) {
+  if (session.rol !== 'Admin') {
+    return res.status(403).json({ error: 'forbidden', message: 'Sólo un Admin puede anular un reclamo.' });
+  }
+  const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
+  if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
+  const inc = mapIncidente(incRaw);
+  if (inc.Resuelto_IN === 'SI' || !ESTADOS_ANULABLES.includes(inc.Status_IN)) {
+    return res.status(409).json({ error: 'invalid_state', message: 'Este reclamo no se puede anular por su estado.' });
+  }
+  await updateItem(LIST_IDS.incidentes, id, { Status_IN: 'Anulado' });
+  return res.status(200).json({ ID: id, Status_IN: 'Anulado' });
 }

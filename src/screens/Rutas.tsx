@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
+import { canEditPlanif } from '@/lib/nav';
 import { cn } from '@/lib/utils';
 import type { PlanifMes } from '@/types/domain';
 
@@ -67,6 +68,9 @@ function generateMonthOptions(): MesOption[] {
 
 export function Rutas() {
   const navigate = useNavigate();
+  const VarTipoUser = useAppStore((s) => s.VarTipoUser);
+  // Supervisor + Jefe Taller: planificación en solo-lectura (ven meses/rutas, no crean/borran).
+  const canEdit = canEditPlanif(VarTipoUser);
   const meses = useAppStore((s) => s.CollectPlanifMeses);
   const tecnicos = useAppStore((s) => s.CollectTecnicosDisponibles);
   const rutasCatalog = useAppStore((s) => s.CollectAbmRutas);
@@ -205,16 +209,18 @@ export function Rutas() {
               goDetail(m);
             }}
           />
-          <ActionBtn
-            icon={Trash2}
-            tone="danger"
-            title="Eliminar"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDeleting(m);
-              setDeleteError(null);
-            }}
-          />
+          {canEdit && (
+            <ActionBtn
+              icon={Trash2}
+              tone="danger"
+              title="Eliminar"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleting(m);
+                setDeleteError(null);
+              }}
+            />
+          )}
         </div>
       ),
     },
@@ -226,7 +232,7 @@ export function Rutas() {
         title="Planificación de rutas"
         subtitle="Cronograma mensual de visitas"
         search={{ value: query, onChange: setQuery, placeholder: 'Buscar mes…' }}
-        onAdd={() => setCreateOpen(true)}
+        onAdd={canEdit ? () => setCreateOpen(true) : undefined}
         addLabel="Crear planificación"
       />
       <LoadingOverlay visible={loading} label="Cargando planificaciones…" />
@@ -244,7 +250,7 @@ export function Rutas() {
                 icon={CalendarDays}
                 title="Sin planificaciones"
                 description="Todavía no creaste ninguna planificación mensual."
-                action={<Button onClick={() => setCreateOpen(true)}>Crear planificación</Button>}
+                action={canEdit ? <Button onClick={() => setCreateOpen(true)}>Crear planificación</Button> : undefined}
               />
             }
             onRowClick={(m) => goDetail(m)}
@@ -274,16 +280,18 @@ export function Rutas() {
                           goDetail(m);
                         }}
                       />
-                      <ActionBtn
-                        icon={Trash2}
-                        tone="danger"
-                        title="Eliminar"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleting(m);
-                          setDeleteError(null);
-                        }}
-                      />
+                      {canEdit && (
+                        <ActionBtn
+                          icon={Trash2}
+                          tone="danger"
+                          title="Eliminar"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleting(m);
+                            setDeleteError(null);
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                   {/* Fila 2: rutas / técnicos */}

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createItem, updateItem, getItem, GraphError } from '../_lib/graph.js';
-import { LIST_IDS, mapEdificioAbm, edificioAbmSelectFields, canEditAbm } from '../_lib/lists.js';
+import { LIST_IDS, mapEdificioAbm, edificioAbmSelectFields, canEditAbm, canDeleteAbm } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
 import { cascadeBajaEdificio, cascadeUpdateEdificio } from '../_lib/cascadas.js';
 
@@ -59,7 +59,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (body.action === 'create') return await create(body, res);
     if (body.action === 'update') return await update(body, res);
-    if (body.action === 'baja') return await baja(body, res);
+    if (body.action === 'baja') {
+      // La baja necesita permiso extra: Supervisor Líder edita edificios pero NO los da de baja.
+      if (!canDeleteAbm(session.rol, 'Edificios')) {
+        return res.status(403).json({ error: 'forbidden', message: 'Tu rol no puede dar de baja edificios.' });
+      }
+      return await baja(body, res);
+    }
     return res.status(400).json({ error: 'invalid', message: 'Acción de edificio desconocida' });
   } catch (err) {
     console.error('abm/edificios error', err);

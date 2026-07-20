@@ -20,6 +20,7 @@ import {
   mapRuta,
   rutaSelectFields,
   fechasHoy,
+  canEditPlanif,
   APP_VERSION,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
@@ -115,6 +116,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (!(await puedeAccederModulo(session.rol, 'Planificaciones'))) {
       return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Planificaciones.' });
+    }
+    // Supervisor + Jefe Taller: planificación en solo-lectura (no crean/borran/modifican).
+    if (!canEditPlanif(session.rol)) {
+      return res.status(403).json({ error: 'forbidden', message: 'Tu rol solo puede consultar planificaciones.' });
     }
     if (body.action === 'create') return await create(body, res, session.usuario);
     if (body.action === 'delete') return await remove(body, res);

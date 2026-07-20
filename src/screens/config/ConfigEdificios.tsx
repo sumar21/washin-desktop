@@ -39,6 +39,8 @@ interface ConfigEdificiosProps {
   setAddOpen: (v: boolean) => void;
   /** Solo-lectura si false. Roles como Supervisor Ventilaciones / Atención al Cliente entran acá en modo lectura. */
   canEdit?: boolean;
+  /** ¿Puede dar de baja? Por defecto sigue a `canEdit`. Supervisor Líder edita pero NO da de baja. */
+  canDelete?: boolean;
 }
 
 /** Mapa Codigo de edificio → circuitos (NroCircuito) en los que participa. */
@@ -60,6 +62,7 @@ export function ConfigEdificios({
   addOpen,
   setAddOpen,
   canEdit = false,
+  canDelete = canEdit,
 }: ConfigEdificiosProps) {
   const edificios = useAppStore((s) => s.CollectAbmEdificios);
   const detalles = useAppStore((s) => s.CollectAbmDetalles);
@@ -225,27 +228,27 @@ export function ConfigEdificios({
             }}
           />
           {canEdit && (
-            <>
-              <ActionBtn
-                icon={Pencil}
-                tone="neutral"
-                title="Editar"
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  setEditing(e);
-                }}
-              />
-              <ActionBtn
-                icon={Trash2}
-                tone="danger"
-                title="Dar de baja"
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  setDeleting(e);
-                  setDeleteError(null);
-                }}
-              />
-            </>
+            <ActionBtn
+              icon={Pencil}
+              tone="neutral"
+              title="Editar"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setEditing(e);
+              }}
+            />
+          )}
+          {canDelete && (
+            <ActionBtn
+              icon={Trash2}
+              tone="danger"
+              title="Dar de baja"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setDeleting(e);
+                setDeleteError(null);
+              }}
+            />
           )}
         </div>
       ),
@@ -302,10 +305,10 @@ export function ConfigEdificios({
                   <div className="flex shrink-0 items-center gap-1.5">
                     <ActionBtn icon={Eye} tone="brand" title="Ver detalle" onClick={(ev) => { ev.stopPropagation(); setViewing(e); }} />
                     {canEdit && (
-                      <>
-                        <ActionBtn icon={Pencil} tone="neutral" title="Editar" onClick={(ev) => { ev.stopPropagation(); setEditing(e); }} />
-                        <ActionBtn icon={Trash2} tone="danger" title="Dar de baja" onClick={(ev) => { ev.stopPropagation(); setDeleting(e); setDeleteError(null); }} />
-                      </>
+                      <ActionBtn icon={Pencil} tone="neutral" title="Editar" onClick={(ev) => { ev.stopPropagation(); setEditing(e); }} />
+                    )}
+                    {canDelete && (
+                      <ActionBtn icon={Trash2} tone="danger" title="Dar de baja" onClick={(ev) => { ev.stopPropagation(); setDeleting(e); setDeleteError(null); }} />
                     )}
                   </div>
                 </div>

@@ -92,11 +92,40 @@ export interface Registro {
   HoraVisita?: string;
   HoraSalida?: string;
   FechaTerminada_R?: string;
+  /** Fecha exacta del día de la visita (dd/mm/yyyy). */
+  FechaVisita?: string;
+  /** Observación general de la visita. */
+  ObservacionGeneral?: string;
+  /** Observación del edificio registrada en la visita. */
+  ObservacionEdificio?: string;
   /** Ítems controlados OK y total de ítems chequeados de la visita. */
   Ok?: number;
   Check?: number;
   Codigo?: string;
   Direccion?: string;
+}
+
+/**
+ * Detalle por ÍTEM del checklist de una visita (02.Detalles). Una fila = un ítem.
+ * Los ~8 ítems de una misma visita comparten `IDUnico` (linkea con 01.Registros).
+ */
+export interface DetalleVisita {
+  ID: number;
+  /** Nombre del ítem del checklist (ej. "Cartel de precio actualizado"). */
+  Item: string;
+  /** Resultado del ítem: "Ok" | "No". */
+  Check: string;
+  /** Observación puntual de ese ítem. */
+  Observacion: string;
+  /** Clave que agrupa los ítems de una misma visita (01.Registros.IDUnico). */
+  IDUnico: string;
+  Edificio: string;
+  Tecnico: string;
+  /** Fecha del día de la visita (dd/mm/yyyy). */
+  Fecha: string;
+  /** Período mm/yyyy (para filtrar por rango). */
+  MesAno: string;
+  Estado: string;
 }
 
 /** Descanso de un técnico (14.HorasDescanso). Estado: Activo (en curso) | Finalizado. */

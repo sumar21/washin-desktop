@@ -5,6 +5,7 @@ import type {
   DetalleCompra,
   Descanso,
   DetalleMaquina,
+  DetalleVisita,
   EdificioAbm,
   EdificioVent,
   Incidente,
@@ -135,6 +136,23 @@ export function getDashboardVisitas(desde?: string, hasta?: string): Promise<Das
   return request(`/dashboard/visitas${suffix ? `?${suffix}` : ''}`);
 }
 
+// ── Dashboard (Visitas → Detalle) — detalle por ÍTEM del rango (02.Detalles) ──
+export interface DashboardDetallesResponse {
+  detalles: DetalleVisita[];
+}
+
+/**
+ * Detalle por ítem del rango [desde..hasta] (mm/yyyy). LAZY: se llama solo al abrir la
+ * vista Detalle (02.Detalles es ~8x los registros). Sin args: mes actual.
+ */
+export function getDashboardDetalles(desde?: string, hasta?: string): Promise<DashboardDetallesResponse> {
+  const qs = new URLSearchParams();
+  if (desde) qs.set('desde', desde);
+  if (hasta) qs.set('hasta', hasta);
+  const suffix = qs.toString();
+  return request(`/dashboard/detalles${suffix ? `?${suffix}` : ''}`);
+}
+
 export interface AddStockPayload {
   tipo: string;
   item: string;
@@ -234,11 +252,20 @@ export function anularCompra(id: number): Promise<{ ID: number; Status_PC: strin
   return request(`/compras/${id}`, { method: 'POST', body: JSON.stringify({ action: 'anular' }) });
 }
 
+/** Una unidad física de máquina recibida: serie + ID (ambos obligatorios para máquinas). */
+export interface ReceiveUnidad {
+  nroSerie: string;
+  idMaquina: string;
+}
+
 export interface ReceiveLine {
   detalleId: number;
   cantidadReal: number;
-  nroSerie?: string;
-  idMaquina?: string;
+  /**
+   * Solo para líneas de MÁQUINA: una entrada por unidad (largo === cantidadReal),
+   * cada una con nroSerie + idMaquina obligatorios. Vacío/omitido en repuestos y simples.
+   */
+  unidades?: ReceiveUnidad[];
 }
 
 export function recibirCompra(
@@ -369,7 +396,7 @@ export function assignIncidente(id: number, tecnico: string, fechaAsignada?: str
   return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'assign', tecnico, fechaAsignada }) });
 }
 
-export function cambiarTecnicoIncidente(id: number, tecnico: string): Promise<{ ID: number; TecnicoAsignado_IN: string }> {
+export function cambiarTecnicoIncidente(id: number, tecnico: string): Promise<{ ID: number; Status_IN: string; TecnicoAsignado_IN: string }> {
   return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'cambiar-tecnico', tecnico }) });
 }
 
@@ -385,6 +412,11 @@ export function generarCompraIncidente(
   payload: { tipoCompra: 'repuesto' | 'maquina'; item: string; segmento: string }
 ): Promise<{ ID: number; compra: string }> {
   return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'generar-compra', ...payload }) });
+}
+
+/** Baja lógica de un incidente (Status_IN -> 'Anulado'). Solo Admin (gate server-side). */
+export function anularIncidente(id: number): Promise<{ ID: number; Status_IN: string }> {
+  return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'anular' }) });
 }
 
 // ── Ventilaciones (19.Ventilaciones + ABM.Edificios + catálogos) ─────────
@@ -513,7 +545,12 @@ export function bajaEdificio(id: number): Promise<{ ID: number; Status: string }
 
 // ── Registros (01.Registros) — baja lógica de una visita (Estado -> "Anulado") ──
 export function anularRegistro(id: number): Promise<{ ID: number; Estado: string }> {
-  return request('/home', { method: 'POST', body: JSON.stringify({ id }) });
+  return request('/home', { method: 'POST', body: JSON.stringify({ id, action: 'anular' }) });
+}
+
+// H13: cierre forzado de una visita EN CURSO por el Admin (Estado -> "Finalizado").
+export function cerrarRegistro(id: number): Promise<{ ID: number; Estado: string; HoraSalida?: string }> {
+  return request('/home', { method: 'POST', body: JSON.stringify({ id, action: 'cerrar' }) });
 }
 
 // ── Stock Técnico (99.ABMRepuestos_Tecnico) ──────────────────────────────

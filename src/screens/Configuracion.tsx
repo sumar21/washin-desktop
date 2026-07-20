@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Map, GitBranch, Building2, Wrench, UserCog, Search, Plus, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
-import { abmAccess, type AbmTab } from '@/lib/abmAccess';
+import { abmAccess, canDeleteAbm, type AbmTab } from '@/lib/abmAccess';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
 import { ConfigRutas } from './config/ConfigRutas';
@@ -144,7 +144,15 @@ export function Configuracion() {
           {active.key === 'circuitos' && (
             <ConfigCircuitos query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} onFullscreenChange={setFullscreen} />
           )}
-          {active.key === 'edificios' && <ConfigEdificios query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} />}
+          {active.key === 'edificios' && (
+            <ConfigEdificios
+              query={query}
+              addOpen={addOpen}
+              setAddOpen={setAddOpen}
+              canEdit={access.canEdit}
+              canDelete={canDeleteAbm(VarTipoUser, 'Edificios')}
+            />
+          )}
           {active.key === 'repuestos' && <ConfigRepuestos query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} />}
           {active.key === 'usuarios' && <ConfigUsuarios query={query} addOpen={addOpen} setAddOpen={setAddOpen} canEdit={access.canEdit} />}
         </div>

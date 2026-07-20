@@ -12,6 +12,11 @@ import {
   User,
   Clock,
   CalendarDays,
+  Table2,
+  ScrollText,
+  CheckCircle2,
+  XCircle,
+  ClipboardList,
 } from 'lucide-react';
 import {
   Bar,
@@ -38,8 +43,8 @@ import { KpiCard } from '@/components/dashboard/widgets';
 import { EmptyState } from '@/components/EmptyState';
 import { CHART_GRID, X_TICK, AXIS, intFmt, pct } from '@/components/dashboard/shared';
 import { useAppStore } from '@/store/useAppStore';
-import { proper } from '@/lib/utils';
-import type { Registro } from '@/types/domain';
+import { cn, proper } from '@/lib/utils';
+import type { Registro, DetalleVisita } from '@/types/domain';
 
 // ── Colores del tab (paleta fría de marca: cian / slate — sin verde ni ámbar) ──
 const C_BRAND = 'var(--color-wash-brand)';
@@ -159,6 +164,13 @@ const controlTxt = (r: Registro) => {
   return tot > 0 ? `${ok}/${tot}` : '—';
 };
 
+// Fecha exacta del día de la visita (dd/mm/yyyy). `FechaVisita` es la columna canónica
+// (`Fecha0`); si faltara, cae a la fecha de terminada.
+const fechaTxt = (r: Registro) => r.FechaVisita || r.FechaTerminada_R || '—';
+
+// Observación de la visita: general primero, y si no hay, la del edificio.
+const obsTxt = (r: Registro) => r.ObservacionGeneral || r.ObservacionEdificio || '';
+
 const VISITAS_COLUMNS: Column<Registro>[] = [
   {
     key: 'estado',
@@ -185,6 +197,14 @@ const VISITAS_COLUMNS: Column<Registro>[] = [
     header: 'Técnico',
     width: 'minmax(130px,1fr)',
     render: (r) => <span className="truncate text-wash-text">{proper(r.Usuario) || '—'}</span>,
+  },
+  {
+    key: 'fecha',
+    header: 'Fecha',
+    width: '108px',
+    align: 'center',
+    truncate: false,
+    render: (r) => <span className="tabular-nums text-wash-text">{fechaTxt(r)}</span>,
   },
   {
     key: 'periodo',
@@ -216,7 +236,7 @@ const VISITAS_COLUMNS: Column<Registro>[] = [
 ];
 
 const visitaSearch = (r: Registro) =>
-  `${r.Edificio} ${r.Codigo ?? ''} ${r.Usuario} ${r.MesAño} ${r.Estado} ${r.NroRuta_R} ${r.NroCircuito_R} ${r.Direccion ?? ''}`;
+  `${r.Edificio} ${r.Codigo ?? ''} ${r.Usuario} ${r.MesAño} ${r.FechaVisita ?? ''} ${r.Estado} ${r.NroRuta_R} ${r.NroCircuito_R} ${r.Direccion ?? ''} ${obsTxt(r)}`;
 
 /** Card mobile de una visita (DESIGN.md §5.4: la tabla se vuelve cards en <lg). */
 function visitaCard(r: Registro) {
@@ -240,7 +260,7 @@ function visitaCard(r: Registro) {
         </span>
         <span className="inline-flex items-center gap-1.5 tabular-nums">
           <CalendarDays size={12} className="shrink-0" />
-          {r.MesAño || '—'}
+          {fechaTxt(r)}
         </span>
         <span className="inline-flex items-center gap-1.5 tabular-nums">
           <Clock size={12} className="shrink-0" />
@@ -255,6 +275,145 @@ function visitaCard(r: Registro) {
   );
 }
 
+// ── Detalle REAL por ÍTEM del checklist (02.Detalles) ─────────────────────────
+// La app vieja del celu mostraba el checklist por ÍTEM de cada visita. Ese dato vive
+// en 02.Detalles: una fila por ítem (Item, Check Ok/No, ObservacionUnica), agrupables
+// por IDUnico. Acá se muestra como TABLA PLANA (una fila por ítem) — reemplaza al
+// detalle a-nivel-visita que se había dejado como fallback. Se carga LAZY (02.Detalles
+// es ~8x los registros) sólo al abrir esta vista, acotado por rango de meses.
+
+/** Badge del resultado del ítem: Ok = good/emerald, No = critical/rose (ícono + texto). */
+function checkBadge(v: string) {
+  const t = v.trim().toLowerCase();
+  const ok = t === 'ok';
+  const no = t === 'no';
+  if (!ok && !no) return <span className="text-wash-text-faint">—</span>;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1',
+        ok ? 'bg-emerald-50 text-emerald-700 ring-emerald-300/70' : 'bg-rose-50 text-rose-700 ring-rose-300/70'
+      )}
+    >
+      {ok ? <CheckCircle2 size={12} className="shrink-0" /> : <XCircle size={12} className="shrink-0" />}
+      {ok ? 'Ok' : 'No'}
+    </span>
+  );
+}
+
+const DETALLE_COLUMNS: Column<DetalleVisita>[] = [
+  {
+    key: 'fecha',
+    header: 'Fecha',
+    width: '104px',
+    align: 'center',
+    truncate: false,
+    render: (r) => <span className="tabular-nums text-wash-text">{r.Fecha || '—'}</span>,
+  },
+  {
+    key: 'tecnico',
+    header: 'Técnico',
+    width: 'minmax(120px,0.9fr)',
+    render: (r) => <span className="truncate text-wash-text">{proper(r.Tecnico) || '—'}</span>,
+  },
+  {
+    key: 'edificio',
+    header: 'Edificio',
+    width: 'minmax(150px,1.1fr)',
+    render: (r) => (
+      <span className="truncate font-medium text-wash-text-strong" title={r.Edificio}>
+        {r.Edificio || '—'}
+      </span>
+    ),
+  },
+  {
+    key: 'item',
+    header: 'Ítem',
+    width: 'minmax(160px,1.4fr)',
+    render: (r) => (
+      <span className="truncate text-wash-text" title={r.Item}>
+        {r.Item || '—'}
+      </span>
+    ),
+  },
+  {
+    key: 'check',
+    header: 'Check',
+    width: '84px',
+    align: 'center',
+    truncate: false,
+    render: (r) => checkBadge(r.Check),
+  },
+  {
+    key: 'observacion',
+    header: 'Observación',
+    width: 'minmax(180px,1.8fr)',
+    render: (r) =>
+      r.Observacion ? (
+        <span className="truncate text-wash-text" title={r.Observacion}>
+          {r.Observacion}
+        </span>
+      ) : (
+        <span className="text-wash-text-faint">—</span>
+      ),
+  },
+  {
+    key: 'estado',
+    header: 'Estado',
+    width: '128px',
+    truncate: false,
+    render: (r) => (r.Estado ? <StatusBadge status={r.Estado} /> : <span className="text-wash-text-faint">—</span>),
+  },
+];
+
+/** Card mobile de un ítem del detalle (una fila = un ítem del checklist). */
+function detalleCard(r: DetalleVisita) {
+  return (
+    <div className="rounded-xl bg-wash-surface p-3 shadow-sm ring-1 ring-wash-border">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-start gap-1.5">
+          <ClipboardList size={14} className="mt-0.5 shrink-0 text-wash-text-muted" />
+          <p className="min-w-0 text-[14px] font-semibold text-wash-text-strong">{r.Item || '—'}</p>
+        </div>
+        {checkBadge(r.Check)}
+      </div>
+      <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-wash-divider/60 pt-2.5 text-[12px] text-wash-text-muted">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <Building2 size={12} className="shrink-0" />
+          <span className="truncate">{r.Edificio || '—'}</span>
+        </span>
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <User size={12} className="shrink-0" />
+          <span className="truncate">{proper(r.Tecnico) || '—'}</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <CalendarDays size={12} className="shrink-0" />
+          {r.Fecha || '—'}
+        </span>
+        {r.Estado && <span className="inline-flex items-center gap-1.5">{<StatusBadge status={r.Estado} />}</span>}
+      </div>
+      {r.Observacion && (
+        <div className="mt-2.5 border-t border-wash-divider/60 pt-2.5 text-[12px] text-wash-text">{r.Observacion}</div>
+      )}
+    </div>
+  );
+}
+
+const detalleSearch = (r: DetalleVisita) =>
+  `${r.Item} ${r.Edificio} ${r.Tecnico} ${r.Observacion} ${r.Estado} ${r.Fecha} ${r.Check}`;
+
+const detalleFlat = (r: DetalleVisita): Record<string, string | number> => ({
+  Fecha: r.Fecha,
+  Técnico: r.Tecnico,
+  Edificio: r.Edificio,
+  Ítem: r.Item,
+  Check: r.Check,
+  Observación: r.Observacion,
+  Estado: r.Estado,
+  Período: r.MesAno,
+  IDUnico: r.IDUnico,
+});
+
 const visitaFlat = (r: Registro): Record<string, string | number> => ({
   ID: r.ID,
   Estado: r.Estado,
@@ -264,6 +423,7 @@ const visitaFlat = (r: Registro): Record<string, string | number> => ({
   Técnico: r.Usuario,
   Ruta: r.NroRuta_R,
   Circuito: r.NroCircuito_R,
+  Fecha: r.FechaVisita ?? '',
   Período: r.MesAño,
   'Hora inicio': r.HoraInicio ?? '',
   'Hora final': r.HoraFinal ?? '',
@@ -274,6 +434,8 @@ const visitaFlat = (r: Registro): Record<string, string | number> => ({
   'Ítems a revisar': r.Check ?? 0,
   'Total control': (r.Ok ?? 0) + (r.Check ?? 0),
   'Progreso %': r.Progreso ?? 0,
+  'Observación general': r.ObservacionGeneral ?? '',
+  'Observación edificio': r.ObservacionEdificio ?? '',
 });
 
 const fileTag = (desde: string, hasta: string) =>
@@ -282,9 +444,18 @@ const fileTag = (desde: string, hasta: string) =>
 export default function DashboardVisitas({ desde, hasta, view }: { desde: string; hasta: string; view: GridView }) {
   const registros = useAppStore((s) => s.CollectDashboardVisitas);
   const fetchDashboardVisitas = useAppStore((s) => s.fetchDashboardVisitas);
+  const detalles = useAppStore((s) => s.CollectDashboardDetalles);
+  const fetchDashboardDetalles = useAppStore((s) => s.fetchDashboardDetalles);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Sub-vista de la grilla: 'resumen' (columnas curadas, 01.Registros) |
+  // 'detalle' (tabla plana por ÍTEM del checklist, 02.Detalles — carga lazy).
+  const [gridMode, setGridMode] = useState<'resumen' | 'detalle'>('resumen');
+  // Estado propio del detalle por ítem (carga lazy, separada del resumen).
+  const [detalleLoading, setDetalleLoading] = useState(false);
+  const [detalleError, setDetalleError] = useState<string | null>(null);
+  const [detalleKey, setDetalleKey] = useState<string | null>(null);
 
   // Fetch SCOPED al rango elegido: el backend trae SOLO esos meses (payload chico = rápido).
   // Re-corre cuando cambia el período → los registros cargados = el rango (no se filtra en cliente).
@@ -300,6 +471,33 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga por rango; "Reintentar" también dispara load().
     load();
   }, [load]);
+
+  // Carga LAZY del detalle por ítem (02.Detalles). Se marca `detalleKey` con el rango
+  // ya intentado (éxito o error) para no reintentar en loop, pero sí recargar al cambiar
+  // el rango. El "Reintentar" del error dispara loadDetalles() a mano.
+  const rangeKey = `${desde}|${hasta}`;
+  const loadDetalles = useCallback(() => {
+    const key = `${desde}|${hasta}`;
+    setDetalleLoading(true);
+    setDetalleError(null);
+    return fetchDashboardDetalles(desde, hasta)
+      .catch((err) =>
+        setDetalleError(err instanceof Error ? err.message : 'No se pudo cargar el detalle por ítem.')
+      )
+      .finally(() => {
+        setDetalleKey(key);
+        setDetalleLoading(false);
+      });
+  }, [fetchDashboardDetalles, desde, hasta]);
+
+  useEffect(() => {
+    if (view === 'grilla' && gridMode === 'detalle' && detalleKey !== rangeKey && !detalleLoading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch lazy on-demand al abrir la vista Detalle.
+      loadDetalles();
+    }
+  }, [view, gridMode, rangeKey, detalleKey, detalleLoading, loadDetalles]);
+
+  const detalleReady = detalleKey === rangeKey && !detalleError;
 
   // ── Meses presentes en el rango cargado (ascendente) ──
   const months = useMemo(() => {
@@ -407,16 +605,47 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
         </div>
       ) : view === 'grilla' ? (
         <div className="h-full p-3 pb-4 md:p-6">
-          <GridPanel<Registro>
-            rows={registros}
-            columns={VISITAS_COLUMNS}
-            rowKey={(r) => r.ID}
-            search={visitaSearch}
-            toFlat={visitaFlat}
-            exportName={`visitas_${fileTag(desde, hasta)}`}
-            placeholder="Buscar edificio, técnico, código, ruta…"
-            mobileCard={visitaCard}
-          />
+          {gridMode === 'detalle' ? (
+            <div className="relative h-full">
+              {detalleError ? (
+                <div className="flex h-full flex-col">
+                  <div className="mb-3 flex justify-end">
+                    <GridModeToggle value={gridMode} onChange={setGridMode} />
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto">
+                    <ErrorState message={detalleError} onRetry={loadDetalles} />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <LoadingOverlay visible={detalleLoading} label="Cargando detalle…" />
+                  <GridPanel<DetalleVisita>
+                    rows={detalleReady ? detalles : []}
+                    columns={DETALLE_COLUMNS}
+                    rowKey={(r) => r.ID}
+                    search={detalleSearch}
+                    toFlat={detalleFlat}
+                    exportName={`visitas_detalle_${fileTag(desde, hasta)}`}
+                    placeholder="Buscar ítem, edificio, técnico, observación…"
+                    mobileCard={detalleCard}
+                    headerExtra={<GridModeToggle value={gridMode} onChange={setGridMode} />}
+                  />
+                </>
+              )}
+            </div>
+          ) : (
+            <GridPanel<Registro>
+              rows={registros}
+              columns={VISITAS_COLUMNS}
+              rowKey={(r) => r.ID}
+              search={visitaSearch}
+              toFlat={visitaFlat}
+              exportName={`visitas_${fileTag(desde, hasta)}`}
+              placeholder="Buscar edificio, técnico, código, ruta…"
+              mobileCard={visitaCard}
+              headerExtra={<GridModeToggle value={gridMode} onChange={setGridMode} />}
+            />
+          )}
         </div>
       ) : (
         <div className="h-full space-y-4 overflow-y-auto p-3 pb-8 md:p-6">
@@ -567,6 +796,47 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
 }
 
 // ── Subcomponentes ─────────────────────────────────────────────────────────────
+
+/** Sub-toggle de la grilla de visitas: Resumen (curado) / Detalle (por visita, con observación). */
+function GridModeToggle({
+  value,
+  onChange,
+}: {
+  value: 'resumen' | 'detalle';
+  onChange: (v: 'resumen' | 'detalle') => void;
+}) {
+  const opts: { id: 'resumen' | 'detalle'; label: string; icon: ElementType }[] = [
+    { id: 'resumen', label: 'Resumen', icon: Table2 },
+    { id: 'detalle', label: 'Detalle', icon: ScrollText },
+  ];
+  return (
+    <div className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-wash-surface-2 p-1 ring-1 ring-wash-border">
+      {opts.map((o) => {
+        const Icon = o.icon;
+        const activo = o.id === value;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            aria-pressed={activo}
+            title={o.label}
+            aria-label={o.label}
+            className={cn(
+              'flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors',
+              activo
+                ? 'bg-wash-surface text-wash-brand-dark shadow-sm ring-1 ring-wash-border'
+                : 'text-wash-text-muted hover:text-wash-text-strong'
+            )}
+          >
+            <Icon size={14} className="shrink-0" />
+            <span className="hidden sm:inline">{o.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Aviso para gráficos de evolución cuando el período es un solo mes (no hay serie temporal). */
 function SingleMonthNote({ text }: { text: string }) {

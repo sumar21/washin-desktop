@@ -1,5 +1,5 @@
 import type { UserRole } from '@/types/domain';
-import { abmAccessMatrix, type AbmTab } from '@/lib/abmAccessMatrix';
+import { abmAccessMatrix, canEditAbmTab, canDeleteAbmTab, type AbmTab } from '@/lib/abmAccessMatrix';
 
 /**
  * Control de acceso a los ABMs de Configuración, fiel a PowerApps
@@ -15,8 +15,10 @@ export type { AbmTab };
 export interface AbmAccess {
   /** Pestañas visibles, en orden. */
   tabs: AbmTab[];
-  /** ¿Puede editar (crear/modificar/eliminar)? Si es false, es solo-lectura. */
+  /** ¿Puede crear/editar? Si es false, es solo-lectura. */
   canEdit: boolean;
+  /** Pestañas donde edita pero NO puede borrar (baja). */
+  noDeleteTabs?: AbmTab[];
 }
 
 export function abmAccess(rol: UserRole | null | undefined): AbmAccess {
@@ -28,6 +30,10 @@ export function canAccessAbm(rol: UserRole | null | undefined, tab: AbmTab): boo
 }
 
 export function canEditAbm(rol: UserRole | null | undefined, tab: AbmTab): boolean {
-  const a = abmAccess(rol);
-  return a.canEdit && a.tabs.includes(tab);
+  return canEditAbmTab(rol, tab);
+}
+
+/** ¿El rol puede dar de baja en el ABM `tab`? (Ej.: Supervisor Líder NO en Edificios). */
+export function canDeleteAbm(rol: UserRole | null | undefined, tab: AbmTab): boolean {
+  return canDeleteAbmTab(rol, tab);
 }

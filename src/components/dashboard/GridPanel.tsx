@@ -32,6 +32,8 @@ interface GridPanelProps<T> {
   exportName: string;
   mobileCard?: (r: T, i: number) => ReactNode;
   placeholder?: string;
+  /** Slot opcional a la izquierda de la barra de acciones (ej. sub-toggle de vista). */
+  headerExtra?: ReactNode;
 }
 
 export function GridPanel<T>({
@@ -43,6 +45,7 @@ export function GridPanel<T>({
   exportName,
   mobileCard,
   placeholder = 'Buscar…',
+  headerExtra,
 }: GridPanelProps<T>) {
   const [q, setQ] = useState('');
   const [downloading, setDownloading] = useState(false);
@@ -87,6 +90,7 @@ export function GridPanel<T>({
           {filtered.length}
           {filtered.length !== rows.length ? ` / ${rows.length}` : ''} fila{filtered.length === 1 ? '' : 's'}
         </span>
+        {headerExtra}
         <button
           type="button"
           onClick={download}

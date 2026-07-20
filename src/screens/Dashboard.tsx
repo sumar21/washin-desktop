@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import type { ElementType } from 'react';
-import { LayoutDashboard, MapPin, AlertOctagon, CalendarDays, Filter } from 'lucide-react';
+import { LayoutDashboard, MapPin, AlertOctagon, CalendarDays, Filter, Lock } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
+import { useAppStore } from '@/store/useAppStore';
+import { dashboardTabsForRole } from '@/lib/nav';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ViewToggle, type GridView } from '@/components/dashboard/GridPanel';
@@ -43,7 +45,12 @@ const ord = (mmYyyy: string) => {
  * provee este shell (no hay doble header).
  */
 export function Dashboard() {
-  const [tab, setTab] = useState<TabId>('general');
+  const VarTipoUser = useAppStore((s) => s.VarTipoUser);
+  // Tabs visibles según el rol (Sup. Líder → solo Visitas; roles sin acceso → ninguno).
+  const allowedTabs = useMemo(() => dashboardTabsForRole(VarTipoUser), [VarTipoUser]);
+  const visibleTabs = useMemo(() => TABS.filter((t) => allowedTabs.includes(t.id)), [allowedTabs]);
+
+  const [tab, setTab] = useState<TabId>(() => allowedTabs[0] ?? 'general');
   const [view, setView] = useState<GridView>('graficos');
   const meses = useMemo(() => monthOptions(24), []);
   // Período por defecto: el mes anterior (el mes en curso suele estar incompleto y da
@@ -52,8 +59,10 @@ export function Dashboard() {
   const [desde, setDesde] = useState<string>(mesDefault);
   const [hasta, setHasta] = useState<string>(mesDefault);
 
-  const active = TABS.find((t) => t.id === tab) ?? TABS[0];
-  const rangeVisible = tab !== 'general';
+  // El tab activo siempre debe ser uno permitido (defensivo si el rol cambia).
+  const activeId = allowedTabs.includes(tab) ? tab : (allowedTabs[0] ?? 'general');
+  const active = TABS.find((t) => t.id === activeId) ?? TABS[0];
+  const rangeVisible = activeId !== 'general';
   const desdeLabel = meses.find((m) => m.value === desde)?.label ?? desde;
   const hastaLabel = meses.find((m) => m.value === hasta)?.label ?? hasta;
   const subtitle = rangeVisible ? `${active.subtitle} · ${desdeLabel} → ${hastaLabel}` : active.subtitle;
@@ -67,6 +76,19 @@ export function Dashboard() {
     setHasta(v);
     if (ord(v) < ord(desde)) setDesde(v);
   };
+
+  if (visibleTabs.length === 0) {
+    // Rol sin acceso al Dashboard (defensivo; el sidebar ya lo oculta).
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-wash-surface-2 text-wash-text-muted">
+          <Lock size={24} />
+        </span>
+        <p className="text-sm font-semibold text-wash-text-strong">Sin acceso al Dashboard</p>
+        <p className="text-xs text-wash-text-muted">Tu rol no tiene permisos sobre este módulo.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-full w-full flex-col">
@@ -87,14 +109,15 @@ export function Dashboard() {
               />
             )}
             {rangeVisible && <ViewToggle value={view} onChange={setView} />}
-            <TabControl tab={tab} onTab={setTab} />
+            {/* Un solo tab visible ⇒ no tiene sentido el segmented control. */}
+            {visibleTabs.length > 1 && <TabControl tabs={visibleTabs} tab={activeId} onTab={setTab} />}
           </div>
         }
       />
 
-      {tab === 'general' && <DashboardGeneral />}
-      {tab === 'visitas' && <DashboardVisitas desde={desde} hasta={hasta} view={view} />}
-      {tab === 'incidentes' && <DashboardIncidentes desde={desde} hasta={hasta} view={view} />}
+      {activeId === 'general' && <DashboardGeneral />}
+      {activeId === 'visitas' && <DashboardVisitas desde={desde} hasta={hasta} view={view} />}
+      {activeId === 'incidentes' && <DashboardIncidentes desde={desde} hasta={hasta} view={view} />}
     </div>
   );
 }
@@ -171,10 +194,10 @@ function MesSelect({ value, onChange, options }: { value: string; onChange: (v: 
 }
 
 /** Segmented control de marca para alternar entre los tabs del dashboard. */
-function TabControl({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
+function TabControl({ tabs, tab, onTab }: { tabs: typeof TABS; tab: TabId; onTab: (t: TabId) => void }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-1 rounded-xl bg-wash-surface-2 p-1 ring-1 ring-wash-border md:w-auto md:flex-none">
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const Icon = t.icon;
         const activo = t.id === tab;
         return (

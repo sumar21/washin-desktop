@@ -15,11 +15,12 @@ import {
   AlertCircle,
   ClipboardCheck,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
-import { Modal, ModalActions } from '@/components/Modal';
+import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
@@ -54,6 +55,12 @@ const GRID = '120px 96px 140px minmax(200px,1.5fr) minmax(150px,1fr) minmax(130p
 
 // Estados de un incidente SIN resolver (por defecto se muestran estos, Resuelto_IN='NO').
 const ESTADOS_IN = ['A Revisar', 'Pendiente', 'Asignado', 'En Aprobacion'];
+
+// Un Admin puede anular (baja lógica) un reclamo abierto. Los resueltos/cerrados
+// (Resuelto_IN='SI') y los ya anulados no. Coincide con el gate server-side.
+// Anulable = reclamo abierto y NO en aprobación (uno que ya avanzó a aprobación no se anula).
+const ESTADOS_ANULABLES = ['A Revisar', 'Pendiente', 'Asignado'];
+const esAnulable = (i: Incidente) => i.Resuelto_IN !== 'SI' && ESTADOS_ANULABLES.includes(i.Status_IN);
 // Estados de un incidente YA resuelto. Tildar alguno en el filtro de Estado dispara el fetch
 // de resueltos (por mes) que se mergean con los abiertos.
 const ESTADOS_IN_RESUELTOS = ['Resuelto', 'Aprobada', 'Rechazada'];
@@ -62,6 +69,13 @@ const ESTADOS_IN_RESUELTOS = ['Resuelto', 'Aprobada', 'Rechazada'];
 // msapp: Screen_Incidentes.pa.yaml:192, CollectAUX filtra 05.PedidoCompras por
 // IDIncidenteCompra_PC con Status Pendiente/En Aprobacion/Aprobada).
 const ESTADOS_COMPRA_ABIERTA = ['Pendiente', 'En Aprobacion', 'Aprobada'];
+
+// Filtro de asignación: un incidente está "asignado" si tiene técnico (TecnicoAsignado_IN).
+const ASIGNACION_OPTS: MultiOption[] = [
+  { value: 'asignado', label: 'Asignado' },
+  { value: 'sin_asignar', label: 'Sin asignar' },
+];
+const asignacionDe = (i: Incidente) => (i.TecnicoAsignado_IN ? 'asignado' : 'sin_asignar');
 
 const dedupeById = (arr: Incidente[]): Incidente[] => {
   const seen = new Set<number>();
@@ -86,12 +100,16 @@ export function Incidentes() {
   const cambiarTecnicoIncidente = useAppStore((s) => s.cambiarTecnicoIncidente);
   const cambioMaquinaIncidente = useAppStore((s) => s.cambioMaquinaIncidente);
   const generarCompraIncidente = useAppStore((s) => s.generarCompraIncidente);
+  const anularIncidente = useAppStore((s) => s.anularIncidente);
+  const VarTipoUser = useAppStore((s) => s.VarTipoUser);
+  const isAdmin = VarTipoUser === 'Admin';
 
   const [query, setQuery] = useState('');
   const [filterMesAno, setFilterMesAno] = useState<string[]>([]);
   const [filterEstado, setFilterEstado] = useState<string[]>([]);
   const [filterEdificio, setFilterEdificio] = useState<string[]>([]);
   const [filterTipo, setFilterTipo] = useState<string[]>([]);
+  const [filterAsignacion, setFilterAsignacion] = useState<string[]>([]);
 
   // Resueltos traídos on-demand (por mes) cuando se tildan estados resueltos en el filtro.
   // NO van al store (otras pantallas usan CollectIncidentes como "abiertos"): viven acá.
@@ -104,6 +122,9 @@ export function Incidentes() {
   const [comprar, setComprar] = useState<Incidente | null>(null);
   const [cambioMaq, setCambioMaq] = useState<Incidente | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [anulando, setAnulando] = useState<Incidente | null>(null);
+  const [anularBusy, setAnularBusy] = useState(false);
+  const [anularError, setAnularError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -213,8 +234,11 @@ export function Incidentes() {
     filterEstado.forEach((v) => chips.push({ cat: 'Estado', label: v }));
     filterEdificio.forEach((v) => chips.push({ cat: 'Edificio', label: v }));
     filterTipo.forEach((v) => chips.push({ cat: 'Tipo', label: v }));
+    filterAsignacion.forEach((v) =>
+      chips.push({ cat: 'Asignación', label: v === 'asignado' ? 'Asignado' : 'Sin asignar' })
+    );
     return chips;
-  }, [filterMesAno, filterEstado, filterEdificio, filterTipo, mesAnoLabel]);
+  }, [filterMesAno, filterEstado, filterEdificio, filterTipo, filterAsignacion, mesAnoLabel]);
 
   const hasFilters = activeChips.length > 0;
   const clearFilters = () => {
@@ -222,6 +246,7 @@ export function Incidentes() {
     setFilterEstado([]);
     setFilterEdificio([]);
     setFilterTipo([]);
+    setFilterAsignacion([]);
   };
 
   const filtered = useMemo(() => {
@@ -232,6 +257,7 @@ export function Incidentes() {
       .filter((i) => pass(filterEstado, i.Status_IN))
       .filter((i) => pass(filterEdificio, i.NombreEdificio_IN))
       .filter((i) => pass(filterTipo, i.NoResuelto_IN))
+      .filter((i) => pass(filterAsignacion, asignacionDe(i)))
       .filter(
         (i) =>
           i.NombreEdificio_IN.toLowerCase().includes(q) ||
@@ -240,12 +266,32 @@ export function Incidentes() {
           (i.TecnicoAsignado_IN ?? '').toLowerCase().includes(q) ||
           String(i.ID).includes(q)
       );
-  }, [displayList, query, filterMesAno, filterEstado, filterEdificio, filterTipo]);
+  }, [displayList, query, filterMesAno, filterEstado, filterEdificio, filterTipo, filterAsignacion]);
 
   const abrirAsignar = (i: Incidente, esReasignar: boolean) => {
     setReassign(esReasignar);
     setAssigning(i);
   };
+
+  const handleAnular = async () => {
+    if (!anulando) return;
+    setAnularBusy(true);
+    setAnularError(null);
+    try {
+      await anularIncidente(anulando.ID);
+      setAnulando(null);
+    } catch (err) {
+      setAnularError(err instanceof Error ? err.message : 'No se pudo anular el reclamo.');
+    } finally {
+      setAnularBusy(false);
+    }
+  };
+
+  // Acción SOLO Admin: anular (baja lógica) un reclamo abierto.
+  const adminAction = (i: Incidente) =>
+    isAdmin && esAnulable(i) ? (
+      <IconBtn icon={Trash2} tone="danger" title="Anular reclamo" onClick={() => setAnulando(i)} />
+    ) : null;
 
   // Acción contextual de una fila/card según tipo + estado + stock (reusada en tabla y cards).
   const primaryAction = (i: Incidente) => {
@@ -257,6 +303,12 @@ export function Incidentes() {
     // 'En Aprobacion' → esperando resolución en Aprobaciones (read-only). Solo ocurre en cambio de máquina.
     if (i.Status_IN === 'En Aprobacion')
       return <IconBtn icon={AlertCircle} tone="violet" title="En aprobación de cambio de máquina" onClick={() => setDetail(i)} />;
+    // 'A Revisar' → el triaje real lo hace la MOBILE (Requiere Repuesto / Cambio de Maquina /
+    // Resuelto). El desktop NO presume repuesto ni fuerza el tipo: sólo transfiere/asigna el
+    // técnico sin tocar stock (msapp IMG_TransferirTecnico → PopUpCambiarTecnico). Usa el flujo
+    // "cambiar técnico" (reassign=true = sin descuento), nunca assign() (que descontaría stock).
+    if (i.Status_IN === 'A Revisar')
+      return <IconBtn icon={UserCog} tone="brand" title="Transferir técnico" onClick={() => abrirAsignar(i, true)} />;
     if (sinStock) {
       // Guard: si ya hay una compra abierta para este incidente, no se genera otra.
       if (yaHayCompra(i.ID))
@@ -273,11 +325,7 @@ export function Incidentes() {
       // Ya asignado: permitir cambiar técnico (igual que cualquier incidente).
       if (asignado)
         return <IconBtn icon={UserCog} tone="brand" title="Cambiar técnico" onClick={() => abrirAsignar(i, true)} />;
-      // 'A Revisar': asignar/transferir técnico (msapp IMG_TransferirTecnico, visible para
-      // Status ≠ Pendiente/Resuelto/Anulado/Aprobada/En Aprobacion → 'A Revisar' y 'Asignado').
-      if (i.Status_IN === 'A Revisar')
-        return <IconBtn icon={UserCog} tone="brand" title="Asignar técnico" onClick={() => abrirAsignar(i, false)} />;
-      return null; // otros estados de cambio: sin acción de mutación.
+      return null; // otros estados de cambio: sin acción de mutación ('A Revisar' se maneja arriba).
     }
     if (asignado) return <IconBtn icon={UserCog} tone="brand" title="Cambiar técnico" onClick={() => abrirAsignar(i, true)} />;
     return <IconBtn icon={UserCog} tone="brand" title="Asignar técnico" onClick={() => abrirAsignar(i, false)} />;
@@ -308,6 +356,7 @@ export function Incidentes() {
             estado={filterEstado}
             edificio={filterEdificio}
             tipo={filterTipo}
+            asignacion={filterAsignacion}
             mesAnoOpts={mesAnoOpts}
             estadoOpts={estadoOpts}
             edificioOpts={edificioOpts}
@@ -317,6 +366,7 @@ export function Incidentes() {
               setFilterEstado(f.estado);
               setFilterEdificio(f.edificio);
               setFilterTipo(f.tipo);
+              setFilterAsignacion(f.asignacion);
               // Si tildó estados resueltos → fetch de los meses elegidos (o el mes actual).
               // Si no, limpiamos los resueltos locales y mostramos solo abiertos.
               if (f.estado.some((e) => ESTADOS_IN_RESUELTOS.includes(e))) {
@@ -372,12 +422,17 @@ export function Incidentes() {
                         <div className="flex shrink-0 gap-1.5">
                           <IconBtn icon={Eye} tone="neutral" title="Ver detalle" onClick={() => setDetail(i)} />
                           {primaryAction(i)}
+                          {adminAction(i)}
                         </div>
                       </div>
                       <div className="mt-2 min-w-0">
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <p className="truncate text-[13.5px] font-semibold text-wash-text-strong">
-                            {i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : <span className="italic text-wash-text-muted">Sin máquina</span>}
+                        <p className="flex min-w-0 items-center gap-1.5 truncate text-[13.5px] font-semibold text-wash-text-strong">
+                          <Building2 size={12} className="shrink-0 text-wash-text-muted" />
+                          <span className="truncate">{i.NombreEdificio_IN}</span>
+                        </p>
+                        <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-[18px]">
+                          <p className="truncate text-[11.5px] text-wash-text-muted">
+                            {i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : <span className="italic">Sin máquina</span>}
                           </p>
                           {i.IDMaquina_IN && (
                             <span className="shrink-0 rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand">
@@ -385,10 +440,6 @@ export function Incidentes() {
                             </span>
                           )}
                         </div>
-                        <p className="mt-0.5 flex items-center gap-1 truncate text-[11.5px] text-wash-text-muted">
-                          <Building2 size={11} className="shrink-0" />
-                          <span className="truncate">{i.NombreEdificio_IN}</span>
-                        </p>
                       </div>
                       <div className="mt-2.5 space-y-1.5 border-t border-wash-divider/60 pt-2 text-[11.5px]">
                         <div className="flex items-center gap-1.5 text-wash-text-muted">
@@ -425,7 +476,7 @@ export function Incidentes() {
                 <div>Estado</div>
                 <div>Fecha</div>
                 <div>Tipo</div>
-                <div>Máquina / Edificio</div>
+                <div>Edificio / Máquina</div>
                 <div>Técnico</div>
                 <div>Asignador</div>
                 <div className="text-right">Acciones</div>
@@ -456,9 +507,13 @@ export function Incidentes() {
                           </span>
                         </div>
                         <div className="min-w-0 pr-2">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <p className="truncate text-[13px] font-semibold text-wash-text-strong" title={i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : ''}>
-                              {i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : <span className="italic text-wash-text-muted">Sin máquina</span>}
+                          <p className="flex min-w-0 items-center gap-1.5 truncate text-[13px] font-semibold text-wash-text-strong" title={i.NombreEdificio_IN}>
+                            <Building2 size={11} className="shrink-0 text-wash-text-muted" />
+                            <span className="truncate">{i.NombreEdificio_IN}</span>
+                          </p>
+                          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-[17px]">
+                            <p className="truncate text-[11px] text-wash-text-muted" title={i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : ''}>
+                              {i.ConcatMaquina_IN ? proper(i.ConcatMaquina_IN) : <span className="italic">Sin máquina</span>}
                             </p>
                             {i.IDMaquina_IN && (
                               <span className="shrink-0 rounded bg-wash-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-wash-brand">
@@ -466,10 +521,6 @@ export function Incidentes() {
                               </span>
                             )}
                           </div>
-                          <p className="flex items-center gap-1 truncate text-[11px] text-wash-text-muted">
-                            <Building2 size={10} className="shrink-0" />
-                            {i.NombreEdificio_IN}
-                          </p>
                         </div>
                         <div className="min-w-0 pr-2">
                           {i.TecnicoAsignado_IN ? (
@@ -486,6 +537,7 @@ export function Incidentes() {
                         <div className="flex items-center justify-end gap-1.5">
                           <IconBtn icon={Eye} tone="neutral" title="Ver detalle" onClick={() => setDetail(i)} />
                           {primaryAction(i)}
+                          {adminAction(i)}
                         </div>
                       </div>
                     );
@@ -562,6 +614,27 @@ export function Incidentes() {
         tecnicos={tecnicos}
         onClose={() => setNewOpen(false)}
         onCreate={createIncidente}
+      />
+
+      {/* Anular reclamo (baja lógica) — solo Admin */}
+      <ConfirmDialog
+        open={!!anulando}
+        tone="danger"
+        title="Anular reclamo"
+        message={
+          anulando
+            ? `¿Anulás el reclamo #${anulando.ID} de ${anulando.NombreEdificio_IN}? Queda anulado (baja lógica) y deja de aparecer entre los abiertos.`
+            : ''
+        }
+        confirmLabel={anularBusy ? 'Anulando…' : 'Anular reclamo'}
+        cancelLabel="Volver"
+        busy={anularBusy}
+        error={anularError}
+        onCancel={() => {
+          setAnulando(null);
+          setAnularError(null);
+        }}
+        onConfirm={handleAnular}
       />
     </div>
   );
@@ -1131,12 +1204,13 @@ function MaquinaHeader({ incidente, icon: Icon, showStatus }: { incidente: Incid
   );
 }
 
-function IconBtn({ icon: Icon, tone, title, onClick }: { icon: typeof Eye; tone: 'neutral' | 'brand' | 'warning' | 'violet'; title: string; onClick: () => void }) {
+function IconBtn({ icon: Icon, tone, title, onClick }: { icon: typeof Eye; tone: 'neutral' | 'brand' | 'warning' | 'violet' | 'danger'; title: string; onClick: () => void }) {
   const cls = {
     neutral: 'text-wash-text-muted ring-wash-border hover:bg-wash-surface-2 hover:text-wash-text-strong hover:ring-wash-text-muted/40',
     brand: 'text-wash-brand ring-wash-brand/30 hover:bg-wash-brand/10 hover:ring-wash-brand',
     warning: 'text-amber-600 ring-amber-400/40 hover:bg-amber-50 hover:ring-amber-500',
     violet: 'text-violet-600 ring-violet-500/30 hover:bg-violet-500/10 hover:ring-violet-500',
+    danger: 'text-red-600 ring-red-400/40 hover:bg-red-50 hover:ring-red-500',
   }[tone];
   return (
     <button type="button" onClick={onClick} title={title} aria-label={title} className={cn('flex h-8 w-8 items-center justify-center rounded-lg ring-1 transition', cls)}>
@@ -1174,6 +1248,7 @@ function FilterContent({
   estado,
   edificio,
   tipo,
+  asignacion,
   mesAnoOpts,
   estadoOpts,
   edificioOpts,
@@ -1184,32 +1259,36 @@ function FilterContent({
   estado: string[];
   edificio: string[];
   tipo: string[];
+  asignacion: string[];
   mesAnoOpts: MultiOption[];
   estadoOpts: MultiOption[];
   edificioOpts: MultiOption[];
   tipoOpts: MultiOption[];
-  onApply: (f: { mesAno: string[]; estado: string[]; edificio: string[]; tipo: string[] }) => void;
+  onApply: (f: { mesAno: string[]; estado: string[]; edificio: string[]; tipo: string[]; asignacion: string[] }) => void;
 }) {
   const [pMesAno, setPMesAno] = useState<string[]>(mesAno);
   const [pEstado, setPEstado] = useState<string[]>(estado);
   const [pEdificio, setPEdificio] = useState<string[]>(edificio);
   const [pTipo, setPTipo] = useState<string[]>(tipo);
+  const [pAsignacion, setPAsignacion] = useState<string[]>(asignacion);
 
   const toggle = (set: React.Dispatch<React.SetStateAction<string[]>>) => (v: string) =>
     set((arr) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]));
 
-  const total = pMesAno.length + pEstado.length + pEdificio.length + pTipo.length;
+  const total = pMesAno.length + pEstado.length + pEdificio.length + pTipo.length + pAsignacion.length;
   const dirty =
     !sameSet(pMesAno, mesAno) ||
     !sameSet(pEstado, estado) ||
     !sameSet(pEdificio, edificio) ||
-    !sameSet(pTipo, tipo);
+    !sameSet(pTipo, tipo) ||
+    !sameSet(pAsignacion, asignacion);
 
   const limpiar = () => {
     setPMesAno([]);
     setPEstado([]);
     setPEdificio([]);
     setPTipo([]);
+    setPAsignacion([]);
   };
 
   return (
@@ -1227,6 +1306,7 @@ function FilterContent({
         <MultiSelect label="Estado" options={estadoOpts} selected={pEstado} onToggle={toggle(setPEstado)} onClear={() => setPEstado([])} />
         <MultiSelect label="Edificio" options={edificioOpts} selected={pEdificio} onToggle={toggle(setPEdificio)} onClear={() => setPEdificio([])} searchable />
         <MultiSelect label="Tipo" options={tipoOpts} selected={pTipo} onToggle={toggle(setPTipo)} onClear={() => setPTipo([])} />
+        <MultiSelect label="Asignación" options={ASIGNACION_OPTS} selected={pAsignacion} onToggle={toggle(setPAsignacion)} onClear={() => setPAsignacion([])} />
       </div>
       <div className="mt-4 flex justify-end gap-2 border-t border-wash-border pt-3">
         <PopoverClose asChild>
@@ -1236,7 +1316,7 @@ function FilterContent({
           <button
             type="button"
             disabled={!dirty}
-            onClick={() => onApply({ mesAno: pMesAno, estado: pEstado, edificio: pEdificio, tipo: pTipo })}
+            onClick={() => onApply({ mesAno: pMesAno, estado: pEstado, edificio: pEdificio, tipo: pTipo, asignacion: pAsignacion })}
             className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
           >
             Aplicar

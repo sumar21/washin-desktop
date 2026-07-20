@@ -17,6 +17,7 @@ import {
   Trash2,
   CheckCircle2,
   Coffee,
+  Radio,
 } from 'lucide-react';
 import {
   Bar,
@@ -91,6 +92,7 @@ export function Home() {
   const VarUsuario = useAppStore((s) => s.VarUsuario);
   const VarTipoUser = useAppStore((s) => s.VarTipoUser);
   const removeRegistro = useAppStore((s) => s.removeRegistro);
+  const cerrarRegistro = useAppStore((s) => s.cerrarRegistro);
   const fetchHome = useAppStore((s) => s.fetchHome);
   const fetchStock = useAppStore((s) => s.fetchStock);
   const fetchCompras = useAppStore((s) => s.fetchCompras);
@@ -100,6 +102,9 @@ export function Home() {
   const [deletingRegistro, setDeletingRegistro] = useState<Registro | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [cerrandoRegistro, setCerrandoRegistro] = useState<Registro | null>(null);
+  const [cerrarBusy, setCerrarBusy] = useState(false);
+  const [cerrarError, setCerrarError] = useState<string | null>(null);
   const [visitFilter, setVisitFilter] = useState<'todas' | 'pendientes'>('todas');
   const [descansosOpen, setDescansosOpen] = useState(false);
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
@@ -131,6 +136,15 @@ export function Home() {
     loadHome();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar; `loadHome` ya setea su propio loading.
   }, []);
+
+  // H13: refresco "en tiempo real" de las visitas en curso. Poll silencioso cada
+  // 60s (sin overlay de carga) para que la sección de técnicos en curso quede al día.
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetchHome().catch(() => {});
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [fetchHome]);
 
   // ── Métricas de visitas del mes (el corazón operativo para el gerente) ──
   const visitas = useMemo(() => {
@@ -239,6 +253,18 @@ export function Home() {
     () => CollectResumen.filter((r) => r.Estado === 'Pendiente' && !visitaFinalizada(r)).length,
     [CollectResumen]
   );
+
+  // H13 — Visitas EN CURSO (tiempo real): técnico fichado / trabajando pero sin
+  // finalizar. Criterio: Estado="Pendiente" y ya iniciada (Progreso > 0), que es
+  // el complemento exacto de las "cancelables" (Pendiente sin iniciar). Ordenadas
+  // por hora de inicio (las más recientes arriba).
+  const visitasEnCurso = useMemo(
+    () =>
+      CollectResumen
+        .filter((r) => r.Estado === 'Pendiente' && visitaFinalizada(r))
+        .sort((a, b) => (b.HoraInicio ?? '').localeCompare(a.HoraInicio ?? '') || b.ID - a.ID),
+    [CollectResumen]
+  );
   // Grilla: pendientes NO iniciadas primero (para poder anularlas), luego por ID desc (recientes).
   // El filtro "pendientes" muestra sólo esas.
   const visitasVisibles = useMemo(() => {
@@ -265,6 +291,20 @@ export function Home() {
       setDeleteBusy(false);
     }
   }, [deletingRegistro, removeRegistro]);
+
+  const handleCerrarRegistro = useCallback(async () => {
+    if (!cerrandoRegistro) return;
+    setCerrarBusy(true);
+    setCerrarError(null);
+    try {
+      await cerrarRegistro(cerrandoRegistro.ID);
+      setCerrandoRegistro(null);
+    } catch (err) {
+      setCerrarError(err instanceof Error ? err.message : 'No se pudo cerrar la visita.');
+    } finally {
+      setCerrarBusy(false);
+    }
+  }, [cerrandoRegistro, cerrarRegistro]);
 
   const tecnicoConfig: ChartConfig = {
     total: { label: 'Visitas', color: 'var(--color-wash-brand)' },
@@ -391,6 +431,59 @@ export function Home() {
                 }
               />
             </div>
+
+            {/* Técnicos en curso (tiempo real) — visitas fichadas sin finalizar */}
+            <Card className="col-span-12 flex flex-col ring-wash-border">
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                    <Radio size={16} />
+                  </span>
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      Técnicos en curso
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                        <span className="relative flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                        </span>
+                        En vivo
+                      </span>
+                    </CardTitle>
+                    <p className="text-xs text-wash-text-muted">
+                      Visitas fichadas y en proceso · sin finalizar
+                      {isAdmin && ' · el admin puede cerrarlas'}
+                    </p>
+                  </div>
+                </div>
+                {visitasEnCurso.length > 0 && (
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold tabular-nums text-emerald-700 ring-1 ring-emerald-200">
+                    {visitasEnCurso.length}
+                  </span>
+                )}
+              </CardHeader>
+              <CardContent className="flex-1">
+                {visitasEnCurso.length === 0 ? (
+                  <EmptyState
+                    compact
+                    icon={Radio}
+                    title="Nadie en curso ahora"
+                    description="No hay técnicos con una visita iniciada sin finalizar en este momento."
+                  />
+                ) : (
+                  <div className="grid max-h-[360px] grid-cols-1 gap-2 overflow-y-auto pr-0.5 md:grid-cols-2 xl:grid-cols-3">
+                    {visitasEnCurso.map((r) => (
+                      <EnCursoRow
+                        key={r.ID}
+                        registro={r}
+                        canClose={isAdmin}
+                        onClose={() => setCerrandoRegistro(r)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Actividad por técnico — ranking */}
             <Card className="col-span-12 ring-wash-border lg:col-span-8">
@@ -633,6 +726,27 @@ export function Home() {
           setDeleteError(null);
         }}
         onConfirm={handleDeleteRegistro}
+      />
+
+      {/* H13 — Cerrar/finalizar una visita en curso (sólo Admin) */}
+      <ConfirmDialog
+        open={!!cerrandoRegistro}
+        tone="primary"
+        title="Cerrar visita en curso"
+        message={
+          cerrandoRegistro
+            ? `¿Cerrás la visita de ${proper(cerrandoRegistro.Usuario) || 'el técnico'} a ${cerrandoRegistro.Edificio}? Queda marcada como finalizada con la hora de cierre actual.`
+            : ''
+        }
+        confirmLabel={cerrarBusy ? 'Cerrando…' : 'Cerrar visita'}
+        cancelLabel="Volver"
+        busy={cerrarBusy}
+        error={cerrarError}
+        onCancel={() => {
+          setCerrandoRegistro(null);
+          setCerrarError(null);
+        }}
+        onConfirm={handleCerrarRegistro}
       />
 
       {/* Descansos de hoy — modal (activos y finalizados) */}
@@ -898,6 +1012,63 @@ function VisitaCard({
             style={{ width: `${progreso}%` }}
           />
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- En curso row (tiempo real) ----
+
+function EnCursoRow({
+  registro,
+  canClose,
+  onClose,
+}: {
+  registro: Registro;
+  canClose: boolean;
+  onClose: () => void;
+}) {
+  const progreso = Math.max(0, Math.min(100, registro.Progreso ?? 0));
+  return (
+    <div className="flex flex-col gap-2 rounded-lg bg-wash-surface p-3 ring-1 ring-emerald-200/70 transition-colors hover:ring-emerald-300">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-[10px] font-semibold text-emerald-700">
+            {initials(registro.Usuario)}
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-[13px] font-semibold text-wash-text-strong">
+              {proper(registro.Usuario) || '—'}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-wash-text-muted">
+              <Building2 size={11} className="shrink-0" />
+              <span className="truncate">{registro.Edificio || '—'}</span>
+            </div>
+          </div>
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200">
+          <Clock size={10} className="shrink-0" />
+          <span className="tabular-nums">{registro.HoraInicio?.trim() || '—'}</span>
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-wash-border/60">
+          <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progreso}%` }} />
+        </div>
+        <span className="shrink-0 text-[11px] font-semibold tabular-nums text-wash-text-muted">{progreso}%</span>
+        {canClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-6 items-center gap-1 rounded-md bg-wash-brand/10 px-2 text-[11px] font-semibold text-wash-brand transition-colors hover:bg-wash-brand hover:text-white"
+            title="Cerrar visita"
+            aria-label="Cerrar visita"
+          >
+            <CheckCircle2 size={12} className="shrink-0" />
+            Cerrar
+          </button>
+        )}
       </div>
     </div>
   );

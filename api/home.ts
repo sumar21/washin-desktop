@@ -22,8 +22,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'no_session' });
   }
 
-  // Baja lógica de una visita: Estado -> "Anulado" (PowerApp: bt_cerrarPopUpFCE_5).
+  // POST sobre una visita: 'anular' (baja lógica) o 'cerrar' (forzar finalización).
   if (req.method === 'POST') {
+    const action = (req.body as { action?: string } | undefined)?.action;
+    // H13: cierre forzado de una visita EN CURSO por parte del Admin.
+    if (action === 'cerrar') {
+      return cerrarRegistro(req, res, session.rol);
+    }
+    // Default (sin action o action='anular'): baja lógica -> "Anulado"
+    // (PowerApp: bt_cerrarPopUpFCE_5). Se mantiene por compatibilidad.
     return anularRegistro(req, res, session.rol);
   }
 
@@ -92,6 +99,40 @@ async function anularRegistro(req: VercelRequest, res: VercelResponse, rol: stri
     return res.status(200).json({ ID: id, Estado: 'Anulado' });
   } catch (err) {
     console.error('home anular error', err);
+    const status = err instanceof GraphError ? 502 : 500;
+    return res.status(status).json({ error: 'server_error' });
+  }
+}
+
+// H13 (feature nueva del cliente): el Admin cierra/finaliza a mano una visita EN
+// CURSO desde el escritorio. "Cerrar" = Estado -> "Finalizado" + sellos de fin
+// (HoraSalida / FechaTerminada_R) si aún no los cargó el técnico. Sólo aplica a
+// visitas "Pendiente" (las ya iniciadas por el técnico); no toca las anuladas ni
+// las ya finalizadas.
+async function cerrarRegistro(req: VercelRequest, res: VercelResponse, rol: string | undefined) {
+  if (rol !== 'Admin') {
+    return res.status(403).json({ error: 'forbidden', message: 'Sólo un Admin puede cerrar visitas.' });
+  }
+
+  const id = Number((req.body as { id?: number | string } | undefined)?.id);
+  if (!id) return res.status(400).json({ error: 'invalid_id' });
+
+  try {
+    const current = await getItem(LIST_IDS.registros, id, registrosSelectFields());
+    if (!current) return res.status(404).json({ error: 'not_found', message: 'La visita no existe.' });
+    const reg = mapRegistro(current);
+    if (reg.Estado !== 'Pendiente') {
+      return res.status(409).json({ error: 'invalid_state', message: 'Sólo se pueden cerrar visitas pendientes.' });
+    }
+    const { hora, fecha } = fechasHoy();
+    const patch: Record<string, unknown> = { Estado: 'Finalizado' };
+    // No pisamos los sellos si el técnico ya los tenía cargados.
+    if (!reg.HoraSalida) patch.HoraSalida = hora;
+    if (!reg.FechaTerminada_R) patch.FechaTerminada_R = fecha;
+    await updateItem(LIST_IDS.registros, id, patch);
+    return res.status(200).json({ ID: id, Estado: 'Finalizado', HoraSalida: patch.HoraSalida ?? reg.HoraSalida });
+  } catch (err) {
+    console.error('home cerrar error', err);
     const status = err instanceof GraphError ? 502 : 500;
     return res.status(status).json({ error: 'server_error' });
   }

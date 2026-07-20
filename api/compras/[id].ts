@@ -25,10 +25,14 @@ interface EditBody {
   adds?: { item: string; marca?: string; cantidad: number }[];
   removes?: number[];
 }
+interface ReceiveUnidad {
+  nroSerie: string;
+  idMaquina: string;
+}
 interface ActionBody {
   action?: 'approve-request' | 'receive' | 'anular';
   observacion?: string;
-  lines?: { detalleId: number; cantidadReal: number; nroSerie?: string; idMaquina?: string }[];
+  lines?: { detalleId: number; cantidadReal: number; unidades?: ReceiveUnidad[] }[];
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -184,6 +188,25 @@ async function recibir(id: number, req: VercelRequest, res: VercelResponse, sess
 
   const byId = new Map((body.lines ?? []).map((l) => [l.detalleId, l]));
 
+  // Validación de obligatoriedad (antes de mutar nada): para cada línea de MÁQUINA con
+  // cantidad real > 0, debe venir una serie + ID por CADA unidad. Serie e ID obligatorios.
+  for (const d of detalles) {
+    if (!isMachineSegment(d.Segmento_DC)) continue;
+    const line = byId.get(d.ID);
+    const qreal = Math.max(0, Math.floor(line?.cantidadReal ?? d.Cantidad_DC));
+    if (qreal <= 0) continue;
+    const unidades = line?.unidades ?? [];
+    if (
+      unidades.length !== qreal ||
+      unidades.some((u) => !u?.nroSerie?.trim() || !u?.idMaquina?.trim())
+    ) {
+      return res.status(400).json({
+        error: 'invalid',
+        message: `Cargá Nº de serie e ID de máquina para cada una de las ${qreal} unidades de "${d.Item_DC}".`,
+      });
+    }
+  }
+
   // Stock activo, indexado por nombre de item (columna interna Lodge_ST).
   const stock = (await listItems(LIST_IDS.stock, { select: stockSelectFields(), filter: `fields/Status_ST eq 'Activo'` })).map(mapStock);
   const stockByItem = new Map(stock.map((s) => [s.Item_ST.trim().toLowerCase(), s]));
@@ -248,9 +271,10 @@ async function recibir(id: number, req: VercelRequest, res: VercelResponse, sess
           Marca_DM: d.Marca_DC ?? '',
         });
         const rowId = Number(createdMaq.id);
-        // La serie/ID se toman del input si vinieron (solo para la 1ra unidad), si no se autogeneran del RowID.
-        const nroSerie = u === 0 && line?.nroSerie?.trim() ? line.nroSerie.trim() : String(rowId);
-        const idMaquina = u === 0 && line?.idMaquina?.trim() ? line.idMaquina.trim() : String(rowId);
+        // Serie/ID propios de ESTA unidad (validados como obligatorios arriba); fallback al RowID.
+        const unidad = line?.unidades?.[u];
+        const nroSerie = unidad?.nroSerie?.trim() || String(rowId);
+        const idMaquina = unidad?.idMaquina?.trim() || String(rowId);
         await updateItem(LIST_IDS.detalleMaquina, rowId, {
           IDMaquina_DM: idMaquina,
           NroSerie_DM: nroSerie,

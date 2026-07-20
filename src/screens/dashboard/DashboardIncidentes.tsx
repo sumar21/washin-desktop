@@ -9,6 +9,7 @@ import {
   PieChart as PieIcon,
   Building2,
   Wrench,
+  UserCheck,
 } from 'lucide-react';
 import {
   Area,
@@ -87,24 +88,39 @@ const moneyK = (v: number) => (v === 0 ? '$0' : Math.abs(v) >= 1000 ? `$${Math.r
 
 const isResuelto = (i: Incidente) => String(i.Resuelto_IN).toUpperCase() === 'SI';
 
+/** Reclamo resuelto para la métrica por técnico: Resuelto_IN='SI' o Status_IN='Resuelto'. */
+const isReclamoResuelto = (i: Incidente) =>
+  isResuelto(i) || String(i.Status_IN ?? '').trim().toLowerCase() === 'resuelto';
+
 // ── Clasificación de registros ────────────────────────────────────────────────
 // En Wash Inn muchos "incidentes" NO son fallas de servicio sino MOVIMIENTOS de
-// máquina (instalada→depósito→Wash Inn): Transferencia / Cambio de Máquina / Baja.
-// Y otra parte grande son controles que salieron OK ("Todo Funcionando"). Contar
-// todo junto infla la métrica de incidentes. Separamos en 3 tipos:
-//   • servicio → falla real atendida (Mecánico, Agua, Tildado, Placa, …)
-//   • cambio   → movimiento logístico de máquina (0 repuestos asociados)
-//   • control  → visita de control que no encontró problema
-const MOV_TYPES = new Set(['transferencia', 'cambio de maquina', 'cambio de máquina', 'baja de maquina', 'baja de máquina']);
-type TipoInc = 'servicio' | 'cambio' | 'control';
+// máquina (instalada→depósito→Wash Inn). Y otra parte grande son controles que
+// salieron OK ("Todo Funcionando"). Contar todo junto infla la métrica. Separamos
+// en 4 tipos según NoResuelto_IN:
+//   • servicio    → falla real atendida (Mecánico, Agua, Tildado, Placa, …)
+//   • cambio      → SOLO un cambio de máquina real (NoResuelto_IN = 'Cambio de Maquina')
+//   • transferencia → instalación/traslado de máquina (movimiento logístico)
+//   • baja        → baja de máquina (movimiento logístico)
+//   • control     → visita de control que no encontró problema
+// NOTA: antes 'cambio' agrupaba Cambio + Transferencia + Baja, lo que inflaba el
+// conteo de "cambios de máquina" (p.ej. mostraba 60 sin ser 60 cambios reales).
+const CAMBIO_TYPES = new Set(['cambio de maquina', 'cambio de máquina']);
+const TRANSFER_TYPES = new Set(['transferencia']);
+const BAJA_TYPES = new Set(['baja de maquina', 'baja de máquina']);
+type TipoInc = 'servicio' | 'cambio' | 'transferencia' | 'baja' | 'control';
 function tipoDe(i: Incidente): TipoInc {
-  if (MOV_TYPES.has((i.NoResuelto_IN ?? '').trim().toLowerCase())) return 'cambio';
+  const nr = (i.NoResuelto_IN ?? '').trim().toLowerCase();
+  if (CAMBIO_TYPES.has(nr)) return 'cambio';
+  if (TRANSFER_TYPES.has(nr)) return 'transferencia';
+  if (BAJA_TYPES.has(nr)) return 'baja';
   if ((i.Categoria_IN ?? '').trim().toLowerCase() === 'todo funcionando') return 'control';
   return 'servicio';
 }
 const TIPO_META: Record<TipoInc, { label: string; cls: string }> = {
   servicio: { label: 'Servicio', cls: 'bg-wash-brand/10 text-wash-brand-dark ring-wash-brand/25' },
   cambio: { label: 'Cambio máq.', cls: 'bg-violet-50 text-violet-700 ring-violet-200' },
+  transferencia: { label: 'Transferencia', cls: 'bg-blue-50 text-blue-700 ring-blue-200' },
+  baja: { label: 'Baja', cls: 'bg-orange-50 text-orange-700 ring-orange-200' },
   control: { label: 'Control OK', cls: 'bg-slate-100 text-slate-600 ring-slate-300/60' },
 };
 function TipoBadge({ i }: { i: Incidente }) {
@@ -390,16 +406,18 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
     return [...byKey.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
   }, [incidentes, valorByInc]);
 
-  // ── Tipos de registro (servicio / cambio de máquina / control OK) ──
+  // ── Tipos de registro (servicio / cambio real / transf.+baja / control OK) ──
   const tipos = useMemo(() => {
-    let servicio = 0, cambio = 0, control = 0;
+    let servicio = 0, cambio = 0, transferencia = 0, baja = 0, control = 0;
     for (const i of incidentes) {
       const t = tipoDe(i);
       if (t === 'cambio') cambio += 1;
+      else if (t === 'transferencia') transferencia += 1;
+      else if (t === 'baja') baja += 1;
       else if (t === 'control') control += 1;
       else servicio += 1;
     }
-    return { servicio, cambio, control };
+    return { servicio, cambio, transferencia, baja, control };
   }, [incidentes]);
 
   // ── Donut por categoría — SOLO incidentes de servicio reales (excluye cambios de
@@ -452,6 +470,23 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
       })
       .filter((r) => r.value > 0);
     return rows.sort((a, b) => b.value - a.value).slice(0, 8);
+  }, [incidentes]);
+
+  // ── Reclamos resueltos por técnico (resuelto = Resuelto_IN='SI' o Status_IN='Resuelto') ──
+  // Excluye transferencias y bajas: son movimientos logísticos, no reclamos resueltos por un técnico.
+  const resueltosPorTecnico = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const i of incidentes) {
+      if (!isReclamoResuelto(i)) continue;
+      const t = tipoDe(i);
+      if (t === 'transferencia' || t === 'baja') continue;
+      const k = proper((i.TecnicoAsignado_IN ?? '').trim()) || 'Sin asignar';
+      map.set(k, (map.get(k) ?? 0) + 1);
+    }
+    return [...map.entries()]
+      .map(([name, value]) => ({ name, value, label: intFmt(value) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
   }, [incidentes]);
 
   // Sin período anterior (los datos son solo el rango) → sin deltas.
@@ -522,7 +557,7 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
           {/* Composición de los registros por TIPO — separa lo que NO es incidente de
               servicio (cambios de máquina + controles OK) del servicio real. */}
           {stats.total > 0 && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <BreakdownPill
                 color={COOL_RAMP[0]}
                 label="Incidentes de servicio"
@@ -534,6 +569,18 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
                 label="Cambios de máquina"
                 value={tipos.cambio}
                 share={stats.total ? (tipos.cambio / stats.total) * 100 : 0}
+              />
+              <BreakdownPill
+                color={COOL_RAMP[1]}
+                label="Transferencias"
+                value={tipos.transferencia}
+                share={stats.total ? (tipos.transferencia / stats.total) * 100 : 0}
+              />
+              <BreakdownPill
+                color={COOL_RAMP[3]}
+                label="Bajas"
+                value={tipos.baja}
+                share={stats.total ? (tipos.baja / stats.total) * 100 : 0}
               />
               <BreakdownPill
                 color={COOL_RAMP[5]}
@@ -692,6 +739,22 @@ export default function DashboardIncidentes({ desde, hasta, view }: { desde: str
               empty={topMaquinas.length === 0 && <EmptyState compact icon={Wrench} title="Sin datos" />}
             >
               <RankBars data={topMaquinas} />
+            </ChartCard>
+          </div>
+
+          {/* ── Reclamos resueltos por técnico ── */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <ChartCard
+              icon={UserCheck}
+              title="Reclamos resueltos por técnico"
+              subtitle="Cantidad de reclamos resueltos en el período — top 8"
+              empty={
+                resueltosPorTecnico.length === 0 && (
+                  <EmptyState compact icon={UserCheck} title="Sin reclamos resueltos" />
+                )
+              }
+            >
+              <RankBars data={resueltosPorTecnico} />
             </ChartCard>
           </div>
         </div>
