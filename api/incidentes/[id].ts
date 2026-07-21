@@ -8,6 +8,8 @@ import {
   repuestoIncidenteSelectFields,
   mapStock,
   stockSelectFields,
+  mapFotoIncidente,
+  fotoIncidenteSelectFields,
   fechasHoy,
   APP_VERSION,
 } from '../_lib/lists.js';
@@ -54,14 +56,39 @@ async function descontarRepuestos(incidenteId: number): Promise<void> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const session = readSession(req.headers.cookie);
   if (!session) return res.status(401).json({ error: 'no_session' });
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'method_not_allowed' });
-  }
-
   const rawId = req.query.id;
   const id = Number(Array.isArray(rawId) ? rawId[0] : rawId);
   if (!id) return res.status(400).json({ error: 'invalid_id' });
+
+  // ── GET: fotos del incidente (12.FotoIncidentes) ────────────────────────
+  // LAZY a propósito: Foto_FI es base64 de cientos de KB por fila. Nunca en el listado
+  // general (mismo criterio que ImagenGral de 01.Registros).
+  if (req.method === 'GET') {
+    if (!(await puedeAccederModulo(session.rol, 'Incidentes'))) {
+      return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Incidentes.' });
+    }
+    try {
+      const fotos = (
+        await listItems(LIST_IDS.fotoIncidentes, {
+          select: fotoIncidenteSelectFields(),
+          filter: `fields/IDIncidente_FI eq '${id}'`, // columna TEXTO → valor entrecomillado
+          top: 20,
+        })
+      )
+        .map(mapFotoIncidente)
+        .filter((f) => f.Foto_FI)
+        .sort((a, b) => b.ID - a.ID); // última primero
+      return res.status(200).json({ fotos });
+    } catch (err) {
+      console.error('incidentes GET fotos error', err);
+      return res.status(err instanceof GraphError ? 502 : 500).json({ error: 'server_error' });
+    }
+  }
+
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST');
+    return res.status(405).json({ error: 'method_not_allowed' });
+  }
 
   const body = (req.body ?? {}) as Body;
 

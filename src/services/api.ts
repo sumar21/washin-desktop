@@ -8,6 +8,7 @@ import type {
   DetalleVisita,
   EdificioAbm,
   EdificioVent,
+  FotoIncidente,
   Incidente,
   PedidoCompra,
   PermisoModulo,
@@ -352,6 +353,14 @@ export interface IncidentesResponse {
 /** Sin arg: incidentes sin resolver. Con `resueltosMes` (mm/yyyy): los resueltos de ese mes. */
 export function getIncidentes(resueltosMes?: string): Promise<IncidentesResponse> {
   return request(resueltosMes ? `/incidentes?resueltos=${encodeURIComponent(resueltosMes)}` : '/incidentes');
+}
+
+/**
+ * Fotos de resolución del incidente (12.FotoIncidentes). LAZY: sólo al abrir el detalle.
+ * Cada foto es un data URI base64 de cientos de KB — nunca pedirlas en un listado.
+ */
+export function getFotosIncidente(id: number): Promise<{ fotos: FotoIncidente[] }> {
+  return request(`/incidentes/${id}`);
 }
 
 // ── Dashboard de Incidentes (scoped al rango de meses + repuestos con Precio_RI) ─

@@ -39,6 +39,7 @@ export const LIST_IDS = {
   edificiosVisitar: '717028c9-9949-494b-9ee8-a1a7089f6f5b',
   horasDescanso: 'e1361cec-5651-44bc-93b4-44e94e4caeee', // 14.HorasDescanso
   detalles: '259530ec-a7e0-4cdd-a2fd-310b80ddc6aa', // 02.Detalles (detalle por ÍTEM de cada visita)
+  fotoIncidentes: '29ed0c92-4cee-4a7a-a510-763d098bb482', // 12.FotoIncidentes (la escribe la mobile al resolver; solo lectura desde acá)
 } as const;
 
 /**
@@ -771,7 +772,9 @@ const HISTORIAL_SELECT = [
   'Categoria_IN',
   'NoResuelto_IN',
   'Descripcion_IN',
+  'DescripcionCarga_IN',
   'DescripcionResuelto_IN',
+  'DescripcionAnulado_IN',
   'NombreEdificio_IN',
   'Status_IN',
   'Resuelto_IN',
@@ -785,7 +788,18 @@ export function historialSelectFields(): string[] {
 
 export function mapHistorial(item: SharePointItem): HistorialRow {
   const titulo = clean(item.Categoria_IN) || clean(item.NoResuelto_IN) || 'Incidente';
-  const desc = clean(item.Descripcion_IN) || clean(item.DescripcionResuelto_IN) || undefined;
+  const status = String(item.Status_IN ?? '');
+  // Cascada por estado (paridad msapp Screen_Incidentes.pa.yaml:149, 4 ramas).
+  // Antes caía a Descripcion_IN para 'A Revisar', que está SIEMPRE en blanco en ese estado
+  // (el alta escribe solo DescripcionCarga_IN) → el historial salía vacío.
+  const desc =
+    status === 'A Revisar'
+      ? clean(item.DescripcionCarga_IN) || undefined
+      : status === 'Anulado'
+        ? clean(item.DescripcionAnulado_IN) || clean(item.DescripcionCarga_IN) || undefined
+        : status === 'Resuelto'
+          ? clean(item.DescripcionResuelto_IN) || clean(item.Descripcion_IN) || clean(item.DescripcionCarga_IN) || undefined
+          : clean(item.Descripcion_IN) || clean(item.DescripcionCarga_IN) || clean(item.DescripcionResuelto_IN) || undefined;
   return {
     ID: Number(item.id),
     Fecha_IN: String(item.Fecha_IN ?? ''),
@@ -819,9 +833,13 @@ export interface IncidenteRow {
   MaquinaAsignada_IN?: string;
   TecnicoAsignado_IN?: string;
   CantidadRepuestos_IN: number;
-  DescripcionIncidente_IN?: string; // = Descripcion_IN || DescripcionCarga_IN
+  // Derivado legacy = Descripcion_IN || DescripcionCarga_IN — NO borrar: lo consumen
+  // ConfigReportes.tsx, DashboardIncidentes.tsx (CSV) e Incidentes.tsx.
+  DescripcionIncidente_IN?: string;
+  Descripcion_IN?: string; // observación del técnico, cruda (la escribe solo la mobile al revisar)
   DescripcionCarga_IN?: string;
   DescripcionResuelto_IN?: string;
+  DescripcionAnulado_IN?: string;
   FechaResuelto_IN?: string;
   FechaAsignada_IN?: string;
   User_IN: string;
@@ -845,6 +863,7 @@ const INCIDENTE_SELECT = [
   'Descripcion_IN',
   'DescripcionCarga_IN',
   'DescripcionResuelto_IN',
+  'DescripcionAnulado_IN',
   'FechaResuelto_IN',
   'FechaAsignada_IN',
   'User_IN',
@@ -877,8 +896,10 @@ export function mapIncidente(item: SharePointItem): IncidenteRow {
       (item.Descripcion_IN ? String(item.Descripcion_IN) : '') ||
       (item.DescripcionCarga_IN ? String(item.DescripcionCarga_IN) : '') ||
       undefined,
+    Descripcion_IN: item.Descripcion_IN ? String(item.Descripcion_IN) : undefined,
     DescripcionCarga_IN: item.DescripcionCarga_IN ? String(item.DescripcionCarga_IN) : undefined,
     DescripcionResuelto_IN: item.DescripcionResuelto_IN ? String(item.DescripcionResuelto_IN) : undefined,
+    DescripcionAnulado_IN: item.DescripcionAnulado_IN ? String(item.DescripcionAnulado_IN) : undefined,
     FechaResuelto_IN: item.FechaResuelto_IN ? String(item.FechaResuelto_IN) : undefined,
     FechaAsignada_IN: item.FechaAsignada_IN ? String(item.FechaAsignada_IN) : undefined,
     User_IN: String(item.User_IN ?? ''),
@@ -930,6 +951,45 @@ export function mapRepuestoIncidente(item: SharePointItem): RepuestoIncidenteRow
     Cantidad_RI: Number(item.Cantidad_RI ?? 0) || 0,
     Precio_RI: parsePrecioRI(item.Precio_RI),
     FechaMes_RI: String(item.FechaMes_RI ?? ''),
+  };
+}
+
+// ── FotoIncidentes (12.FotoIncidentes) ────────────────────────────────────
+// La escribe SOLO la app mobile al resolver un incidente; desde acá es sólo lectura.
+// Foto_FI viene en base64 PURO: la mobile le saca el prefijo data-uri antes de guardar.
+// OJO VOLUMEN: ~200-400KB de texto por fila (base64 = +33% sobre el binario). NUNCA
+// seleccionar Foto_FI sin un $filter por incidente — `listItems` pagina hasta agotar la
+// lista y bajaría todos los base64 del tenant (mismo criterio que ImagenGral en 01.Registros).
+export interface FotoIncidenteRow {
+  ID: number;
+  IDIncidente_FI: string;
+  /** data URI listo para <img src>, reconstruido a partir del base64 crudo. */
+  Foto_FI: string;
+}
+
+const FOTO_INCIDENTE_SELECT = ['IDIncidente_FI', 'Foto_FI'];
+
+export function fotoIncidenteSelectFields(): string[] {
+  return FOTO_INCIDENTE_SELECT;
+}
+
+/** Sniff del mime por magic bytes en base64: la lista no guarda el content-type. */
+function base64ToDataUri(raw: string): string {
+  const b64 = raw.trim();
+  if (!b64) return '';
+  if (b64.startsWith('data:')) return b64; // filas legacy de PowerApps pueden traer el prefijo
+  let mime = 'image/jpeg'; // camino feliz: la mobile captura con toDataURL('image/jpeg')
+  if (b64.startsWith('iVBORw0KGgo')) mime = 'image/png';
+  else if (b64.startsWith('R0lGOD')) mime = 'image/gif';
+  else if (b64.startsWith('UklGR')) mime = 'image/webp';
+  return `data:${mime};base64,${b64}`;
+}
+
+export function mapFotoIncidente(item: SharePointItem): FotoIncidenteRow {
+  return {
+    ID: Number(item.id),
+    IDIncidente_FI: String(item.IDIncidente_FI ?? ''),
+    Foto_FI: base64ToDataUri(String(item.Foto_FI ?? '')),
   };
 }
 

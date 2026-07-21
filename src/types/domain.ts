@@ -278,8 +278,9 @@ export interface Incidente {
   MaquinaAsignada_IN?: string;
   TecnicoAsignado_IN?: string;
   CantidadRepuestos_IN: number;
+  Descripcion_IN?: string; // observación cruda del técnico; el backend la expone recién ahora
   DescripcionCarga_IN?: string;
-  DescripcionIncidente_IN?: string;
+  DescripcionIncidente_IN?: string; // derivado = Descripcion_IN || DescripcionCarga_IN
   DescripcionResuelto_IN?: string;
   DescripcionAnulado_IN?: string;
   FechaResuelto_IN?: string;
@@ -301,7 +302,10 @@ export interface Repuesto {
   Precio_RP: number;
 }
 
-// 12.FotoIncidentes
+// 12.FotoIncidentes — la escribe SOLO la mobile al resolver.
+// Foto_FI llega del backend YA como data URI (`data:image/jpeg;base64,…`), listo para <img src>.
+// En SharePoint está guardada como base64 puro sin prefijo; la reconstrucción vive en
+// api/_lib/lists.ts (base64ToDataUri).
 export interface FotoIncidente {
   ID: number;
   IDIncidente_FI: string;

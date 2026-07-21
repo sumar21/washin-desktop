@@ -16,6 +16,13 @@ import {
   ClipboardCheck,
   Loader2,
   Trash2,
+  ChevronDown,
+  StickyNote,
+  CheckCircle2,
+  Ban,
+  Camera,
+  X,
+  Download,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
@@ -28,10 +35,10 @@ import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
-import { getIncidentes } from '@/services/api';
+import { getIncidentes, getFotosIncidente } from '@/services/api';
 import { last12MesesOptions, estadoOptions } from '@/lib/filters';
 import { cn, proper } from '@/lib/utils';
-import type { Incidente, RepuestoIncidente } from '@/types/domain';
+import type { Incidente, RepuestoIncidente, FotoIncidente } from '@/types/domain';
 
 const requiereRepuesto = (i: Incidente) => /repuesto/i.test(i.NoResuelto_IN);
 const esCambioMaquina = (i: Incidente) => /cambio/i.test(i.NoResuelto_IN);
@@ -77,10 +84,43 @@ const ASIGNACION_OPTS: MultiOption[] = [
 ];
 const asignacionDe = (i: Incidente) => (i.TecnicoAsignado_IN ? 'asignado' : 'sin_asignar');
 
-const dedupeById = (arr: Incidente[]): Incidente[] => {
+// Dedupe por identidad de item de lista (ID), NO agrupar y sumar por nombre de repuesto:
+// la duplicación es de IDENTIDAD (la misma fila de 13.RepuestosIncidentes repetida M+1 veces,
+// una por mes tildado + la del store), no de granularidad. Sumar Cantidad_RI falsearía el dato
+// (12×1 unidad de un repuesto del que se usó 1) y el modal de compra pediría 12 unidades.
+const dedupeById = <T extends { ID: number }>(arr: T[]): T[] => {
   const seen = new Set<number>();
   return arr.filter((i) => (seen.has(i.ID) ? false : (seen.add(i.ID), true)));
 };
+
+// Descarga de la foto de resolución. No hay request: el backend ya devuelve Foto_FI como data URI
+// (api/_lib/lists.ts, base64ToDataUri), así que el href del <a download> es el dato mismo.
+const slug = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+
+// La extensión sale del mime del propio data URI; el mime lo infiere el backend por magic bytes
+// porque 12.FotoIncidentes no guarda content-type en ninguna columna.
+const extDeDataUri = (dataUri: string) => {
+  const mime = /^data:image\/([a-z0-9.+-]+);/i.exec(dataUri)?.[1]?.toLowerCase();
+  return mime === 'jpeg' || !mime ? 'jpg' : mime;
+};
+
+function descargarFoto(dataUri: string, incidente: Incidente, n: number, total: number) {
+  const partes = ['incidente', incidente.IDIncidente || String(incidente.ID)];
+  if (incidente.NombreEdificio_IN) partes.push(slug(incidente.NombreEdificio_IN));
+  if (total > 1) partes.push(String(n));
+  const a = document.createElement('a');
+  a.href = dataUri;
+  a.download = `${partes.join('-')}.${extDeDataUri(dataUri)}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 export function Incidentes() {
   const incidentes = useAppStore((s) => s.CollectIncidentes);
@@ -132,6 +172,9 @@ export function Incidentes() {
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
+    // Estado derivado del filtro: una recarga completa (montaje o "Reintentar") lo invalida.
+    setResueltosExtra([]);
+    setRepuestosExtra([]);
     return Promise.all([fetchIncidentes(), fetchStock(), fetchMaquinas(), fetchTecnicos(), fetchCompras()])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar los incidentes.'))
       .finally(() => setLoading(false));
@@ -151,7 +194,7 @@ export function Incidentes() {
         reps.push(...r.repuestos);
       }
       setResueltosExtra(dedupeById(inc));
-      setRepuestosExtra(reps);
+      setRepuestosExtra(dedupeById(reps));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar los incidentes resueltos.');
     } finally {
@@ -165,8 +208,11 @@ export function Incidentes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar.
   }, []);
 
+  // Defensa en profundidad: `repuestos` (store) y `repuestosExtra` (on-demand) SIEMPRE se solapan,
+  // porque cada GET de resueltos devuelve 13.RepuestosIncidentes entera.
   const repuestosDe = useCallback(
-    (id: number) => [...repuestos, ...repuestosExtra].filter((r) => r.IDIncidente_RI === String(id)),
+    (id: number) =>
+      dedupeById([...repuestos, ...repuestosExtra]).filter((r) => r.IDIncidente_RI === String(id)),
     [repuestos, repuestosExtra]
   );
 
@@ -247,6 +293,11 @@ export function Incidentes() {
     setFilterEdificio([]);
     setFilterTipo([]);
     setFilterAsignacion([]);
+    // Los resueltos/repuestos on-demand son estado derivado del filtro: si el filtro se limpia,
+    // se limpian. Si no, repuestosExtra queda stale y contamina el detalle de los ABIERTOS
+    // (repuestosDe no está gateado por wantResueltos, a diferencia de displayList).
+    setResueltosExtra([]);
+    setRepuestosExtra([]);
   };
 
   const filtered = useMemo(() => {
@@ -311,7 +362,7 @@ export function Incidentes() {
     // técnico sin tocar stock (msapp IMG_TransferirTecnico → PopUpCambiarTecnico). Usa el flujo
     // "cambiar técnico" (reassign=true = sin descuento), nunca assign() (que descontaría stock).
     if (i.Status_IN === 'A Revisar')
-      return <IconBtn icon={UserCog} tone="brand" title="Transferir técnico" onClick={() => abrirAsignar(i, true)} />;
+      return <IconBtn icon={UserCog} tone="brand" title='Asignar técnico para revisión (queda "A Revisar")' onClick={() => abrirAsignar(i, true)} />;
     if (sinStock) {
       // Guard: si ya hay una compra abierta para este incidente, no se genera otra.
       if (yaHayCompra(i.ID))
@@ -953,18 +1004,167 @@ function DetailModal({
   if (!incidente) return null;
   return (
     <Modal open={!!incidente} onClose={onClose} title="Detalle del incidente" width={580}>
+      {/* El body va en un componente aparte porque necesita hooks (fotos lazy + secciones
+          colapsables) y acá arriba hay un early-return. <ModalActions> DEBE quedar como child
+          DIRECTO de <Modal>: Modal.tsx particiona children por tipo para dejar el footer fijo. */}
+      <DetailBody key={incidente.ID} incidente={incidente} repuestos={repuestos} stock={stock} />
+      <ModalActions>
+        <button type="button" onClick={onClose} className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark">
+          Cerrar
+        </button>
+      </ModalActions>
+    </Modal>
+  );
+}
+
+// Observaciones del incidente: 4 columnas distintas de 10.Incidentes, cada una escrita en un
+// momento del ciclo de vida. Antes el modal mostraba UNA sola caja con el derivado
+// DescripcionIncidente_IN (= Descripcion_IN || DescripcionCarga_IN), así que la resolución y el
+// motivo de anulación no se veían nunca.
+const OBSERVACIONES = [
+  { key: 'carga', label: 'Observación del problema', icon: StickyNote, field: 'DescripcionCarga_IN', tone: 'neutral' },
+  { key: 'tecnico', label: 'Observación del técnico', icon: UserCog, field: 'Descripcion_IN', tone: 'neutral' },
+  { key: 'resuelto', label: 'Observación de la resolución', icon: CheckCircle2, field: 'DescripcionResuelto_IN', tone: 'success' },
+  { key: 'anulado', label: 'Motivo de anulación', icon: Ban, field: 'DescripcionAnulado_IN', tone: 'danger' },
+] as const satisfies readonly {
+  key: string;
+  label: string;
+  icon: typeof StickyNote;
+  field: keyof Incidente;
+  tone: 'neutral' | 'success' | 'danger';
+}[];
+
+function DetailBody({
+  incidente,
+  repuestos,
+  stock,
+}: {
+  incidente: Incidente;
+  repuestos: { ID: number; Repuesto_RI: string; Cantidad_RI: number }[];
+  stock: { Item_ST: string; Cantidad_ST: number; Status_ST: string }[];
+}) {
+  const observaciones = useMemo(
+    () =>
+      OBSERVACIONES.map((o) => ({ ...o, value: String(incidente[o.field] ?? '') })).filter((o) =>
+        o.value.trim()
+      ),
+    [incidente]
+  );
+
+  // Apertura por defecto — paridad con el msapp (Screen_Incidentes.pa.yaml:149):
+  //   'A Revisar' → carga; 'Resuelto' → resolución + problema (el PA mostraba las DOS cajas);
+  //   'Anulado' → motivo; resto (Pendiente/Asignado/Aprobada/En Aprobacion) → técnico, con
+  //   fallback a carga si el técnico todavía no escribió nada.
+  const defaultOpen = useMemo(() => {
+    const have = new Set<string>(observaciones.map((o) => o.key));
+    const pick = (...keys: string[]) => keys.find((k) => have.has(k));
+    const s = incidente.Status_IN;
+    const keys =
+      s === 'A Revisar'
+        ? [pick('carga')]
+        : s === 'Resuelto'
+          ? [pick('resuelto'), pick('carga')]
+          : s === 'Anulado'
+            ? [pick('anulado')]
+            : [pick('tecnico', 'carga')];
+    return new Set(keys.filter(Boolean) as string[]);
+  }, [observaciones, incidente.Status_IN]);
+
+  // Multi-abierto (Set), no accordion exclusivo: en 'Resuelto' hay que ver problema + resolución
+  // a la vez. DetailBody se remonta por incidente (key={incidente.ID}) → el default se recalcula.
+  const [abiertas, setAbiertas] = useState<Set<string>>(defaultOpen);
+
+  const [fotos, setFotos] = useState<FotoIncidente[]>([]);
+  // Arranca en true (no seteado dentro del efecto): DetailBody se remonta por incidente, así que
+  // el fetch SIEMPRE corre en el montaje y el spinner ya es el estado inicial correcto.
+  const [cargandoFotos, setCargandoFotos] = useState(true);
+  // Índice, no el data URI: el botón de descarga del lightbox necesita saber QUÉ foto es para
+  // numerar el archivo. `null` = cerrado (0 es un índice válido, no usar falsy).
+  const [lightbox, setLightbox] = useState<number | null>(null);
+  const fotoAmpliada = lightbox === null ? null : fotos[lightbox];
+
+  // Fetch LAZY de fotos: Foto_FI es base64 de cientos de KB por fila, nunca va en el listado.
+  useEffect(() => {
+    let vivo = true;
+    getFotosIncidente(incidente.ID)
+      .then((r) => { if (vivo) setFotos(r.fotos); })
+      .catch(() => { if (vivo) setFotos([]); }) // best-effort: nunca romper el detalle
+      .finally(() => { if (vivo) setCargandoFotos(false); });
+    return () => { vivo = false; };
+  }, [incidente.ID]);
+
+  // Escape cierra SOLO el lightbox: se escucha en capture y se corta la propagación antes de que
+  // llegue el listener de Modal.tsx (window, bubble), que si no cerraría el detalle entero.
+  useEffect(() => {
+    if (lightbox === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setLightbox(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [lightbox]);
+
+  return (
+    <>
       <MaquinaHeader incidente={incidente} icon={Wrench} showStatus />
-      <div className="mt-4">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">Observación</p>
-        <div className="relative overflow-hidden rounded-xl border border-wash-border bg-wash-surface px-5 py-4">
-          <span className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-wash-brand-light to-wash-brand-dark" />
-          <p className="text-sm leading-relaxed text-wash-text-strong">
-            {incidente.DescripcionIncidente_IN || incidente.DescripcionCarga_IN || (
-              <span className="italic text-wash-text-muted">Sin observación registrada.</span>
-            )}
-          </p>
+
+      {observaciones.length === 0 ? (
+        <div className="mt-4 rounded-xl border border-wash-border bg-wash-surface px-5 py-4">
+          <p className="text-sm italic text-wash-text-muted">Sin observación registrada.</p>
         </div>
-      </div>
+      ) : (
+        <div className="mt-4 space-y-2">
+          {observaciones.map(({ key, label, icon: Icon, value, tone }) => {
+            const open = abiertas.has(key);
+            return (
+              <div
+                key={key}
+                className={cn(
+                  'overflow-hidden rounded-xl ring-1',
+                  tone === 'success' && 'bg-emerald-500/[0.06] ring-emerald-500/20',
+                  tone === 'danger' && 'bg-red-500/[0.06] ring-red-500/20',
+                  tone === 'neutral' && 'bg-wash-surface-2/40 ring-wash-border'
+                )}
+              >
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() =>
+                    setAbiertas((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(key)) next.delete(key);
+                      else next.add(key);
+                      return next;
+                    })
+                  }
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-wash-surface-2/60"
+                >
+                  <Icon
+                    size={14}
+                    className={cn(
+                      tone === 'success'
+                        ? 'text-emerald-700'
+                        : tone === 'danger'
+                          ? 'text-red-700'
+                          : 'text-wash-text-muted'
+                    )}
+                  />
+                  <span className="flex-1 text-[10.5px] font-bold uppercase tracking-wider text-wash-text-muted">
+                    {label}
+                  </span>
+                  <ChevronDown size={14} className={cn('text-wash-text-muted transition-transform', open && 'rotate-180')} />
+                </button>
+                {open && (
+                  <p className="whitespace-pre-line px-4 pb-3.5 text-sm leading-relaxed text-wash-text-strong">{value}</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <div className="mt-4 grid grid-cols-3 gap-3">
         <Meta label="Fecha" value={incidente.Fecha_IN} />
         <Meta label="Tipo" value={incidente.NoResuelto_IN} />
@@ -1007,12 +1207,99 @@ function DetailModal({
           </ul>
         )}
       </div>
-      <ModalActions>
-        <button type="button" onClick={onClose} className="rounded-lg bg-wash-action px-5 py-2.5 font-medium text-white hover:bg-wash-action-dark">
-          Cerrar
-        </button>
-      </ModalActions>
-    </Modal>
+
+      {/* Fotos (12.FotoIncidentes) — las escribe SOLO la mobile al resolver, así que la vista por
+          defecto (abiertos, Resuelto_IN='NO') por construcción nunca tiene ninguna. Si no hay y no
+          está cargando, la sección no se renderiza en vez de mostrar un vacío permanente. */}
+      {(cargandoFotos || fotos.length > 0) && (
+        <div className="mt-4">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            <Camera size={12} />
+            {/* El conteo recién cuando terminó de cargar: "Fotos (0)" con spinner leería como un
+                cero real que después cambia. */}
+            Fotos{!cargandoFotos && ` (${fotos.length})`}
+            {cargandoFotos && <Loader2 size={12} className="animate-spin" />}
+          </p>
+          {fotos.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {fotos.map((f, idx) => (
+                <div
+                  key={f.ID}
+                  className="group relative overflow-hidden rounded-lg ring-1 ring-wash-border transition hover:ring-wash-action"
+                >
+                  <button
+                    type="button"
+                    aria-label="Ver foto ampliada"
+                    onClick={() => setLightbox(idx)}
+                    className="block w-full"
+                  >
+                    <img
+                      src={f.Foto_FI}
+                      alt=""
+                      loading="lazy"
+                      className="h-24 w-full object-cover transition group-hover:scale-105"
+                    />
+                  </button>
+                  {/* Descarga directa sin abrir el lightbox. Visible siempre en touch (donde no hay
+                      hover) y al pasar el mouse en desktop. */}
+                  <button
+                    type="button"
+                    aria-label="Descargar foto"
+                    title="Descargar"
+                    onClick={() => descargarFoto(f.Foto_FI, incidente, idx + 1, fotos.length)}
+                    className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-md bg-black/55 text-white opacity-0 transition hover:bg-black/75 focus-visible:opacity-100 group-hover:opacity-100"
+                  >
+                    <Download size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* z-[70] para quedar por encima del overlay del Modal (z-[60], Modal.tsx:41). */}
+      {fotoAmpliada && (
+        <div
+          role="presentation"
+          onClick={() => setLightbox(null)}
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6"
+        >
+          {/* stopPropagation: el click en la barra no debe cerrar el lightbox (el overlay cierra). */}
+          <div
+            role="presentation"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-4 top-4 flex items-center gap-2"
+          >
+            <button
+              type="button"
+              aria-label="Descargar foto"
+              title="Descargar"
+              onClick={() =>
+                descargarFoto(fotoAmpliada.Foto_FI, incidente, (lightbox ?? 0) + 1, fotos.length)
+              }
+              className="flex h-9 items-center gap-1.5 rounded-lg bg-white/10 px-3 text-sm font-medium text-white transition hover:bg-white/20"
+            >
+              <Download size={16} />
+              Descargar
+            </button>
+            <button
+              type="button"
+              aria-label="Cerrar foto"
+              onClick={() => setLightbox(null)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white transition hover:bg-white/20"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <img
+            src={fotoAmpliada.Foto_FI}
+            alt=""
+            className="max-h-[90dvh] max-w-[90vw] object-contain"
+          />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1112,7 +1399,7 @@ function NuevoIncidenteModal({
           </div>
         </div>
         <div>
-          <Lbl>Asignar a técnico</Lbl>
+          <Lbl>Técnico a avisar (queda "A Revisar")</Lbl>
           <div className="mt-1.5">
             <Combobox
               options={tecnicoOpts}

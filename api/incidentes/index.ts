@@ -33,10 +33,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const resParam = typeof req.query.resueltos === 'string' ? req.query.resueltos : undefined;
     const resueltosMes = resParam && /^\d{2}\/\d{4}$/.test(resParam) ? resParam : null;
     const incFilter = resueltosMes ? `fields/FechaMesAno_IN eq '${resueltosMes}'` : `fields/Resuelto_IN eq 'NO'`;
+    // Sin filtro, `listItems` pagina por @odata.nextLink hasta agotar 13.RepuestosIncidentes
+    // ENTERA en cada request (`top` es tamaño de página, no tope). En el camino
+    // `?resueltos=MM/YYYY` se acota por mes con FechaMes_RI (mismo formato mm/yyyy que
+    // FechaMesAno_IN). Un solo $filter sobre columna no indexada → cubierto por el header
+    // Prefer que listItems ya agrega.
+    const repFilter = resueltosMes ? `fields/FechaMes_RI eq '${resueltosMes}'` : undefined;
     try {
       const [incRows, repRows] = await Promise.all([
         listItems(LIST_IDS.incidentes, { select: incidenteSelectFields(), filter: incFilter, top: 999 }),
-        listItems(LIST_IDS.repuestosIncidentes, { select: repuestoIncidenteSelectFields(), top: 999 }),
+        listItems(LIST_IDS.repuestosIncidentes, { select: repuestoIncidenteSelectFields(), filter: repFilter, top: 999 }),
       ]);
       let incidentes = incRows.map(mapIncidente);
       // Filtro compuesto (mes + resuelto) en memoria: SharePoint rechaza `and` sobre columnas no indexadas.
