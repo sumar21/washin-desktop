@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { listItems, GraphError } from '../_lib/graph.js';
 import { LIST_IDS, mapUsuario, modulosPermitidos, permisosSelectFields } from '../_lib/lists.js';
 import { createSessionCookie } from '../_lib/session.js';
+import { checkLoginRateLimit, clientIp } from '../_lib/ratelimit.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -12,6 +13,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { usuario, password } = (req.body ?? {}) as { usuario?: string; password?: string };
   if (!usuario?.trim() || !password?.trim()) {
     return res.status(400).json({ error: 'empty', message: 'Usuario y contraseña son obligatorios' });
+  }
+
+  // Anti fuerza bruta: limita por IP + usuario. Fail-open si Upstash no está configurado/caído.
+  const rl = await checkLoginRateLimit(clientIp(req), usuario.trim());
+  if (!rl.ok) {
+    res.setHeader('Retry-After', String(rl.retryAfter));
+    return res.status(429).json({
+      error: 'rate_limited',
+      message: `Demasiados intentos. Probá de nuevo en ${Math.ceil(rl.retryAfter / 60)} min.`,
+    });
   }
 
   try {
