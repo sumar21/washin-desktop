@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
+import { QrPosterModal, VerQrButton, type PosterInput } from '@/components/QrPosterModal';
 import type { EdificioAbm, DetalleCircuitoAbm } from '@/types/domain';
 import type { EdificioAbmInput } from '@/services/api';
 
@@ -73,6 +74,8 @@ export function ConfigEdificios({
   const bajaEdificio = useAppStore((s) => s.bajaEdificio);
 
   const [viewing, setViewing] = useState<EdificioAbm | null>(null);
+  // QR: lo disparan tanto el detalle como los formularios de crear/editar (con sus valores en vivo).
+  const [qrInput, setQrInput] = useState<PosterInput | null>(null);
   const [editing, setEditing] = useState<EdificioAbm | null>(null);
   const [deleting, setDeleting] = useState<EdificioAbm | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -345,7 +348,14 @@ export function ConfigEdificios({
         edificio={viewing}
         circuitos={viewing ? circuitosDe(viewing) : []}
         onClose={() => setViewing(null)}
+        onVerQr={() =>
+          viewing &&
+          setQrInput({ codigo: viewing.Codigo, edificio: viewing.Edificio, direccion: viewing.Direccion })
+        }
       />
+
+      {/* QR del edificio (poster imprimible) — compartido por detalle, crear y editar. */}
+      <QrPosterModal edificio={qrInput} onClose={() => setQrInput(null)} />
 
       {/* Crear */}
       <EdificioFormModal
@@ -354,6 +364,7 @@ export function ConfigEdificios({
         frecuencias={frecuencias}
         grupos={grupos}
         onClose={() => setAddOpen(false)}
+        onVerQr={setQrInput}
         onSubmit={async (payload) => {
           await createEdificio(payload);
           setAddOpen(false);
@@ -368,6 +379,7 @@ export function ConfigEdificios({
         frecuencias={frecuencias}
         grupos={grupos}
         onClose={() => setEditing(null)}
+        onVerQr={setQrInput}
         onSubmit={async (payload) => {
           if (!editing) return;
           await updateEdificio(editing.ID, payload);
@@ -404,10 +416,12 @@ function EdificioDetailModal({
   edificio,
   circuitos,
   onClose,
+  onVerQr,
 }: {
   edificio: EdificioAbm | null;
   circuitos: number[];
   onClose: () => void;
+  onVerQr: () => void;
 }) {
   if (!edificio) return null;
 
@@ -448,6 +462,7 @@ function EdificioDetailModal({
               </p>
             )}
           </div>
+          <VerQrButton onClick={onVerQr} />
         </div>
       </div>
 
@@ -457,6 +472,12 @@ function EdificioDetailModal({
         <InfoField icon={Compass} label="Latitud" value={edificio.Latitud || '—'} muted={!edificio.Latitud} mono />
         <InfoField icon={Compass} label="Longitud" value={edificio.Longitud || '—'} muted={!edificio.Longitud} mono />
         <InfoField icon={Clock} label="Horario" value={edificio.Horario || '—'} muted={!edificio.Horario} />
+        {(edificio.Latitud2 || edificio.Longitud2) && (
+          <>
+            <InfoField icon={Compass} label="Latitud 2" value={edificio.Latitud2 || '—'} muted={!edificio.Latitud2} mono />
+            <InfoField icon={Compass} label="Longitud 2" value={edificio.Longitud2 || '—'} muted={!edificio.Longitud2} mono />
+          </>
+        )}
       </div>
 
       {/* Contact */}
@@ -517,6 +538,7 @@ function EdificioFormModal({
   frecuencias,
   grupos,
   onClose,
+  onVerQr,
   onSubmit,
 }: {
   open: boolean;
@@ -525,6 +547,7 @@ function EdificioFormModal({
   frecuencias: string[];
   grupos: string[];
   onClose: () => void;
+  onVerQr: (input: PosterInput) => void;
   onSubmit: (payload: EdificioAbmInput) => Promise<void>;
 }) {
   const [codigo, setCodigo] = useState('');
@@ -537,6 +560,10 @@ function EdificioFormModal({
   const [frecuencia, setFrecuencia] = useState('');
   const [grupo, setGrupo] = useState('');
   const [obs, setObs] = useState('');
+  const [lat1, setLat1] = useState('');
+  const [lng1, setLng1] = useState('');
+  const [lat2, setLat2] = useState('');
+  const [lng2, setLng2] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -556,6 +583,11 @@ function EdificioFormModal({
       setFrecuencia(edificio.Frecuencia ?? '');
       setGrupo(edificio.Grupo ?? '');
       setObs(edificio.Observaciones ?? '');
+      // Coord ya truncada (así se guardó). El backend la re-trunca al guardar (idempotente).
+      setLat1(edificio.Latitud ?? '');
+      setLng1(edificio.Longitud ?? '');
+      setLat2(edificio.Latitud2 ?? '');
+      setLng2(edificio.Longitud2 ?? '');
     } else {
       setCodigo('');
       setNombre('');
@@ -567,6 +599,10 @@ function EdificioFormModal({
       setFrecuencia('');
       setGrupo('');
       setObs('');
+      setLat1('');
+      setLng1('');
+      setLat2('');
+      setLng2('');
     }
   }, [open, mode, edificio]);
 
@@ -595,6 +631,10 @@ function EdificioFormModal({
         observaciones: obs.trim(),
         grupo: grupo.trim(),
         frecuencia: frecuencia.trim(),
+        latitud1: lat1.trim(),
+        longitud1: lng1.trim(),
+        latitud2: lat2.trim(),
+        longitud2: lng2.trim(),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar el edificio.');
@@ -615,7 +655,7 @@ function EdificioFormModal({
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-wash-brand/15 text-wash-brand ring-1 ring-wash-brand/25">
           <Building2 size={14} />
         </span>
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="font-display text-[13px] font-bold text-wash-accent">
             {mode === 'create' ? 'Nuevo edificio' : `Editar ${edificio?.Edificio ?? ''}`}
           </p>
@@ -623,6 +663,14 @@ function EdificioFormModal({
             Completá los datos del edificio, su contacto y su grupo/frecuencia de ventilación.
           </p>
         </div>
+        {/* Ver QR con los valores en vivo del formulario (necesita el código cargado). */}
+        {codigo.trim() && (
+          <VerQrButton
+            onClick={() =>
+              onVerQr({ codigo: codigo.trim(), edificio: nombre.trim(), direccion: direccion.trim() })
+            }
+          />
+        )}
       </div>
 
       {/* Identificación */}
@@ -655,6 +703,48 @@ function EdificioFormModal({
             onChange={(e) => setDireccion(e.target.value)}
             placeholder="Calle y altura"
             className={inputCls}
+          />
+        </Field>
+      </div>
+
+      {/* Coordenadas GPS (geofencing de la app de técnicos). El par 2 es opcional: se usa para
+          edificios que abarcan mucho espacio y necesitan dos puntos de referencia. Se guardan
+          truncadas a 3 decimales. */}
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <Field label="Latitud">
+          <input
+            value={lat1}
+            onChange={(e) => setLat1(e.target.value)}
+            inputMode="decimal"
+            placeholder="-34.603722"
+            className={cn(inputCls, 'font-mono tabular-nums')}
+          />
+        </Field>
+        <Field label="Longitud">
+          <input
+            value={lng1}
+            onChange={(e) => setLng1(e.target.value)}
+            inputMode="decimal"
+            placeholder="-58.381592"
+            className={cn(inputCls, 'font-mono tabular-nums')}
+          />
+        </Field>
+        <Field label="Latitud 2 (opcional)">
+          <input
+            value={lat2}
+            onChange={(e) => setLat2(e.target.value)}
+            inputMode="decimal"
+            placeholder="—"
+            className={cn(inputCls, 'font-mono tabular-nums')}
+          />
+        </Field>
+        <Field label="Longitud 2 (opcional)">
+          <input
+            value={lng2}
+            onChange={(e) => setLng2(e.target.value)}
+            inputMode="decimal"
+            placeholder="—"
+            className={cn(inputCls, 'font-mono tabular-nums')}
           />
         </Field>
       </div>

@@ -1290,13 +1290,17 @@ export interface EdificioAbmRow {
   Correo: string;
   Latitud: string;
   Longitud: string;
+  // Par 2 de coordenadas (edificios que abarcan mucho): solo existe la versión truncada _ED.
+  Latitud2: string;
+  Longitud2: string;
   Observaciones: string;
   Grupo: string;
   Frecuencia: string;
 }
 const EDIFICIO_ABM_SELECT = [
   'Micasa', 'C_x00f3_digo', 'Direccion', 'HoraVisita', 'Encargado', 'Celular', 'Correo',
-  'Latitud_ED', 'Longitud_ED', 'Observaciones', 'GrupoVentilacion_ED', 'Frecuencia_ED', 'Status',
+  'Latitud_ED', 'Longitud_ED', 'Latitud2_ED', 'Longitud2_ED',
+  'Observaciones', 'GrupoVentilacion_ED', 'Frecuencia_ED', 'Status',
 ];
 export function edificioAbmSelectFields(): string[] {
   return EDIFICIO_ABM_SELECT;
@@ -1311,8 +1315,11 @@ export function mapEdificioAbm(item: SharePointItem): EdificioAbmRow {
     Encargado: String(item.Encargado ?? '').trim(),
     Celular: item.Celular != null ? String(item.Celular).trim() : '',
     Correo: String(item.Correo ?? '').trim(),
+    // El desktop trabaja con la coordenada truncada (_ED), que es la que consume el geofencing.
     Latitud: String(item.Latitud_ED ?? '').trim(),
     Longitud: String(item.Longitud_ED ?? '').trim(),
+    Latitud2: String(item.Latitud2_ED ?? '').trim(),
+    Longitud2: String(item.Longitud2_ED ?? '').trim(),
     Observaciones: String(item.Observaciones ?? '').trim(),
     Grupo: String(item.GrupoVentilacion_ED ?? '').trim(),
     Frecuencia: item.Frecuencia_ED != null ? String(item.Frecuencia_ED) : '',

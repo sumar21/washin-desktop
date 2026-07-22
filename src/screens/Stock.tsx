@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
 import { cn, proper } from '@/lib/utils';
+import type { AddStockPayload } from '@/services/api';
 import type { StockItem, TipoStock, StockCatalogItem } from '@/types/domain';
 
 const TIPOS: TipoStock[] = [
@@ -518,8 +519,8 @@ export function Stock() {
         onClose={() => setAddOpen(false)}
         catalog={catalog}
         segmentos={segmentos}
-        onAdd={async (item, qty, extras) => {
-          await addStock(item, qty, extras);
+        onAdd={async (payload) => {
+          await addStock(payload);
           setAddOpen(false);
         }}
       />
@@ -538,9 +539,29 @@ export function Stock() {
   );
 }
 
-// Segmentos que NO son máquinas individuales (misma regla que el backend `isMachineSegment`).
+// Segmentos SERIADOS: máquinas individuales que llevan Nº serie + ID por unidad y van al parque
+// (08.DetalleMaquina). Regla idéntica al backend `isMachineSegment` — en la práctica: lavadora,
+// secadora simple y secadora doble.
 const SIMPLE_SEGMENTS = new Set(['repuesto', 'cargadora', 'expendedora', 'encendedor', 'encendedora']);
 const isMachineSegment = (s: string) => !SIMPLE_SEGMENTS.has(s.trim().toLowerCase());
+
+// Segmentos "el item ES el segmento": cargadora/expendedora/encendedora NO se eligen de un catálogo
+// de ítems (por eso el combo salía vacío y el botón quedaba deshabilitado); el item es el nombre del
+// propio segmento y se cargan como cantidad simple en 04.Stock. Paridad con la PowerApps original
+// (Screen_Stock: para esos tipos Item_ST = nombre del segmento, sin serie/ID).
+const SEGMENT_AS_ITEM = new Set(['cargadora', 'expendedora', 'encendedora', 'encendedor']);
+const isSegmentAsItem = (s: string) => SEGMENT_AS_ITEM.has(s.trim().toLowerCase());
+
+interface AddUnidad {
+  nroSerie: string;
+  idMaquina: string;
+}
+/** Ajusta el array de unidades (serie/ID) al largo `n` conservando lo ya cargado. */
+function resizeUnidades(current: AddUnidad[], n: number): AddUnidad[] {
+  const next = current.slice(0, n);
+  while (next.length < n) next.push({ nroSerie: '', idMaquina: '' });
+  return next;
+}
 
 // ----- subcomponents -----
 
@@ -672,37 +693,58 @@ interface AddStockModalProps {
   onClose: () => void;
   catalog: StockCatalogItem[];
   segmentos: string[];
-  onAdd: (
-    item: StockCatalogItem,
-    qty: number,
-    extras?: { NroSerie?: string; IDMaquina?: string }
-  ) => Promise<void>;
+  onAdd: (payload: AddStockPayload) => Promise<void>;
 }
 
 function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockModalProps) {
   const [segmento, setSegmento] = useState<string>('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [cantidad, setCantidad] = useState('1');
-  const [nroSerie, setNroSerie] = useState('');
-  const [idMaquina, setIdMaquina] = useState('');
+  const [unidades, setUnidades] = useState<AddUnidad[]>([]);
   const [saving, setSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  const isMachine = segmento ? isMachineSegment(segmento) : false;
+  // Tres modos: SERIADA (lavadora/secadora) pide serie+ID por unidad; SEGMENTO-COMO-ITEM
+  // (cargadora/expendedora/encendedora) no pide item ni serie; el resto (repuesto) elige item.
+  const isSerial = segmento ? isMachineSegment(segmento) : false;
+  const isSegItem = segmento ? isSegmentAsItem(segmento) : false;
+  const needsItem = !!segmento && !isSegItem; // repuesto + máquinas seriadas eligen item del catálogo
+  const qty = Math.max(0, Math.floor(Number(cantidad) || 0));
+
   const itemsOfSegment = useMemo(
     () => catalog.filter((c) => segmento && c.Tipo === segmento),
     [catalog, segmento]
   );
 
   const selected = catalog.find((c) => c.ID === selectedId) ?? null;
-  const ready = selected && Number(cantidad) > 0;
+  const ready =
+    qty > 0 &&
+    (isSegItem
+      ? true
+      : !!selected &&
+        (!isSerial ||
+          (unidades.length === qty && unidades.every((u) => u.nroSerie.trim() && u.idMaquina.trim()))));
+
+  // Cambiar segmento: resetea el item y redimensiona las unidades según el nuevo modo.
+  const changeSegmento = (value: string) => {
+    setSegmento(value);
+    setSelectedId(null);
+    setUnidades(isMachineSegment(value) ? resizeUnidades([], qty) : []);
+  };
+  // Cambiar cantidad: para seriadas, mantiene las N unidades sincronizadas.
+  const changeCantidad = (nextStr: string) => {
+    setCantidad(nextStr);
+    const n = Math.max(0, Math.floor(Number(nextStr) || 0));
+    setUnidades((cur) => (isSerial ? resizeUnidades(cur, n) : []));
+  };
+  const setUnidad = (idx: number, patch: Partial<AddUnidad>) =>
+    setUnidades((cur) => cur.map((u, i) => (i === idx ? { ...u, ...patch } : u)));
 
   const reset = () => {
     setSegmento('');
     setSelectedId(null);
     setCantidad('1');
-    setNroSerie('');
-    setIdMaquina('');
+    setUnidades([]);
     setAddError(null);
   };
 
@@ -710,13 +752,24 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
     <Modal
       open={open}
       onClose={() => {
+        // No se puede cerrar mientras guarda (el alta de máquinas hace varias escrituras seguidas).
+        if (saving) return;
         reset();
         onClose();
       }}
       title="Agregar stock"
       width={520}
     >
-      <div className="space-y-4">
+      <div className="relative space-y-4">
+        {/* Overlay de guardado: bloquea toda interacción y deja claro que la app no se colgó
+            (el alta de máquinas seriadas crea N filas en el parque, puede tardar unos segundos). */}
+        {saving && (
+          <div className="absolute inset-0 z-10 -m-1 flex flex-col items-center justify-center gap-2 rounded-lg bg-wash-surface/80 backdrop-blur-[1px]">
+            <Loader2 className="size-7 animate-spin text-wash-brand" />
+            <p className="text-xs font-semibold text-wash-text-strong">Guardando…</p>
+            <p className="text-[11px] text-wash-text-muted">No cierres la ventana.</p>
+          </div>
+        )}
         {addError && (
           <div
             role="alert"
@@ -729,13 +782,7 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
         <div className="grid grid-cols-[1fr_140px] gap-3">
           <div>
             <Label>Segmento</Label>
-            <Select
-              value={segmento || undefined}
-              onValueChange={(value) => {
-                setSegmento(value);
-                setSelectedId(null);
-              }}
-            >
+            <Select value={segmento || undefined} onValueChange={changeSegmento}>
               <SelectTrigger className="mt-1.5 h-10 w-full">
                 <SelectValue placeholder="Seleccionar…" />
               </SelectTrigger>
@@ -754,9 +801,7 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
             <div className="mt-1.5 flex h-10 items-stretch overflow-hidden rounded-lg border border-wash-border focus-within:border-wash-brand focus-within:ring-2 focus-within:ring-wash-brand/15">
               <button
                 type="button"
-                onClick={() =>
-                  setCantidad((q) => String(Math.max(1, (Number(q) || 1) - 1)))
-                }
+                onClick={() => changeCantidad(String(Math.max(1, qty - 1)))}
                 className="flex w-8 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
                 aria-label="Restar uno a la cantidad"
               >
@@ -766,13 +811,13 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
                 type="number"
                 min={1}
                 value={cantidad}
-                onChange={(e) => setCantidad(e.target.value)}
+                onChange={(e) => changeCantidad(e.target.value)}
                 aria-label="Cantidad"
                 className="w-full min-w-0 flex-1 bg-wash-surface px-1 text-center text-sm font-bold tabular-nums outline-none"
               />
               <button
                 type="button"
-                onClick={() => setCantidad((q) => String((Number(q) || 0) + 1))}
+                onClick={() => changeCantidad(String(qty + 1))}
                 className="flex w-8 shrink-0 items-center justify-center text-wash-text-muted hover:bg-wash-surface-2 hover:text-wash-brand"
                 aria-label="Sumar uno a la cantidad"
               >
@@ -782,71 +827,72 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
           </div>
         </div>
 
-        <div>
-          <Label>Item</Label>
-          <div className="mt-1.5">
-            <Combobox
-              options={itemsOfSegment.map((c) => ({
-                value: String(c.ID),
-                label: c.Item,
-                sublabel: [c.Codigo, c.Marca].filter(Boolean).join(' · ') || undefined,
-              }))}
-              value={selectedId ? String(selectedId) : null}
-              onChange={(value) => setSelectedId(value ? Number(value) : null)}
-              disabled={!segmento}
-              placeholder={segmento ? 'Seleccionar item…' : 'Elegí un segmento primero'}
-              searchPlaceholder="Buscar item…"
-              emptyText="Sin items en este segmento"
-            />
+        {needsItem ? (
+          <div>
+            <Label>Item</Label>
+            <div className="mt-1.5">
+              <Combobox
+                options={itemsOfSegment.map((c) => ({
+                  value: String(c.ID),
+                  label: c.Item,
+                  sublabel: [c.Codigo, c.Marca].filter(Boolean).join(' · ') || undefined,
+                }))}
+                value={selectedId ? String(selectedId) : null}
+                onChange={(value) => setSelectedId(value ? Number(value) : null)}
+                disabled={!segmento}
+                placeholder={segmento ? 'Seleccionar item…' : 'Elegí un segmento primero'}
+                searchPlaceholder="Buscar item…"
+                emptyText="Sin items en este segmento"
+              />
+            </div>
           </div>
-        </div>
+        ) : isSegItem ? (
+          <div className="rounded-lg bg-wash-surface-2/50 px-3 py-2 text-xs text-wash-text-muted ring-1 ring-wash-border">
+            Se agrega como <span className="font-semibold text-wash-text-strong">{proper(segmento)}</span>{' '}
+            (sin item ni serie): suma la cantidad al stock de ese segmento.
+          </div>
+        ) : null}
 
-        {isMachine && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Nro serie</Label>
-              <input
-                type="text"
-                value={nroSerie}
-                onChange={(e) => setNroSerie(e.target.value)}
-                placeholder="Ej. LG2024-001"
-                className="mt-1.5 h-10 w-full rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
-              />
-            </div>
-            <div>
-              <Label>ID Máquina</Label>
-              <input
-                type="text"
-                value={idMaquina}
-                onChange={(e) => setIdMaquina(e.target.value)}
-                placeholder="Ej. TM1-LAV-01"
-                className="mt-1.5 h-10 w-full rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
-              />
-            </div>
+        {isSerial && qty > 0 && (
+          <div className="space-y-2 border-t border-wash-border pt-3">
+            <Label>Serie e ID por unidad ({unidades.length}) — obligatorio</Label>
+            {unidades.map((u, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <span className="flex h-10 w-7 shrink-0 items-center justify-center rounded-md bg-wash-brand/10 text-[11px] font-bold text-wash-brand tabular-nums">
+                  {idx + 1}
+                </span>
+                <input
+                  type="text"
+                  value={u.nroSerie}
+                  onChange={(e) => setUnidad(idx, { nroSerie: e.target.value })}
+                  placeholder="Nº de serie"
+                  aria-label={`Nº de serie de la unidad ${idx + 1}`}
+                  className="h-10 w-full flex-1 rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+                />
+                <input
+                  type="text"
+                  value={u.idMaquina}
+                  onChange={(e) => setUnidad(idx, { idMaquina: e.target.value })}
+                  placeholder="ID de máquina"
+                  aria-label={`ID de máquina de la unidad ${idx + 1}`}
+                  className="h-10 w-full flex-1 rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/15"
+                />
+              </div>
+            ))}
           </div>
         )}
 
-        {selected && (
+        {(selected || isSegItem) && qty > 0 && (
           <div className="rounded-lg bg-wash-surface-2 p-3 text-xs">
             <p className="font-semibold text-wash-text-strong">
-              Vas a agregar <span className="text-wash-brand">{cantidad || 0}</span> uds de{' '}
-              {selected.Codigo ? `${selected.Codigo} · ` : ''}
-              {selected.Item}
-              {selected.Marca ? ` (${selected.Marca})` : ''}
+              Vas a agregar <span className="text-wash-brand">{qty}</span> uds de{' '}
+              {isSegItem
+                ? proper(segmento)
+                : `${selected!.Codigo ? `${selected!.Codigo} · ` : ''}${selected!.Item}${selected!.Marca ? ` (${selected!.Marca})` : ''}`}
             </p>
-            {isMachine && (nroSerie || idMaquina) && (
+            {isSerial && (
               <p className="mt-1 text-wash-text-muted">
-                {nroSerie && (
-                  <>
-                    Serie: <span className="font-semibold text-wash-text-strong">{nroSerie}</span>
-                  </>
-                )}
-                {nroSerie && idMaquina && ' · '}
-                {idMaquina && (
-                  <>
-                    ID: <span className="font-semibold text-wash-text-strong">{idMaquina}</span>
-                  </>
-                )}
+                Se crean {qty} máquina{qty === 1 ? '' : 's'} en el parque (depósito), una por unidad.
               </p>
             )}
           </div>
@@ -856,11 +902,12 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
       <ModalActions>
         <button
           type="button"
+          disabled={saving}
           onClick={() => {
             reset();
             onClose();
           }}
-          className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          className="rounded-lg border border-wash-border px-4 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Cancelar
         </button>
@@ -868,17 +915,25 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
           type="button"
           disabled={!ready || saving}
           onClick={async () => {
-            if (!ready || !selected) return;
-            const extras = isMachine
-              ? {
-                  NroSerie: nroSerie.trim() || undefined,
-                  IDMaquina: idMaquina.trim() || undefined,
-                }
-              : undefined;
+            if (!ready) return;
+            // Segmento-como-item: el item ES el nombre del segmento (paridad msapp). Repuesto/máquina:
+            // el item sale del catálogo. Máquinas seriadas mandan serie+ID por unidad.
+            const payload: AddStockPayload = isSegItem
+              ? { tipo: segmento, item: segmento, cantidad: qty }
+              : {
+                  tipo: segmento,
+                  item: selected!.Item,
+                  marca: selected!.Marca || undefined,
+                  codigo: selected!.Codigo || undefined,
+                  cantidad: qty,
+                  unidades: isSerial
+                    ? unidades.map((u) => ({ nroSerie: u.nroSerie.trim(), idMaquina: u.idMaquina.trim() }))
+                    : undefined,
+                };
             setSaving(true);
             setAddError(null);
             try {
-              await onAdd(selected, Number(cantidad), extras);
+              await onAdd(payload);
               reset();
             } catch (err) {
               setAddError(err instanceof Error ? err.message : 'No se pudo agregar el item.');
@@ -886,8 +941,9 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
               setSaving(false);
             }
           }}
-          className="rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center rounded-lg bg-wash-action px-4 py-2 font-medium text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
+          {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
           {saving ? 'Agregando…' : 'Agregar'}
         </button>
       </ModalActions>

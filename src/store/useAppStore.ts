@@ -228,11 +228,7 @@ interface AppState {
   /** Stock: real (PATCH /api/stock/:id) — solo usa Cantidad_ST. */
   patchStock: (id: number, changes: Partial<StockItem>) => Promise<void>;
   /** Real: POST /api/stock (repuestos). Máquinas con serie/ID todavía no soportado — ver docs/backend.md. */
-  addStock: (
-    catalogItem: StockCatalogItem,
-    cantidad: number,
-    extras?: { NroSerie?: string; IDMaquina?: string }
-  ) => Promise<void>;
+  addStock: (payload: api.AddStockPayload) => Promise<void>;
   removeRegistro: (id: number) => Promise<void>;
   /** H13: el Admin cierra/finaliza una visita en curso (Estado -> "Finalizado"). */
   cerrarRegistro: (id: number) => Promise<void>;
@@ -1219,17 +1215,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  addStock: async (catalogItem, cantidad, extras) => {
+  addStock: async (payload) => {
     try {
-      const created = await api.addStock({
-        tipo: catalogItem.Tipo,
-        item: catalogItem.Item,
-        marca: catalogItem.Marca,
-        codigo: catalogItem.Codigo,
-        cantidad,
-        nroSerie: extras?.NroSerie,
-        idMaquina: extras?.IDMaquina,
-      });
+      const created = await api.addStock(payload);
       set((s) => {
         const existingIdx = s.CollectStock.findIndex((it) => it.ID === created.ID);
         if (existingIdx !== -1) {

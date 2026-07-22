@@ -154,14 +154,18 @@ export function getDashboardDetalles(desde?: string, hasta?: string): Promise<Da
   return request(`/dashboard/detalles${suffix ? `?${suffix}` : ''}`);
 }
 
+export interface AddStockUnidad {
+  nroSerie: string;
+  idMaquina: string;
+}
 export interface AddStockPayload {
   tipo: string;
   item: string;
   marca?: string;
   codigo?: string;
   cantidad: number;
-  nroSerie?: string;
-  idMaquina?: string;
+  /** Máquinas seriadas (lavadora/secadora): una serie + ID por cada unidad. */
+  unidades?: AddStockUnidad[];
 }
 
 export function addStock(payload: AddStockPayload): Promise<StockItem> {
@@ -538,6 +542,11 @@ export interface EdificioAbmInput {
   observaciones?: string;
   grupo?: string;
   frecuencia?: string;
+  // Coordenadas GPS (el backend trunca a 3 decimales y guarda número + versión _ED).
+  latitud1?: string;
+  longitud1?: string;
+  latitud2?: string;
+  longitud2?: string;
 }
 
 export function createEdificio(payload: EdificioAbmInput): Promise<EdificioAbm> {

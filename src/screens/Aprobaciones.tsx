@@ -3,6 +3,7 @@ import {
   Check,
   X,
   Eye,
+  Pencil,
   ShoppingCart,
   Wrench,
   ArrowLeftRight,
@@ -16,6 +17,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions } from '@/components/Modal';
+import { EditCompraForm } from '@/components/EditCompraForm';
 import { StatusBadge } from '@/components/StatusBadge';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
@@ -45,6 +47,12 @@ export function Aprobaciones() {
   const fetchCompras = useAppStore((s) => s.fetchCompras);
   const approveAprobacion = useAppStore((s) => s.approveAprobacion);
   const rejectAprobacion = useAppStore((s) => s.rejectAprobacion);
+  // Para editar la compra de una aprobación tipo Compra (mismo editor que el módulo Compras).
+  const pedidos = useAppStore((s) => s.CollectCompras);
+  const detalleCompras = useAppStore((s) => s.CollectDetalleCompras);
+  const catalog = useAppStore((s) => s.CollectStockCatalog);
+  const fetchCatalog = useAppStore((s) => s.fetchCatalog);
+  const editCompra = useAppStore((s) => s.editCompra);
 
   const [query, setQuery] = useState('');
   // Filtros multi-select: array vacío = "todos".
@@ -54,6 +62,7 @@ export function Aprobaciones() {
   const [viewing, setViewing] = useState<Aprobacion | null>(null);
   const [approving, setApproving] = useState<Aprobacion | null>(null);
   const [rejecting, setRejecting] = useState<Aprobacion | null>(null);
+  const [editing, setEditing] = useState<Aprobacion | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -61,10 +70,21 @@ export function Aprobaciones() {
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    return Promise.all([fetchAprobaciones(), fetchCompras()])
+    // fetchCatalog alimenta el combo "Agregar item" del editor de compra (paridad con Compras).
+    return Promise.all([fetchAprobaciones(), fetchCompras(), fetchCatalog()])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar las aprobaciones.'))
       .finally(() => setLoading(false));
-  }, [fetchAprobaciones, fetchCompras]);
+  }, [fetchAprobaciones, fetchCompras, fetchCatalog]);
+
+  // Resuelve la compra (05.PedidoCompras) referenciada por una aprobación tipo Compra.
+  // Link: IDCompra_AP guarda el ID numérico del pedido (lo escribe mandarAAprobar).
+  const pedidoDe = useCallback(
+    (a: Aprobacion) =>
+      a.TipoAprobacion_AP === 'Compra' && a.IDCompra_AP
+        ? pedidos.find((p) => String(p.ID) === a.IDCompra_AP)
+        : undefined,
+    [pedidos]
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; "Reintentar" también dispara load().
@@ -166,6 +186,17 @@ export function Aprobaciones() {
                 setViewing(a);
               }}
             />
+            {a.TipoAprobacion_AP === 'Compra' && (
+              <ActionButton
+                icon={Pencil}
+                tone="neutral"
+                title="Editar compra"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditing(a);
+                }}
+              />
+            )}
             <ActionButton
               icon={Check}
               tone="approve"
@@ -316,6 +347,17 @@ export function Aprobaciones() {
                             setViewing(a);
                           }}
                         />
+                        {a.TipoAprobacion_AP === 'Compra' && (
+                          <ActionButton
+                            icon={Pencil}
+                            tone="neutral"
+                            title="Editar compra"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditing(a);
+                            }}
+                          />
+                        )}
                         <ActionButton
                           icon={Check}
                           tone="approve"
@@ -374,6 +416,49 @@ export function Aprobaciones() {
 
       {/* View detail */}
       <ViewDetailModal viewing={viewing} onClose={() => setViewing(null)} />
+
+      {/* Editar compra (mismo editor que el módulo Compras). La compra queda "En Aprobacion":
+          el aprobador ve/aprueba la versión editada (editCompra no toca Status_PC ni la fila de
+          07.Aprobaciones; las líneas nuevas nacen 'Pendiente' y se aprueban en el mismo flujo). */}
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={editing ? `Editar compra #${editing.IDCompra_AP ?? ''}` : ''}
+        width={760}
+      >
+        {editing &&
+          (() => {
+            const pedido = pedidoDe(editing);
+            if (!pedido) {
+              return (
+                <div className="rounded-lg bg-wash-surface-2/50 p-4 text-sm text-wash-text-muted ring-1 ring-wash-border">
+                  El pedido de esta aprobación no está disponible (puede ser de un mes anterior). No
+                  se puede editar desde acá.
+                </div>
+              );
+            }
+            const dets = detalleCompras.filter((d) => d.IDCompra_DC === pedido.IDUnivoco_PC);
+            return (
+              <EditCompraForm
+                pedido={pedido}
+                initialDetalles={dets}
+                catalog={catalog}
+                onCancel={() => setEditing(null)}
+                onSave={async ({ obs, lines, removedIds }) => {
+                  await editCompra(pedido.ID, {
+                    observaciones: obs,
+                    updates: lines.filter((l) => l.id).map((l) => ({ detalleId: l.id!, cantidad: l.qty })),
+                    adds: lines
+                      .filter((l) => !l.id)
+                      .map((l) => ({ item: l.item, marca: l.marca, cantidad: l.qty })),
+                    removes: removedIds,
+                  });
+                  setEditing(null);
+                }}
+              />
+            );
+          })()}
+      </Modal>
 
       {/* Approve */}
       <DecisionModal

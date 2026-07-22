@@ -542,6 +542,9 @@ export interface EdificioAbm {
   Correo: string;
   Latitud: string;
   Longitud: string;
+  /** Par 2 de coordenadas (edificios que abarcan mucho espacio). Solo versión truncada. */
+  Latitud2: string;
+  Longitud2: string;
   Observaciones: string;
   Grupo: string;
   Frecuencia: string;

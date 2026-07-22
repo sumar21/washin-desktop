@@ -44,6 +44,15 @@ const requiereRepuesto = (i: Incidente) => /repuesto/i.test(i.NoResuelto_IN);
 const esCambioMaquina = (i: Incidente) => /cambio/i.test(i.NoResuelto_IN);
 const segmentoDe = (concat?: string) => (concat ? concat.split(' - ')[0].trim() : '');
 
+// Bitácoras de movimiento de máquina: cada transferencia/baja crea un 10.Incidentes YA resuelto
+// como historial (api/_lib/maquinaMoves.ts, NoResuelto_IN 'Transferencia' / 'Baja de Maquina').
+// No son OTs — se ven en el historial de la máquina (DetalleMaquina), NO en la grilla de incidentes;
+// si no, ensucian el filtro "Resuelto". Ningún reclamo real usa esos NoResuelto_IN, así que excluir
+// por ese valor es seguro.
+const TIPOS_BITACORA_MAQUINA = new Set(['transferencia', 'baja de maquina']);
+const esBitacoraMaquina = (i: Incidente) =>
+  TIPOS_BITACORA_MAQUINA.has(i.NoResuelto_IN.trim().toLowerCase());
+
 const tipoTone: Record<string, string> = {
   'Requiere Repuesto': 'bg-amber-50 text-amber-800 ring-amber-300/70',
   'Cambio de Maquina': 'bg-violet-50 text-violet-800 ring-violet-300/70',
@@ -58,7 +67,7 @@ const toneFor = (t: string) =>
       ? tipoTone['Cambio de Maquina']
       : 'bg-slate-50 text-slate-700 ring-slate-300/70');
 
-const GRID = '120px 96px 140px minmax(200px,1.5fr) minmax(150px,1fr) minmax(130px,0.9fr) 120px';
+const GRID = '120px 96px 172px minmax(200px,1.5fr) minmax(150px,1fr) minmax(130px,0.9fr) 120px';
 
 // Estados de un incidente SIN resolver (por defecto se muestran estos, Resuelto_IN='NO').
 const ESTADOS_IN = ['A Revisar', 'Pendiente', 'Asignado', 'En Aprobacion'];
@@ -127,7 +136,8 @@ export function Incidentes() {
   const repuestos = useAppStore((s) => s.CollectRepuestosIncidente);
   const stock = useAppStore((s) => s.CollectStock);
   const maquinas = useAppStore((s) => s.CollectMaquinas);
-  const edificios = useAppStore((s) => s.CollectEdificiosMaquina);
+  const edificiosMaquina = useAppStore((s) => s.CollectEdificiosMaquina);
+  const edificiosAbm = useAppStore((s) => s.CollectAbmEdificios);
   const tecnicos = useAppStore((s) => s.CollectTecnicosDisponibles);
   const compras = useAppStore((s) => s.CollectCompras);
   const fetchIncidentes = useAppStore((s) => s.fetchIncidentes);
@@ -135,6 +145,33 @@ export function Incidentes() {
   const fetchMaquinas = useAppStore((s) => s.fetchMaquinas);
   const fetchTecnicos = useAppStore((s) => s.fetchTecnicos);
   const fetchCompras = useAppStore((s) => s.fetchCompras);
+  const fetchAbm = useAppStore((s) => s.fetchAbm);
+
+  // Universo de edificios del combo "Nuevo incidente" = UNIÓN de dos fuentes:
+  //  1) los derivados del parque de máquinas (08.DetalleMaquina, con el nombre EXACTO Edificio_DM,
+  //     que es contra el que el sub-selector de máquina matchea), y
+  //  2) el catálogo ABM.Edificios (Status='ALTA').
+  // El reclamo es a nivel EDIFICIO (la máquina es opcional), así que un edificio recién dado de alta
+  // —que todavía no tiene ninguna máquina— también tiene que poder elegirse. Antes el combo salía
+  // SOLO de (1), por eso un edificio nuevo sin máquinas no aparecía (reporte de Paul). La unión es
+  // aditiva: no le saca opciones a ningún edificio existente, solo suma los que faltaban.
+  const edificios = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { edificio: string; codigo: string }[] = [];
+    for (const e of edificiosMaquina) {
+      const key = e.edificio.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(e);
+    }
+    for (const e of edificiosAbm) {
+      const key = e.Edificio.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ edificio: e.Edificio, codigo: e.Codigo });
+    }
+    return out.sort((a, b) => a.edificio.localeCompare(b.edificio, 'es'));
+  }, [edificiosMaquina, edificiosAbm]);
   const createIncidente = useAppStore((s) => s.createIncidente);
   const assignIncidente = useAppStore((s) => s.assignIncidente);
   const cambiarTecnicoIncidente = useAppStore((s) => s.cambiarTecnicoIncidente);
@@ -175,10 +212,13 @@ export function Incidentes() {
     // Estado derivado del filtro: una recarga completa (montaje o "Reintentar") lo invalida.
     setResueltosExtra([]);
     setRepuestosExtra([]);
-    return Promise.all([fetchIncidentes(), fetchStock(), fetchMaquinas(), fetchTecnicos(), fetchCompras()])
+    // fetchAbm alimenta el catálogo de edificios (ABM.Edificios) del combo "Nuevo incidente".
+    // Best-effort: si el bundle de ABM falla, el combo cae a los edificios con máquina (comportamiento
+    // previo) en vez de tumbar toda la pantalla de incidentes.
+    return Promise.all([fetchIncidentes(), fetchStock(), fetchMaquinas(), fetchTecnicos(), fetchCompras(), fetchAbm().catch(() => {})])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar los incidentes.'))
       .finally(() => setLoading(false));
-  }, [fetchIncidentes, fetchStock, fetchMaquinas, fetchTecnicos, fetchCompras]);
+  }, [fetchIncidentes, fetchStock, fetchMaquinas, fetchTecnicos, fetchCompras, fetchAbm]);
 
   // Trae los resueltos de los meses dados (GET /incidentes?resueltos=MM/YYYY) y los guarda en
   // el estado local (mergea incidentes + repuestos de todos los meses, dedupe por ID).
@@ -223,10 +263,11 @@ export function Incidentes() {
     () => filterEstado.some((e) => ESTADOS_IN_RESUELTOS.includes(e)),
     [filterEstado]
   );
-  const displayList = useMemo(
-    () => (wantResueltos ? dedupeById([...abiertos, ...resueltosExtra]) : abiertos),
-    [wantResueltos, abiertos, resueltosExtra]
-  );
+  const displayList = useMemo(() => {
+    const base = wantResueltos ? dedupeById([...abiertos, ...resueltosExtra]) : abiertos;
+    // Fuera las bitácoras de transfer/baja de máquina (no son OTs; ver esBitacoraMaquina).
+    return base.filter((i) => !esBitacoraMaquina(i));
+  }, [wantResueltos, abiertos, resueltosExtra]);
 
   const hasStock = useCallback(
     (i: Incidente): boolean => {
@@ -468,9 +509,9 @@ export function Incidentes() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                           <StatusBadge status={i.Status_IN} />
-                          <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-semibold ring-1', toneFor(i.NoResuelto_IN))}>
-                            <Wrench size={8} />
-                            <span className="truncate">{i.NoResuelto_IN || '—'}</span>
+                          <span className={cn('inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-semibold ring-1', toneFor(i.NoResuelto_IN))}>
+                            <Wrench size={8} className="shrink-0" />
+                            <span className="min-w-0 truncate">{i.NoResuelto_IN || '—'}</span>
                           </span>
                         </div>
                         <div className="flex shrink-0 gap-1.5">
@@ -554,10 +595,13 @@ export function Incidentes() {
                           <Calendar size={11} className="shrink-0 text-wash-text-faint" />
                           {i.Fecha_IN}
                         </div>
-                        <div className="pr-2">
-                          <span className={cn('inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ring-1', toneFor(i.NoResuelto_IN))}>
-                            <Wrench size={9} />
-                            <span className="truncate">{i.NoResuelto_IN || '—'}</span>
+                        <div className="min-w-0 pr-3">
+                          <span
+                            title={i.NoResuelto_IN}
+                            className={cn('inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ring-1', toneFor(i.NoResuelto_IN))}
+                          >
+                            <Wrench size={9} className="shrink-0" />
+                            <span className="min-w-0 truncate">{i.NoResuelto_IN || '—'}</span>
                           </span>
                         </div>
                         <div className="min-w-0 pr-2">
@@ -1003,7 +1047,7 @@ function DetailModal({
 }) {
   if (!incidente) return null;
   return (
-    <Modal open={!!incidente} onClose={onClose} title="Detalle del incidente" width={580}>
+    <Modal open={!!incidente} onClose={onClose} title="Detalle del incidente" width={640}>
       {/* El body va en un componente aparte porque necesita hooks (fotos lazy + secciones
           colapsables) y acá arriba hay un early-return. <ModalActions> DEBE quedar como child
           DIRECTO de <Modal>: Modal.tsx particiona children por tipo para dejar el footer fijo. */}
@@ -1165,16 +1209,25 @@ function DetailBody({
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        <Meta label="Fecha" value={incidente.Fecha_IN} />
-        <Meta label="Tipo" value={incidente.NoResuelto_IN} />
-        <Meta label="Técnico" value={incidente.TecnicoAsignado_IN || <span className="text-amber-700">Sin asignar</span>} />
-        {incidente.MaquinaAsignada_IN && <Meta label="Máquina asignada" value={proper(incidente.MaquinaAsignada_IN)} />}
-        {incidente.FechaAsignada_IN && <Meta label="Asignada" value={incidente.FechaAsignada_IN} />}
-        <Meta label="Asignador" value={incidente.User_IN || '—'} />
-        {incidente.FechaResuelto_IN && <Meta label="Resuelto" value={incidente.FechaResuelto_IN} />}
-      </div>
-      <div className="mt-4">
+      {/* Datos del incidente — lista plana (sin una caja por campo) para no anidar cajas dentro de
+          cajas. Los valores se parten en vez de cortarse: la máquina asignada de un cambio ocupa
+          todo el ancho y hace wrap, no queda truncada. Se separa del bloque de arriba con una
+          línea fina, no con otra caja. */}
+      <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-wash-border/70 pt-4 sm:grid-cols-3">
+        <MetaItem label="Fecha" value={incidente.Fecha_IN} />
+        <MetaItem label="Tipo" value={incidente.NoResuelto_IN} />
+        <MetaItem
+          label="Técnico"
+          value={incidente.TecnicoAsignado_IN || <span className="font-semibold text-amber-700">Sin asignar</span>}
+        />
+        <MetaItem label="Asignador" value={incidente.User_IN || '—'} />
+        {incidente.FechaAsignada_IN && <MetaItem label="Asignada" value={incidente.FechaAsignada_IN} />}
+        {incidente.FechaResuelto_IN && <MetaItem label="Resuelto" value={incidente.FechaResuelto_IN} />}
+        {incidente.MaquinaAsignada_IN && (
+          <MetaItem label="Máquina asignada" value={proper(incidente.MaquinaAsignada_IN)} full />
+        )}
+      </dl>
+      <div className="mt-5 border-t border-wash-border/70 pt-4">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
           Repuestos ({repuestos.length})
         </p>
@@ -1212,7 +1265,7 @@ function DetailBody({
           defecto (abiertos, Resuelto_IN='NO') por construcción nunca tiene ninguna. Si no hay y no
           está cargando, la sección no se renderiza en vez de mostrar un vacío permanente. */}
       {(cargandoFotos || fotos.length > 0) && (
-        <div className="mt-4">
+        <div className="mt-5 border-t border-wash-border/70 pt-4">
           <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
             <Camera size={12} />
             {/* El conteo recién cuando terminó de cargar: "Fotos (0)" con spinner leería como un
@@ -1513,11 +1566,13 @@ function Chip({ children }: { children: React.ReactNode }) {
   return <span className="rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand">{children}</span>;
 }
 
-function Meta({ label, value }: { label: string; value: React.ReactNode }) {
+/** Campo plano label/valor del detalle de incidente. `full` = ocupa toda la fila (valores largos
+ *  como la máquina asignada). El valor SIEMPRE hace wrap (break-words), nunca se trunca. */
+function MetaItem({ label, value, full }: { label: string; value: React.ReactNode; full?: boolean }) {
   return (
-    <div className="rounded-lg bg-wash-surface-2/40 px-3 py-2 ring-1 ring-wash-border">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">{label}</div>
-      <div className="mt-1 truncate text-[12.5px] font-semibold text-wash-text-strong">{value}</div>
+    <div className={cn('min-w-0', full && 'col-span-2 sm:col-span-3')}>
+      <dt className="text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">{label}</dt>
+      <dd className="mt-0.5 break-words text-[13px] font-semibold text-wash-text-strong">{value}</dd>
     </div>
   );
 }

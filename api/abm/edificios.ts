@@ -15,11 +15,42 @@ interface EdificioInput {
   observaciones?: string;
   grupo?: string; // GrupoVentilacion_ED
   frecuencia?: string; // Frecuencia_ED (NUMBER)
+  // Coordenadas. Par 1 → Latitud/Longitud (NUMBER, full precision) + Latitud_ED/Longitud_ED
+  // (TEXT truncado). Par 2 (edificios que abarcan mucho) → SOLO Latitud2_ED/Longitud2_ED (TEXT);
+  // en el schema NO existe columna numérica para el par 2.
+  latitud1?: string;
+  longitud1?: string;
+  latitud2?: string;
+  longitud2?: string;
 }
 
 interface Body extends EdificioInput {
   action?: 'create' | 'update' | 'baja';
   id?: number | string;
+}
+
+/**
+ * Redondeo de coordenada del msapp (mobile Screen_CrearEdificios): TRUNCA a 3 decimales por texto
+ * (toma los 3 primeros dígitos tras el separador, SIN redondear) y usa COMA como separador decimal
+ * — es el formato que consume el geofencing de la mobile (Latitud_ED, etc.).
+ * OJO: NO es Math.floor (que en coordenadas negativas —las nuestras— daría otro valor); es truncado
+ * por string, tal cual la PowerApps original.  "-34.567890" → "-34,567"   "-58,4" → "-58,4"
+ */
+function truncar3Coma(raw: string): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  const norm = s.replace(',', '.');
+  const dot = norm.indexOf('.');
+  const truncado = dot === -1 ? norm : norm.slice(0, dot + 1) + norm.slice(dot + 1, dot + 4);
+  return truncado.replace('.', ',');
+}
+
+/** Número full-precision de una coordenada tipeada (acepta "." o ","). null si vacío/ inválido. */
+function coordNumero(raw: string): number | null {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  const n = Number(s.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
 }
 
 /** Traduce el input del front a columnas internas, respetando tipos (Celular/Frecuencia_ED = NUMBER). */
@@ -41,6 +72,18 @@ function toFields(input: EdificioInput): Record<string, unknown> {
     const n = Number(input.frecuencia);
     f.Frecuencia_ED = Number.isFinite(n) && n > 0 ? n : null;
   }
+  // Par 1: número full-precision + string truncado (lo que lee el geofencing).
+  if (input.latitud1 !== undefined) {
+    f.Latitud = coordNumero(input.latitud1);
+    f.Latitud_ED = truncar3Coma(input.latitud1);
+  }
+  if (input.longitud1 !== undefined) {
+    f.Longitud = coordNumero(input.longitud1);
+    f.Longitud_ED = truncar3Coma(input.longitud1);
+  }
+  // Par 2: solo string truncado (no hay columna numérica en el schema).
+  if (input.latitud2 !== undefined) f.Latitud2_ED = truncar3Coma(input.latitud2);
+  if (input.longitud2 !== undefined) f.Longitud2_ED = truncar3Coma(input.longitud2);
   return f;
 }
 
