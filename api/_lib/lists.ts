@@ -162,8 +162,15 @@ export const ROLE_TO_LPP_COLUMN: Record<string, string | null> = {
   Tecnico: null, // sin acceso al Desktop
 };
 
-/** Roles que pueden editar stock (mismo gate que Stock.tsx en el frontend — replicado acá server-side). */
-export const STOCK_EDIT_ROLES = new Set(['Admin', 'Jefe Taller']);
+// Permisos de stock (replicados en el frontend). Restauran el modelo del msapp original
+// (VarTipoUser = "Admin" para editar el stock general), con el pedido de gerencia sobre el Jefe
+// de Taller: no toca el stock general y en el de técnicos solo puede reingresar al general.
+/** Stock GENERAL (04.Stock): agregar, editar cantidad, asignar a técnico → solo Admin (como el msapp). */
+export const STOCK_GENERAL_EDIT_ROLES = new Set(['Admin']);
+/** Stock de TÉCNICO (99.ABMRepuestos_Tecnico): editar cantidad y transferir entre técnicos → solo Admin. */
+export const STOCK_TEC_EDIT_ROLES = new Set(['Admin']);
+/** Stock de TÉCNICO: reingresar al stock general (devolver) → Admin o Jefe Taller. */
+export const STOCK_TEC_REINGRESO_ROLES = new Set(['Admin', 'Jefe Taller']);
 
 /** Roles elegibles como "técnico" para asignar stock (igual que la PowerApp original). */
 export const TECNICO_ROLES = new Set(['Tecnico', 'Jefe Taller']);
@@ -668,8 +675,9 @@ export function mapRepuestoAbm(item: SharePointItem): RepuestoAbmRow {
   };
 }
 
-/** Roles que pueden editar el precio de un repuesto (mismo gate que Stock). */
-export const REPUESTO_PRECIO_EDIT_ROLES = STOCK_EDIT_ROLES;
+/** Roles que pueden editar el PRECIO de catálogo de un repuesto (ABM, no es cantidad de stock).
+ *  Se mantiene Admin + Jefe Taller (el pedido sobre el Jefe de Taller es solo de cantidades). */
+export const REPUESTO_PRECIO_EDIT_ROLES = new Set(['Admin', 'Jefe Taller']);
 
 // ── DetalleMaquina (08.DetalleMaquina) — parque de máquinas ───────────────
 // OJO: la columna Segmento_DM es internamente `Segmentp_DM` (typo real en SharePoint).

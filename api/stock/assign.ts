@@ -4,7 +4,7 @@ import {
   LIST_IDS,
   mapStock,
   stockSelectFields,
-  STOCK_EDIT_ROLES,
+  STOCK_GENERAL_EDIT_ROLES,
   mapRepuestoTecnico,
   repuestoTecnicoSelectFields,
   buildConcatRT,
@@ -37,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const session = readSession(req.headers.cookie);
   if (!session) return res.status(401).json({ error: 'no_session' });
-  if (!STOCK_EDIT_ROLES.has(session.rol)) {
+  if (!STOCK_GENERAL_EDIT_ROLES.has(session.rol)) {
     return res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para asignar stock' });
   }
 

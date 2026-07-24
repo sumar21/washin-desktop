@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { updateItem, GraphError } from '../_lib/graph.js';
-import { LIST_IDS, STOCK_EDIT_ROLES } from '../_lib/lists.js';
+import { LIST_IDS, STOCK_GENERAL_EDIT_ROLES } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -11,7 +11,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const session = readSession(req.headers.cookie);
   if (!session) return res.status(401).json({ error: 'no_session' });
-  if (!STOCK_EDIT_ROLES.has(session.rol)) {
+  if (!STOCK_GENERAL_EDIT_ROLES.has(session.rol)) {
     return res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para editar stock' });
   }
 

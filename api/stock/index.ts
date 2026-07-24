@@ -4,7 +4,7 @@ import {
   LIST_IDS,
   mapStock,
   stockSelectFields,
-  STOCK_EDIT_ROLES,
+  STOCK_GENERAL_EDIT_ROLES,
   isMachineSegment,
   fechasHoy,
   APP_VERSION,
@@ -45,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === 'POST') {
-    if (!STOCK_EDIT_ROLES.has(session.rol)) {
+    if (!STOCK_GENERAL_EDIT_ROLES.has(session.rol)) {
       return res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para agregar stock' });
     }
 

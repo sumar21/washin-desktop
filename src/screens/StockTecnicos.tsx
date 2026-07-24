@@ -45,7 +45,10 @@ export function StockTecnicos() {
   const [reingressing, setReingressing] = useState<RepuestoTecnico | null>(null);
   const [editing, setEditing] = useState<RepuestoTecnico | null>(null);
 
-  const canEdit = VarTipoUser === 'Admin' || VarTipoUser === 'Jefe Taller';
+  // Editar cantidad y transferir entre técnicos → solo Admin. Reingresar al stock general
+  // (devolver) → Admin o Jefe Taller. El Jefe de Taller solo puede devolver al general.
+  const isAdmin = VarTipoUser === 'Admin';
+  const canReingreso = isAdmin || VarTipoUser === 'Jefe Taller';
 
   const load = useCallback(() => {
     setLoading(true);
@@ -164,17 +167,19 @@ export function StockTecnicos() {
       align: 'right',
       truncate: false,
       render: (r) =>
-        canEdit ? (
+        canReingreso ? (
           <div className="flex items-center justify-end gap-1.5">
-            <ActionButton
-              icon={UserCog}
-              tone="brand"
-              title="Asignar a otro técnico"
-              onClick={(e) => {
-                e.stopPropagation();
-                setAssigning(r);
-              }}
-            />
+            {isAdmin && (
+              <ActionButton
+                icon={UserCog}
+                tone="brand"
+                title="Asignar a otro técnico"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAssigning(r);
+                }}
+              />
+            )}
             <ActionButton
               icon={ArrowLeftRight}
               tone="neutral"
@@ -184,15 +189,17 @@ export function StockTecnicos() {
                 setReingressing(r);
               }}
             />
-            <ActionButton
-              icon={Pencil}
-              tone="neutral"
-              title="Editar cantidad"
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditing(r);
-              }}
-            />
+            {isAdmin && (
+              <ActionButton
+                icon={Pencil}
+                tone="neutral"
+                title="Editar cantidad"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditing(r);
+                }}
+              />
+            )}
           </div>
         ) : null,
     },
@@ -262,17 +269,19 @@ export function StockTecnicos() {
                     {r.Tecnico_RT}
                   </span>
                 </div>
-                {canEdit && (
+                {canReingreso && (
                   <div className="flex shrink-0 gap-1.5">
-                    <ActionButton
-                      icon={UserCog}
-                      tone="brand"
-                      title="Asignar a otro técnico"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setAssigning(r);
-                      }}
-                    />
+                    {isAdmin && (
+                      <ActionButton
+                        icon={UserCog}
+                        tone="brand"
+                        title="Asignar a otro técnico"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAssigning(r);
+                        }}
+                      />
+                    )}
                     <ActionButton
                       icon={ArrowLeftRight}
                       tone="neutral"
@@ -282,15 +291,17 @@ export function StockTecnicos() {
                         setReingressing(r);
                       }}
                     />
-                    <ActionButton
-                      icon={Pencil}
-                      tone="neutral"
-                      title="Editar cantidad"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditing(r);
-                      }}
-                    />
+                    {isAdmin && (
+                      <ActionButton
+                        icon={Pencil}
+                        tone="neutral"
+                        title="Editar cantidad"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditing(r);
+                        }}
+                      />
+                    )}
                   </div>
                 )}
               </div>

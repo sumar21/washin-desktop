@@ -109,7 +109,9 @@ export function Stock() {
       prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
     );
 
-  const canEdit = VarTipoUser === 'Admin' || VarTipoUser === 'Jefe Taller';
+  // Stock general: agregar, editar cantidad y asignar a técnico → solo Admin (como el msapp).
+  // El Jefe de Taller solo VE el stock general (gestiona el de técnicos por separado).
+  const canEdit = VarTipoUser === 'Admin';
 
   const hasFiltros = query.trim() !== '' || filterTipos.length > 0;
   const limpiarFiltros = () => {

@@ -8,7 +8,8 @@ import {
   stockSelectFields,
   mapTecnicos,
   tecnicosSelectFields,
-  STOCK_EDIT_ROLES,
+  STOCK_TEC_EDIT_ROLES,
+  STOCK_TEC_REINGRESO_ROLES,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
 
@@ -46,19 +47,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({ error: 'method_not_allowed' });
   }
-  if (!STOCK_EDIT_ROLES.has(session.rol)) {
-    return res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para editar el stock de técnicos.' });
-  }
 
   const body = (req.body ?? {}) as Body;
   const id = Number(body.id);
   const cantidad = Number(body.cantidad);
   if (!id) return res.status(400).json({ error: 'invalid_id' });
 
+  // Permisos por acción: editar cantidad y transferir entre técnicos → solo Admin; reingresar al
+  // stock general (devolver) → Admin o Jefe Taller. El Jefe de Taller solo puede devolver.
+  const denyEdit = () =>
+    res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para esta acción sobre el stock de técnicos.' });
+  const denyReingreso = () =>
+    res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para reingresar stock.' });
+
   try {
-    if (body.action === 'edit') return await edit(id, cantidad, res);
-    if (body.action === 'transfer') return await transfer(id, cantidad, body.toTecnico, res);
-    if (body.action === 'reingreso') return await reingreso(id, cantidad, res);
+    if (body.action === 'edit') {
+      if (!STOCK_TEC_EDIT_ROLES.has(session.rol)) return denyEdit();
+      return await edit(id, cantidad, res);
+    }
+    if (body.action === 'transfer') {
+      if (!STOCK_TEC_EDIT_ROLES.has(session.rol)) return denyEdit();
+      return await transfer(id, cantidad, body.toTecnico, res);
+    }
+    if (body.action === 'reingreso') {
+      if (!STOCK_TEC_REINGRESO_ROLES.has(session.rol)) return denyReingreso();
+      return await reingreso(id, cantidad, res);
+    }
     return res.status(400).json({ error: 'invalid', message: 'Acción de stock técnico desconocida' });
   } catch (err) {
     console.error('stock-tecnicos POST error', err);
