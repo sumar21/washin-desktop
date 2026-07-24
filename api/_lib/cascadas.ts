@@ -208,7 +208,12 @@ export async function cascadeBajaEdificio(codigoEdificio: string): Promise<{
 export async function cascadeUpdateEdificio(
   prev: EdificioAbmRow,
   updated: EdificioAbmRow
-): Promise<{ detalleActualizados: number; edificiosVisitarActualizados: number; ventilacionesActualizadas: number }> {
+): Promise<{
+  detalleActualizados: number;
+  edificiosVisitarActualizados: number;
+  ventilacionesActualizadas: number;
+  maquinasActualizadas: number;
+}> {
   const codigo = prev.Codigo.trim();
   const contacto = `${updated.Encargado} - ${updated.Celular || updated.Correo}`;
   const dir = updated.Direccion.toUpperCase();
@@ -295,5 +300,32 @@ export async function cascadeUpdateEdificio(
     ventilacionesActualizadas = ventilacionRows.length;
   }
 
-  return { detalleActualizados, edificiosVisitarActualizados, ventilacionesActualizadas };
+  // 4) 08.DetalleMaquina del edificio → propagar nombre y código nuevos. Las máquinas guardan el
+  //    nombre del edificio (Edificio_DM) copiado; sin esto, al renombrar en ABM quedaban con el
+  //    nombre viejo y el edificio aparecía DUPLICADO al reportar incidentes (C-219 / C-1373).
+  //    Match por CÓDIGO viejo (estable ante renombres); el depósito (C-9999) no matchea, se excluye.
+  //    Corre en cada guardado pero SOLO patchea las máquinas que difieren → re-guardar un edificio
+  //    ya inconsistente lo repara, sin escrituras inútiles cuando ya están al día.
+  let maquinasActualizadas = 0;
+  if (codigo) {
+    const maqRows = await listItems(LIST_IDS.detalleMaquina, {
+      select: ['Edificio_DM', 'CodigoEdificio_DM'],
+      filter: `fields/CodigoEdificio_DM eq '${odataEscape(codigo)}'`,
+      top: 4000,
+    });
+    for (const m of maqRows) {
+      const f = m.fields as { Edificio_DM?: string; CodigoEdificio_DM?: string };
+      const nombreActual = String(f.Edificio_DM ?? '').trim();
+      const codigoActual = String(f.CodigoEdificio_DM ?? '').trim();
+      if (nombreActual !== updated.Edificio.trim() || codigoActual !== updated.Codigo.trim()) {
+        await updateItem(LIST_IDS.detalleMaquina, Number(m.id), {
+          Edificio_DM: updated.Edificio,
+          CodigoEdificio_DM: updated.Codigo,
+        });
+        maquinasActualizadas++;
+      }
+    }
+  }
+
+  return { detalleActualizados, edificiosVisitarActualizados, ventilacionesActualizadas, maquinasActualizadas };
 }
