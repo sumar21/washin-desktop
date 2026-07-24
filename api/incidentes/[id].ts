@@ -23,7 +23,7 @@ import { puedeAccederModulo } from '../_lib/permisos.js';
 const ESTADOS_ANULABLES = ['A Revisar', 'Pendiente', 'Asignado'];
 
 interface Body {
-  action?: 'assign' | 'cambiar-tecnico' | 'cambio-maquina' | 'generar-compra' | 'anular';
+  action?: 'assign' | 'cambiar-tecnico' | 'cambio-maquina' | 'generar-compra' | 'anular' | 'edit';
   tecnico?: string;
   fechaAsignada?: string;
   maquinaConcat?: string; // ConcatMaquinaIncidente de la máquina de reemplazo
@@ -31,6 +31,11 @@ interface Body {
   tipoCompra?: 'repuesto' | 'maquina';
   item?: string; // repuesto o ConcatMaquina a comprar
   segmento?: string;
+  // Edición de un incidente "A Revisar" (mismos campos que el alta).
+  edificio?: string;
+  codigoEdificio?: string;
+  descripcion?: string;
+  idMaquina?: string;
 }
 
 /** Descuenta de 04.Stock los repuestos del incidente (match Item_ST = Repuesto_RI, clamp ≥0). */
@@ -101,6 +106,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (body.action === 'cambio-maquina') return await cambioMaquina(id, body, res);
     if (body.action === 'generar-compra') return await generarCompra(id, body, res, session);
     if (body.action === 'anular') return await anular(id, res, session);
+    if (body.action === 'edit') return await editIncidente(id, body, res);
     return res.status(400).json({ error: 'invalid', message: 'Acción de incidente desconocida' });
   } catch (err) {
     console.error('incidentes [id] POST error', err);
@@ -233,4 +239,36 @@ async function anular(id: number, res: VercelResponse, session: SessionPayload) 
   }
   await updateItem(LIST_IDS.incidentes, id, { Status_IN: 'Anulado' });
   return res.status(200).json({ ID: id, Status_IN: 'Anulado' });
+}
+
+// ── Editar un incidente "A Revisar" ───────────────────────────────────────
+// Solo se pueden editar los que siguen en "A Revisar" (todavía sin triaje): edificio, máquina,
+// descripción del problema y técnico a avisar. Mismos campos que el alta. Si ya avanzó de estado
+// (Asignado/En Aprobacion/Resuelto/…) no se edita: cambiar de técnico/máquina tiene sus propias
+// acciones (cambiar-tecnico, cambio-maquina).
+async function editIncidente(id: number, body: Body, res: VercelResponse) {
+  const edificio = body.edificio?.trim();
+  const descripcion = body.descripcion?.trim();
+  if (!edificio || !descripcion) {
+    return res.status(400).json({ error: 'invalid', message: 'Falta el edificio o la descripción' });
+  }
+  const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
+  if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
+  const inc = mapIncidente(incRaw);
+  if (inc.Status_IN !== 'A Revisar') {
+    return res.status(409).json({
+      error: 'invalid_state',
+      message: 'Solo se pueden editar los incidentes en estado "A Revisar".',
+    });
+  }
+  await updateItem(LIST_IDS.incidentes, id, {
+    NombreEdificio_IN: edificio,
+    CodigoEdifcio_IN: body.codigoEdificio?.trim() ?? '',
+    ConcatMaquina_IN: body.maquinaConcat?.trim() ?? '',
+    IDMaquina_IN: body.idMaquina?.trim() ?? '',
+    DescripcionCarga_IN: descripcion,
+    TecnicoAsignado_IN: body.tecnico?.trim() ?? '',
+  });
+  const updated = mapIncidente((await getItem(LIST_IDS.incidentes, id, incidenteSelectFields()))!);
+  return res.status(200).json(updated);
 }

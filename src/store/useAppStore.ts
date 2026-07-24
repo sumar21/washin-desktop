@@ -207,6 +207,7 @@ interface AppState {
   // ── Incidentes (10 + 13) — API real ───────────────────────────────────
   fetchIncidentes: (resueltosMes?: string) => Promise<void>;
   createIncidente: (payload: api.NewIncidentePayload) => Promise<Incidente>;
+  editIncidente: (id: number, payload: api.NewIncidentePayload) => Promise<Incidente>;
   assignIncidente: (id: number, tecnico: string, fechaAsignada?: string) => Promise<void>;
   cambiarTecnicoIncidente: (id: number, tecnico: string) => Promise<void>;
   cambioMaquinaIncidente: (id: number, maquinaConcat: string, idMaquinaReemplazo?: string) => Promise<void>;
@@ -313,6 +314,7 @@ const initialState: Omit<
   | 'rejectAprobacion'
   | 'fetchIncidentes'
   | 'createIncidente'
+  | 'editIncidente'
   | 'assignIncidente'
   | 'cambiarTecnicoIncidente'
   | 'cambioMaquinaIncidente'
@@ -824,6 +826,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       const created = await api.createIncidente(payload);
       set((s) => ({ CollectIncidentes: [created, ...s.CollectIncidentes] }));
       return created;
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  editIncidente: async (id, payload) => {
+    try {
+      const updated = await api.editIncidente(id, payload);
+      set((s) => ({
+        CollectIncidentes: s.CollectIncidentes.map((i) => (i.ID === id ? updated : i)),
+      }));
+      return updated;
     } catch (err) {
       handleAuthError(err, set);
       throw err;

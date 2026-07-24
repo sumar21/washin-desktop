@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Eye,
+  Pencil,
   UserCog,
   Plus,
   AlertTriangle,
@@ -173,6 +174,7 @@ export function Incidentes() {
     return out.sort((a, b) => a.edificio.localeCompare(b.edificio, 'es'));
   }, [edificiosMaquina, edificiosAbm]);
   const createIncidente = useAppStore((s) => s.createIncidente);
+  const editIncidente = useAppStore((s) => s.editIncidente);
   const assignIncidente = useAppStore((s) => s.assignIncidente);
   const cambiarTecnicoIncidente = useAppStore((s) => s.cambiarTecnicoIncidente);
   const cambioMaquinaIncidente = useAppStore((s) => s.cambioMaquinaIncidente);
@@ -199,6 +201,7 @@ export function Incidentes() {
   const [comprar, setComprar] = useState<Incidente | null>(null);
   const [cambioMaq, setCambioMaq] = useState<Incidente | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [editing, setEditing] = useState<Incidente | null>(null); // editar un "A Revisar"
   const [anulando, setAnulando] = useState<Incidente | null>(null);
   const [anularBusy, setAnularBusy] = useState(false);
   const [anularError, setAnularError] = useState<string | null>(null);
@@ -516,6 +519,9 @@ export function Incidentes() {
                         </div>
                         <div className="flex shrink-0 gap-1.5">
                           <IconBtn icon={Eye} tone="neutral" title="Ver detalle" onClick={() => setDetail(i)} />
+                          {i.Status_IN === 'A Revisar' && (
+                            <IconBtn icon={Pencil} tone="brand" title="Editar reclamo" onClick={() => setEditing(i)} />
+                          )}
                           {primaryAction(i)}
                           {adminAction(i)}
                         </div>
@@ -634,6 +640,9 @@ export function Incidentes() {
                         </div>
                         <div className="flex items-center justify-end gap-1.5">
                           <IconBtn icon={Eye} tone="neutral" title="Ver detalle" onClick={() => setDetail(i)} />
+                          {i.Status_IN === 'A Revisar' && (
+                            <IconBtn icon={Pencil} tone="brand" title="Editar reclamo" onClick={() => setEditing(i)} />
+                          )}
                           {primaryAction(i)}
                           {adminAction(i)}
                         </div>
@@ -704,14 +713,19 @@ export function Incidentes() {
         }}
       />
 
-      {/* Nuevo incidente */}
+      {/* Nuevo incidente / Editar "A Revisar" (mismo modal) */}
       <NuevoIncidenteModal
         open={newOpen}
+        editing={editing}
         edificios={edificios}
         maquinas={maquinas}
         tecnicos={tecnicos}
-        onClose={() => setNewOpen(false)}
+        onClose={() => {
+          setNewOpen(false);
+          setEditing(null);
+        }}
         onCreate={createIncidente}
+        onSave={editIncidente}
       />
 
       {/* Anular reclamo (baja lógica) — solo Admin */}
@@ -1356,28 +1370,36 @@ function DetailBody({
   );
 }
 
+interface IncidentePayload {
+  edificio: string;
+  codigoEdificio?: string;
+  maquinaConcat?: string;
+  idMaquina?: string;
+  descripcion: string;
+  tecnico?: string;
+}
 function NuevoIncidenteModal({
   open,
+  editing,
   edificios,
   maquinas,
   tecnicos,
   onClose,
   onCreate,
+  onSave,
 }: {
   open: boolean;
+  /** Si viene un incidente, el modal está en modo EDICIÓN (solo "A Revisar"). */
+  editing?: Incidente | null;
   edificios: { edificio: string; codigo: string }[];
   maquinas: { ID: number; ConcatMaquinaIncidente_DM: string; IDMaquina_DM: string; Edificio_DM: string; Status_DM: string }[];
   tecnicos: { ID: number; Nombre_Tecnico: string; Telefono?: string }[];
   onClose: () => void;
-  onCreate: (payload: {
-    edificio: string;
-    codigoEdificio?: string;
-    maquinaConcat?: string;
-    idMaquina?: string;
-    descripcion: string;
-    tecnico?: string;
-  }) => Promise<Incidente>;
+  onCreate: (payload: IncidentePayload) => Promise<Incidente>;
+  onSave: (id: number, payload: IncidentePayload) => Promise<Incidente>;
 }) {
+  const isEdit = !!editing;
+  const isOpen = open || isEdit;
   const [edificio, setEdificio] = useState('');
   const [maqId, setMaqId] = useState('');
   const [desc, setDesc] = useState('');
@@ -1386,14 +1408,29 @@ function NuevoIncidenteModal({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reinicia al abrir.
-    setEdificio('');
-    setMaqId('');
-    setDesc('');
-    setTecId('');
+    if (!isOpen) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reinicia/precarga al abrir.
     setError(null);
-  }, [open]);
+    if (editing) {
+      // Precarga desde el incidente. Máquina: match por IDMaquina_DM + edificio (identidad compuesta),
+      // fallback por concat. Técnico: por nombre.
+      setEdificio(editing.NombreEdificio_IN ?? '');
+      setDesc(editing.DescripcionCarga_IN ?? '');
+      const maq = maquinas.find(
+        (m) =>
+          (editing.IDMaquina_IN && m.IDMaquina_DM === editing.IDMaquina_IN && m.Edificio_DM === editing.NombreEdificio_IN) ||
+          (!!editing.ConcatMaquina_IN && m.ConcatMaquinaIncidente_DM === editing.ConcatMaquina_IN)
+      );
+      setMaqId(maq ? String(maq.ID) : '');
+      const tec = tecnicos.find((t) => t.Nombre_Tecnico === editing.TecnicoAsignado_IN);
+      setTecId(tec ? String(tec.ID) : '');
+    } else {
+      setEdificio('');
+      setMaqId('');
+      setDesc('');
+      setTecId('');
+    }
+  }, [open, editing, isOpen, maquinas, tecnicos]);
 
   const edificioOpts = useMemo<ComboboxOption[]>(
     () => edificios.map((e) => ({ value: e.edificio, label: e.edificio, sublabel: e.codigo })),
@@ -1414,8 +1451,12 @@ function NuevoIncidenteModal({
   const codigo = edificios.find((e) => e.edificio === edificio)?.codigo;
 
   return (
-    <Modal open={open} onClose={onClose} title="Nuevo incidente" width={600}>
-      <p className="text-sm text-wash-text-muted">Cargá el reporte. Al crear, se abre WhatsApp para avisar al técnico (si elegiste uno).</p>
+    <Modal open={isOpen} onClose={onClose} title={isEdit ? `Editar incidente #${editing.ID}` : 'Nuevo incidente'} width={600}>
+      <p className="text-sm text-wash-text-muted">
+        {isEdit
+          ? 'Editá el reclamo mientras siga "A Revisar" (todavía sin asignar/triar).'
+          : 'Cargá el reporte. Al crear, se abre WhatsApp para avisar al técnico (si elegiste uno).'}
+      </p>
       {error && (
         <div role="alert" className="mt-3 flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">
           <AlertCircle size={14} className="shrink-0" /> {error}
@@ -1489,31 +1530,37 @@ function NuevoIncidenteModal({
               const maq = maqsDelEdificio.find((m) => String(m.ID) === maqId);
               const tec = tecnicos.find((t) => String(t.ID) === tecId);
               const tecnico = tec?.Nombre_Tecnico;
-              const created = await onCreate({
+              const payload: IncidentePayload = {
                 edificio,
                 codigoEdificio: codigo,
                 maquinaConcat: maq?.ConcatMaquinaIncidente_DM,
                 idMaquina: maq?.IDMaquina_DM,
                 descripcion: desc.trim(),
                 tecnico: tecnico || undefined,
-              });
-              // WhatsApp deep-link al técnico (si hay).
-              const tel = tec?.Telefono;
-              if (tecnico) {
-                const msg = `INCIDENTE N: ${created.ID}\nEDIFICIO: ${edificio}${maq ? `\nMAQUINA: ${maq.ConcatMaquinaIncidente_DM}` : ''}\nOBSERVACIONES: ${desc.trim()}`;
-                const url = `https://wa.me/${tel ? '54' + tel.replace(/\D/g, '') : ''}?text=${encodeURIComponent(msg)}`;
-                window.open(url, '_blank');
+              };
+              if (isEdit) {
+                await onSave(editing.ID, payload); // edición: sin WhatsApp
+              } else {
+                const created = await onCreate(payload);
+                // WhatsApp deep-link al técnico (si hay) — solo en el alta.
+                const tel = tec?.Telefono;
+                if (tecnico) {
+                  const msg = `INCIDENTE N: ${created.ID}\nEDIFICIO: ${edificio}${maq ? `\nMAQUINA: ${maq.ConcatMaquinaIncidente_DM}` : ''}\nOBSERVACIONES: ${desc.trim()}`;
+                  const url = `https://wa.me/${tel ? '54' + tel.replace(/\D/g, '') : ''}?text=${encodeURIComponent(msg)}`;
+                  window.open(url, '_blank');
+                }
               }
               onClose();
             } catch (err) {
-              setError(err instanceof Error ? err.message : 'No se pudo crear el incidente.');
+              setError(err instanceof Error ? err.message : `No se pudo ${isEdit ? 'guardar' : 'crear'} el incidente.`);
             } finally {
               setSaving(false);
             }
           }}
           className="flex items-center gap-2 rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} {saving ? 'Creando…' : 'Crear incidente'}
+          {saving ? <Loader2 size={15} className="animate-spin" /> : isEdit ? <Pencil size={15} /> : <Plus size={15} />}{' '}
+          {saving ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear incidente'}
         </button>
       </ModalActions>
     </Modal>

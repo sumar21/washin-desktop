@@ -405,6 +405,11 @@ export function createIncidente(payload: NewIncidentePayload): Promise<Incidente
   return request('/incidentes', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+/** Editar un incidente "A Revisar" (mismos campos que el alta). */
+export function editIncidente(id: number, payload: NewIncidentePayload): Promise<Incidente> {
+  return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'edit', ...payload }) });
+}
+
 export function assignIncidente(id: number, tecnico: string, fechaAsignada?: string): Promise<{ ID: number; Status_IN: string; TecnicoAsignado_IN: string }> {
   return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'assign', tecnico, fechaAsignada }) });
 }
