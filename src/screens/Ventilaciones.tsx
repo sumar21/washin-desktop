@@ -235,7 +235,11 @@ export function Ventilaciones() {
           <StatusBadge status={v.Estado_VE} />
           {v.EsIncidente_VE === 'SI' && (
             <span
-              title="La fecha fue adelantada por un técnico"
+              title={
+                v.Asignado_VE
+                  ? `Adelantada desde un incidente · asignada a ${v.Asignado_VE}`
+                  : 'Adelantada desde un incidente por un técnico'
+              }
               className="flex h-5 w-5 items-center justify-center rounded-md bg-rose-50 text-rose-600 ring-1 ring-rose-200"
             >
               <AlertTriangle size={11} />
@@ -453,7 +457,11 @@ export function Ventilaciones() {
                         <StatusBadge status={v.Estado_VE} />
                         {v.EsIncidente_VE === 'SI' && (
                           <span
-                            title="La fecha fue adelantada por un técnico"
+                            title={
+                v.Asignado_VE
+                  ? `Adelantada desde un incidente · asignada a ${v.Asignado_VE}`
+                  : 'Adelantada desde un incidente por un técnico'
+              }
                             className="flex h-5 w-5 items-center justify-center rounded-md bg-rose-50 text-rose-600 ring-1 ring-rose-200"
                           >
                             <AlertTriangle size={11} />

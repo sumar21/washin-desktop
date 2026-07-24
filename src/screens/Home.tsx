@@ -994,7 +994,10 @@ function VisitaCard({
         <KV icon={MapPin} label="Ruta" value={registro.NroRuta_R} />
         <KV icon={MapPin} label="Circuito" value={registro.NroCircuito_R} />
         <KV icon={User} label="Técnico" value={registro.Usuario} />
-        <KV icon={Clock} label="Horario" value={`${registro.HoraInicio ?? '—'} – ${registro.HoraFinal ?? '—'}`} />
+        {/* Inicio/fin REALES (sellados al iniciar/finalizar). Antes usaba HoraInicio/HoraFinal
+            (internos Hora/Fecha = horas del checklist), que colapsan al mismo minuto → se veía
+            "04:04 – 04:04". El Dashboard de visitas ya usa este par correcto. */}
+        <KV icon={Clock} label="Horario" value={`${registro.HoraVisita ?? '—'} – ${registro.HoraSalida ?? '—'}`} />
       </dl>
 
       {/* Progreso */}
@@ -1048,7 +1051,9 @@ function EnCursoRow({
         </div>
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200">
           <Clock size={10} className="shrink-0" />
-          <span className="tabular-nums">{registro.HoraInicio?.trim() || '—'}</span>
+          {/* Inicio real de la visita en curso. HoraInicio (interno Hora) está vacío hasta finalizar,
+              por eso mostraba "—"; HoraVisita se sella al iniciar. */}
+          <span className="tabular-nums">{registro.HoraVisita?.trim() || '—'}</span>
         </span>
       </div>
 
