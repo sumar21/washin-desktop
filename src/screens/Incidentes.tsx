@@ -159,18 +159,23 @@ export function Incidentes() {
   const edificios = useMemo(() => {
     const seen = new Set<string>();
     const out: { edificio: string; codigo: string }[] = [];
-    for (const e of edificiosMaquina) {
-      const key = e.edificio.trim().toLowerCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      out.push(e);
-    }
-    for (const e of edificiosAbm) {
-      const key = e.Edificio.trim().toLowerCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      out.push({ edificio: e.Edificio, codigo: e.Codigo });
-    }
+    // Dedup por CÓDIGO (identidad estable) cuando existe; por nombre solo si no hay código.
+    // Se recorre ABM PRIMERO para que gane su nombre (el actual): al renombrar un edificio en ABM,
+    // las máquinas conservan el nombre viejo en Edificio_DM (no se cascadea), así que el derivado
+    // del parque trae el nombre viejo. Sin dedupe por código, el edificio salía DUPLICADO en el
+    // combo (uno con el nombre viejo de las máquinas, otro con el nuevo de ABM). Reporte C-219/C-1373.
+    const key = (codigo: string, nombre: string) =>
+      codigo.trim() ? `c:${codigo.trim().toLowerCase()}` : `n:${nombre.trim().toLowerCase()}`;
+    const add = (nombre: string, codigo: string) => {
+      const n = nombre.trim();
+      if (!n) return;
+      const k = key(codigo, n);
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push({ edificio: n, codigo: codigo.trim() });
+    };
+    for (const e of edificiosAbm) add(e.Edificio, e.Codigo); // ABM primero: nombre canónico
+    for (const e of edificiosMaquina) add(e.edificio, e.codigo);
     return out.sort((a, b) => a.edificio.localeCompare(b.edificio, 'es'));
   }, [edificiosMaquina, edificiosAbm]);
   const createIncidente = useAppStore((s) => s.createIncidente);
@@ -1392,7 +1397,7 @@ function NuevoIncidenteModal({
   /** Si viene un incidente, el modal está en modo EDICIÓN (solo "A Revisar"). */
   editing?: Incidente | null;
   edificios: { edificio: string; codigo: string }[];
-  maquinas: { ID: number; ConcatMaquinaIncidente_DM: string; IDMaquina_DM: string; Edificio_DM: string; Status_DM: string }[];
+  maquinas: { ID: number; ConcatMaquinaIncidente_DM: string; IDMaquina_DM: string; Edificio_DM: string; CodigoEdificio_DM?: string; Status_DM: string }[];
   tecnicos: { ID: number; Nombre_Tecnico: string; Telefono?: string }[];
   onClose: () => void;
   onCreate: (payload: IncidentePayload) => Promise<Incidente>;
@@ -1436,9 +1441,18 @@ function NuevoIncidenteModal({
     () => edificios.map((e) => ({ value: e.edificio, label: e.edificio, sublabel: e.codigo })),
     [edificios]
   );
+  const codigo = edificios.find((e) => e.edificio === edificio)?.codigo;
+  // Máquinas del edificio: match por CÓDIGO (estable ante renombres del ABM); fallback a nombre
+  // solo si el edificio no tiene código. Antes matcheaba por Edificio_DM (nombre), que para un
+  // edificio renombrado no coincide con el nombre actual de ABM → no mostraba sus máquinas.
   const maqsDelEdificio = useMemo(
-    () => maquinas.filter((m) => m.Status_DM !== 'ELIMINADA' && (!edificio || m.Edificio_DM === edificio)),
-    [maquinas, edificio]
+    () =>
+      maquinas.filter(
+        (m) =>
+          m.Status_DM !== 'ELIMINADA' &&
+          (!edificio || (codigo ? m.CodigoEdificio_DM === codigo : m.Edificio_DM === edificio))
+      ),
+    [maquinas, edificio, codigo]
   );
   const maquinaOpts = useMemo<ComboboxOption[]>(
     () => maqsDelEdificio.map((m) => ({ value: String(m.ID), label: `${m.IDMaquina_DM} — ${proper(m.ConcatMaquinaIncidente_DM)}` })),
@@ -1448,7 +1462,6 @@ function NuevoIncidenteModal({
     () => tecnicos.map((t) => ({ value: String(t.ID), label: t.Nombre_Tecnico })),
     [tecnicos]
   );
-  const codigo = edificios.find((e) => e.edificio === edificio)?.codigo;
 
   return (
     <Modal open={isOpen} onClose={onClose} title={isEdit ? `Editar incidente #${editing.ID}` : 'Nuevo incidente'} width={600}>
