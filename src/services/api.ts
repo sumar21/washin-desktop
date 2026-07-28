@@ -315,7 +315,12 @@ export interface HistorialItem {
   ID: number;
   Fecha_IN: string;
   Titulo: string;
+  /** Cierre del incidente según su estado (resolución / motivo de anulación / diagnóstico). */
   Descripcion?: string;
+  /** El reclamo original (DescripcionCarga_IN). Ausente si coincide con `Descripcion`. */
+  Reclamo?: string;
+  /** Técnico asignado. Ausente si el incidente nunca se asignó. */
+  Tecnico_IN?: string;
   Edificio_IN: string;
   Status_IN: string;
   Resuelto_IN: string;
@@ -418,6 +423,11 @@ export function cambiarTecnicoIncidente(id: number, tecnico: string): Promise<{ 
   return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'cambiar-tecnico', tecnico }) });
 }
 
+/** Saca el técnico de un incidente "A Revisar" (queda sin asignar, no toca stock). */
+export function desasignarIncidente(id: number): Promise<{ ID: number; Status_IN: string; TecnicoAsignado_IN: string }> {
+  return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'desasignar' }) });
+}
+
 export function cambioMaquinaIncidente(id: number, maquinaConcat: string, idMaquinaReemplazo?: string): Promise<{ ID: number; Status_IN: string }> {
   return request(`/incidentes/${id}`, {
     method: 'POST',
@@ -432,9 +442,12 @@ export function generarCompraIncidente(
   return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'generar-compra', ...payload }) });
 }
 
-/** Baja lógica de un incidente (Status_IN -> 'Anulado'). Solo Admin (gate server-side). */
-export function anularIncidente(id: number): Promise<{ ID: number; Status_IN: string }> {
-  return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'anular' }) });
+/**
+ * Baja lógica de un incidente (Status_IN -> 'Anulado'). Solo Admin (gate server-side).
+ * `motivo` es OBLIGATORIO: va a DescripcionAnulado_IN, la misma columna que escribe la mobile.
+ */
+export function anularIncidente(id: number, motivo: string): Promise<{ ID: number; Status_IN: string; DescripcionAnulado_IN?: string }> {
+  return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'anular', motivo }) });
 }
 
 // ── Ventilaciones (19.Ventilaciones + ABM.Edificios + catálogos) ─────────

@@ -45,10 +45,15 @@ export function StockTecnicos() {
   const [reingressing, setReingressing] = useState<RepuestoTecnico | null>(null);
   const [editing, setEditing] = useState<RepuestoTecnico | null>(null);
 
-  // Editar cantidad y transferir entre técnicos → solo Admin. Reingresar al stock general
-  // (devolver) → Admin o Jefe Taller. El Jefe de Taller solo puede devolver al general.
+  // Gates del msapp (Screen_StockTecnicos). OJO: los controles están mal nombrados y hay que
+  // leer su OnSelect — img_transferir_STT hace el REINGRESO al general y img_rotarStockTecnico_STT
+  // la TRANSFERENCIA entre técnicos. Resultado:
+  //   · editar cantidad (edit_STT)                    → solo Admin
+  //   · transferir entre técnicos (rotarStockTecnico) → Admin o Jefe Taller
+  //   · reingresar al general (transferir_STT)        → Admin o Jefe Taller, y Cantidad_RT > 0
   const isAdmin = VarTipoUser === 'Admin';
-  const canReingreso = isAdmin || VarTipoUser === 'Jefe Taller';
+  const canTransfer = isAdmin || VarTipoUser === 'Jefe Taller';
+  const canReingreso = canTransfer;
 
   const load = useCallback(() => {
     setLoading(true);
@@ -167,28 +172,28 @@ export function StockTecnicos() {
       align: 'right',
       truncate: false,
       render: (r) =>
-        canReingreso ? (
+        canTransfer ? (
           <div className="flex items-center justify-end gap-1.5">
-            {isAdmin && (
+            <ActionButton
+              icon={UserCog}
+              tone="brand"
+              title="Asignar a otro técnico"
+              onClick={(e) => {
+                e.stopPropagation();
+                setAssigning(r);
+              }}
+            />
+            {canReingreso && r.Cantidad_RT > 0 && (
               <ActionButton
-                icon={UserCog}
-                tone="brand"
-                title="Asignar a otro técnico"
+                icon={ArrowLeftRight}
+                tone="neutral"
+                title="Reingresar a stock"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setAssigning(r);
+                  setReingressing(r);
                 }}
               />
             )}
-            <ActionButton
-              icon={ArrowLeftRight}
-              tone="neutral"
-              title="Reingresar a stock"
-              onClick={(e) => {
-                e.stopPropagation();
-                setReingressing(r);
-              }}
-            />
             {isAdmin && (
               <ActionButton
                 icon={Pencil}
@@ -269,28 +274,28 @@ export function StockTecnicos() {
                     {r.Tecnico_RT}
                   </span>
                 </div>
-                {canReingreso && (
+                {canTransfer && (
                   <div className="flex shrink-0 gap-1.5">
-                    {isAdmin && (
+                    <ActionButton
+                      icon={UserCog}
+                      tone="brand"
+                      title="Asignar a otro técnico"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAssigning(r);
+                      }}
+                    />
+                    {canReingreso && r.Cantidad_RT > 0 && (
                       <ActionButton
-                        icon={UserCog}
-                        tone="brand"
-                        title="Asignar a otro técnico"
+                        icon={ArrowLeftRight}
+                        tone="neutral"
+                        title="Reingresar a stock"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setAssigning(r);
+                          setReingressing(r);
                         }}
                       />
                     )}
-                    <ActionButton
-                      icon={ArrowLeftRight}
-                      tone="neutral"
-                      title="Reingresar a stock"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setReingressing(r);
-                      }}
-                    />
                     {isAdmin && (
                       <ActionButton
                         icon={Pencil}

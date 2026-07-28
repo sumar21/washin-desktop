@@ -283,6 +283,8 @@ export interface Incidente {
   DescripcionIncidente_IN?: string; // derivado = Descripcion_IN || DescripcionCarga_IN
   DescripcionResuelto_IN?: string;
   DescripcionAnulado_IN?: string;
+  /** Quién anuló. Sólo desde que existe la columna UsuarioAnulado_IN en SharePoint. */
+  UsuarioAnulado_IN?: string;
   FechaResuelto_IN?: string;
   FechaAsignada_IN?: string;
   User_IN: string;

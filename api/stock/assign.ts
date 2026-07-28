@@ -4,12 +4,12 @@ import {
   LIST_IDS,
   mapStock,
   stockSelectFields,
-  STOCK_GENERAL_EDIT_ROLES,
   mapRepuestoTecnico,
   repuestoTecnicoSelectFields,
   buildConcatRT,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { puedeAccederModulo } from '../_lib/permisos.js';
 
 interface AssignBody {
   id?: number;
@@ -37,8 +37,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const session = readSession(req.headers.cookie);
   if (!session) return res.status(401).json({ error: 'no_session' });
-  if (!STOCK_GENERAL_EDIT_ROLES.has(session.rol)) {
-    return res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para asignar stock' });
+  // Sin lista de roles, a propósito: en el msapp este control no tiene gate de rol
+  // (Screen_Stock/img_rotarStockTecnico → `Visible: =ThisItem.Tipo_ST = "REPUESTO"`). El único
+  // requisito era tener la pantalla de Stock, así que el equivalente es el módulo en LPP.
+  if (!(await puedeAccederModulo(session.rol, 'Stock'))) {
+    return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Stock.' });
   }
 
   const { id, tecnico, cantidad } = (req.body ?? {}) as AssignBody;

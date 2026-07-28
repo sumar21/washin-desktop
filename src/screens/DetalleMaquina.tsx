@@ -14,6 +14,7 @@ import {
   SearchX,
   History,
   Loader2,
+  UserCircle2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
@@ -60,7 +61,9 @@ const uniqSorted = (arr: string[]) =>
 export function DetalleMaquina() {
   const maquinas = useAppStore((s) => s.CollectMaquinas);
   const edificiosDestino = useAppStore((s) => s.CollectEdificiosMaquina);
+  const edificiosAbm = useAppStore((s) => s.CollectAbmEdificios);
   const fetchMaquinas = useAppStore((s) => s.fetchMaquinas);
+  const fetchAbm = useAppStore((s) => s.fetchAbm);
   const transferMaquina = useAppStore((s) => s.transferMaquina);
   const bajaMaquina = useAppStore((s) => s.bajaMaquina);
   const VarTipoUser = useAppStore((s) => s.VarTipoUser);
@@ -88,10 +91,12 @@ export function DetalleMaquina() {
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    return fetchMaquinas()
+    // fetchAbm alimenta el catálogo de edificios (ABM.Edificios ALTA) del filtro por Edificio.
+    // Best-effort: si el bundle de ABM falla, el filtro queda sin opciones pero la pantalla carga.
+    return Promise.all([fetchMaquinas(), fetchAbm().catch(() => {})])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar las máquinas.'))
       .finally(() => setLoading(false));
-  }, [fetchMaquinas]);
+  }, [fetchMaquinas, fetchAbm]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; "Reintentar" también dispara load().
@@ -99,8 +104,10 @@ export function DetalleMaquina() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar.
   }, []);
 
-  // Opciones de filtro derivadas del universo real de máquinas.
-  const edificioOpts = useMemo(() => uniqSorted(maquinas.map((m) => m.Edificio_DM)), [maquinas]);
+  // Edificio: del CATÁLOGO (ABM.Edificios ALTA), igual que el msapp (Distinct(CollectEdificios,
+  // Edificio)) — ver edificioOptions en @/lib/filters. El resto sí sale del universo de máquinas,
+  // también como el msapp (Distinct(CollectDetalleMaquina, Marca_DM/Modelo_DM/Encendido_DM)).
+  const edificioOpts = useMemo(() => uniqSorted(edificiosAbm.map((e) => e.Edificio)), [edificiosAbm]);
   const segmentoOpts = useMemo(() => uniqSorted(maquinas.map((m) => m.Segmento_DM)), [maquinas]);
   const marcaOpts = useMemo(() => uniqSorted(maquinas.map((m) => m.Marca_DM)), [maquinas]);
   const encendidoOpts = useMemo(
@@ -627,7 +634,32 @@ function DetailModal({ maquina, onClose }: { maquina: Maquina | null; onClose: (
                     <StatusBadge status={i.Resuelto_IN === 'SI' ? 'Resuelto' : i.Status_IN || 'Pendiente'} />
                   </div>
                   <div className="mt-1 font-display font-bold text-wash-accent">{proper(i.Titulo)}</div>
-                  {i.Descripcion && <p className="mt-1 text-sm text-wash-text">{i.Descripcion}</p>}
+                  {/* Reclamo (lo que se reportó) y cierre (cómo terminó) como dos bloques rotulados:
+                      el historial de una máquina se lee para entender qué le pasó y qué se le hizo. */}
+                  {i.Reclamo && (
+                    <p className="mt-1.5 text-sm text-wash-text">
+                      <span className="mr-1.5 text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
+                        Reclamo
+                      </span>
+                      {i.Reclamo}
+                    </p>
+                  )}
+                  {i.Descripcion && (
+                    <p className="mt-1 text-sm text-wash-text">
+                      {i.Reclamo && (
+                        <span className="mr-1.5 text-[10px] font-semibold uppercase tracking-wider text-wash-text-muted">
+                          {i.Status_IN === 'Anulado' ? 'Motivo' : 'Resolución'}
+                        </span>
+                      )}
+                      {i.Descripcion}
+                    </p>
+                  )}
+                  {i.Tecnico_IN && (
+                    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-wash-text-muted">
+                      <UserCircle2 size={12} className="shrink-0" />
+                      <span className="truncate">{proper(i.Tecnico_IN)}</span>
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>

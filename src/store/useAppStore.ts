@@ -210,13 +210,15 @@ interface AppState {
   editIncidente: (id: number, payload: api.NewIncidentePayload) => Promise<Incidente>;
   assignIncidente: (id: number, tecnico: string, fechaAsignada?: string) => Promise<void>;
   cambiarTecnicoIncidente: (id: number, tecnico: string) => Promise<void>;
+  /** Saca el técnico de un incidente "A Revisar" (vuelve al pool sin asignar). */
+  desasignarIncidente: (id: number) => Promise<void>;
   cambioMaquinaIncidente: (id: number, maquinaConcat: string, idMaquinaReemplazo?: string) => Promise<void>;
   generarCompraIncidente: (
     id: number,
     payload: { tipoCompra: 'repuesto' | 'maquina'; item: string; segmento: string }
   ) => Promise<void>;
-  /** Baja lógica de un incidente (Status_IN -> 'Anulado'). Solo Admin (gate server-side). */
-  anularIncidente: (id: number) => Promise<void>;
+  /** Baja lógica de un incidente (Status_IN -> 'Anulado'). Solo Admin (gate server-side). `motivo` obligatorio. */
+  anularIncidente: (id: number, motivo: string) => Promise<void>;
 
   // ── Detalle de Máquinas (08) — API real ───────────────────────────────
   /** Real: GET /api/maquinas — todas las máquinas activas, ordenadas edificio→segmento→alfabético. */
@@ -317,6 +319,7 @@ const initialState: Omit<
   | 'editIncidente'
   | 'assignIncidente'
   | 'cambiarTecnicoIncidente'
+  | 'desasignarIncidente'
   | 'cambioMaquinaIncidente'
   | 'generarCompraIncidente'
   | 'anularIncidente'
@@ -871,6 +874,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  desasignarIncidente: async (id) => {
+    try {
+      // Solo aplica a 'A Revisar' (gate server-side): no hay stock comprometido que reintegrar,
+      // así que alcanza con limpiar el técnico en la lista local sin refetch.
+      await api.desasignarIncidente(id);
+      set((s) => ({
+        CollectIncidentes: s.CollectIncidentes.map((it) =>
+          it.ID === id ? { ...it, TecnicoAsignado_IN: '', FechaAsignada_IN: '' } : it
+        ),
+      }));
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
   cambioMaquinaIncidente: async (id, maquinaConcat, idMaquinaReemplazo) => {
     try {
       await api.cambioMaquinaIncidente(id, maquinaConcat, idMaquinaReemplazo);
@@ -898,10 +917,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  anularIncidente: async (id) => {
+  anularIncidente: async (id, motivo) => {
     try {
-      // Baja lógica (Status_IN -> 'Anulado'). El backend valida rol Admin y estado.
-      await api.anularIncidente(id);
+      // Baja lógica (Status_IN -> 'Anulado'). El backend valida rol Admin, estado y motivo.
+      await api.anularIncidente(id, motivo);
       // Sale de la lista de abiertos (mismo criterio que otras pantallas).
       set((s) => ({ CollectIncidentes: s.CollectIncidentes.filter((it) => it.ID !== id) }));
     } catch (err) {

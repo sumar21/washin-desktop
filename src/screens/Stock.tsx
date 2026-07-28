@@ -109,8 +109,11 @@ export function Stock() {
       prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
     );
 
-  // Stock general: agregar, editar cantidad y asignar a técnico → solo Admin (como el msapp).
-  // El Jefe de Taller solo VE el stock general (gestiona el de técnicos por separado).
+  // Stock general (msapp Screen_Stock): agregar ítem (bt_addStock) y editar cantidad (edit_ST)
+  // → solo Admin. "Asignar a técnico" NO tiene gate de rol: su control (img_rotarStockTecnico,
+  // mal nombrado — su OnSelect hace Set(AsignarStockTecnico,true)) sólo pide
+  // `Tipo_ST = "REPUESTO"`, así que lo puede hacer cualquier rol que tenga el módulo Stock.
+  // El backend valida lo mismo (api/stock/assign.ts → puedeAccederModulo(rol, 'Stock')).
   const canEdit = VarTipoUser === 'Admin';
 
   const hasFiltros = query.trim() !== '' || filterTipos.length > 0;
@@ -259,7 +262,9 @@ export function Stock() {
           filtered.map((row) => {
             const meta = tipoMeta[row.Tipo_ST] ?? TIPO_FALLBACK;
             const Icon = meta.icon;
-            const showEdit = canEdit && row.Tipo_ST === 'REPUESTO';
+            const esRepuesto = row.Tipo_ST === 'REPUESTO';
+            const showEdit = canEdit && esRepuesto;
+            const showAssign = esRepuesto; // sin gate de rol (msapp img_rotarStockTecnico)
             return (
               <div
                 key={row.ID}
@@ -297,7 +302,7 @@ export function Stock() {
                         <Pencil size={15} />
                       </button>
                     )}
-                    {showEdit && (
+                    {showAssign && (
                       <button
                         type="button"
                         onClick={() => setAssigning(row)}
@@ -350,7 +355,9 @@ export function Stock() {
                 // vacío o un valor fuera de los 7 conocidos) — no debe crashear la tabla.
                 const meta = tipoMeta[row.Tipo_ST] ?? TIPO_FALLBACK;
                 const Icon = meta.icon;
-                const showEdit = canEdit && row.Tipo_ST === 'REPUESTO';
+                const esRepuesto = row.Tipo_ST === 'REPUESTO';
+                const showEdit = canEdit && esRepuesto;
+                const showAssign = esRepuesto; // sin gate de rol (msapp img_rotarStockTecnico)
                 return (
                   <div
                     key={row.ID}
@@ -407,7 +414,7 @@ export function Stock() {
                           <Pencil size={15} />
                         </button>
                       )}
-                      {showEdit && (
+                      {showAssign && (
                         <button
                           type="button"
                           onClick={() => setAssigning(row)}

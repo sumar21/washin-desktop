@@ -3,6 +3,7 @@ import {
   Eye,
   Pencil,
   UserCog,
+  UserMinus,
   Plus,
   AlertTriangle,
   Building2,
@@ -37,9 +38,36 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
 import { getIncidentes, getFotosIncidente } from '@/services/api';
-import { last12MesesOptions, estadoOptions } from '@/lib/filters';
+import { last12MesesOptions, estadoOptions, edificioOptions } from '@/lib/filters';
 import { cn, proper } from '@/lib/utils';
 import type { Incidente, RepuestoIncidente, FotoIncidente } from '@/types/domain';
+
+/**
+ * Quién anuló el reclamo. Dato duro sólo desde que existe la columna `UsuarioAnulado_IN` en
+ * SharePoint (la escribe el desktop al anular); para el histórico se INFIERE y se marca como tal.
+ *
+ * La inferencia usa `Resuelto_IN` como discriminador de origen, que es exacto y no heurístico:
+ * la mobile anula con `Resuelto_IN='SI'` y el desktop lo deja en `'NO'` (las dos formas de anular
+ * documentadas en el CLAUDE.md raíz). En la mobile sólo puede anular el técnico asignado —su gate
+ * es `Status_IN='A Revisar' And TecnicoAsignado_IN = NombreUser`— y el anulado no toca esa columna,
+ * así que `TecnicoAsignado_IN` ES quien anuló. Verificado contra producción: 398 de los 399
+ * anulados por la mobile tienen técnico cargado.
+ *
+ * Para los anulados viejos del desktop NO se infiere: el técnico que figura (3 de 14) es a quien
+ * se le había avisado, no quien anuló, y atribuírselo sería falso.
+ */
+function anuladoPor(i: Incidente): React.ReactNode {
+  if (i.UsuarioAnulado_IN) return i.UsuarioAnulado_IN;
+  if (i.Resuelto_IN === 'SI' && i.TecnicoAsignado_IN) {
+    return (
+      <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+        {i.TecnicoAsignado_IN}
+        <span className="text-[10px] font-normal italic text-wash-text-muted">estimado</span>
+      </span>
+    );
+  }
+  return <span className="text-wash-text-muted">Sin registro</span>;
+}
 
 const requiereRepuesto = (i: Incidente) => /repuesto/i.test(i.NoResuelto_IN);
 const esCambioMaquina = (i: Incidente) => /cambio/i.test(i.NoResuelto_IN);
@@ -68,7 +96,12 @@ const toneFor = (t: string) =>
       ? tipoTone['Cambio de Maquina']
       : 'bg-slate-50 text-slate-700 ring-slate-300/70');
 
-const GRID = '120px 96px 172px minmax(200px,1.5fr) minmax(150px,1fr) minmax(130px,0.9fr) 120px';
+// Última columna = botonera de acciones. Ancho pensado para el peor caso REAL de una fila:
+// ver + editar + acción contextual + desasignar + anular = 5 × 32px + 4 gaps × 6px = 184px.
+// Con 120px los IconBtn (que son flex sin shrink-0) se comprimían hasta quedar irreconocibles y
+// la acción nueva parecía no existir. El msapp no tenía este problema porque mostraba UN ícono
+// contextual por fila posicionado por X, no una botonera acumulativa.
+const GRID = '120px 96px 150px minmax(190px,1.5fr) minmax(150px,1fr) minmax(120px,0.9fr) 190px';
 
 // Estados de un incidente SIN resolver (por defecto se muestran estos, Resuelto_IN='NO').
 const ESTADOS_IN = ['A Revisar', 'Pendiente', 'Asignado', 'En Aprobacion'];
@@ -182,6 +215,7 @@ export function Incidentes() {
   const editIncidente = useAppStore((s) => s.editIncidente);
   const assignIncidente = useAppStore((s) => s.assignIncidente);
   const cambiarTecnicoIncidente = useAppStore((s) => s.cambiarTecnicoIncidente);
+  const desasignarIncidente = useAppStore((s) => s.desasignarIncidente);
   const cambioMaquinaIncidente = useAppStore((s) => s.cambioMaquinaIncidente);
   const generarCompraIncidente = useAppStore((s) => s.generarCompraIncidente);
   const anularIncidente = useAppStore((s) => s.anularIncidente);
@@ -210,6 +244,10 @@ export function Incidentes() {
   const [anulando, setAnulando] = useState<Incidente | null>(null);
   const [anularBusy, setAnularBusy] = useState(false);
   const [anularError, setAnularError] = useState<string | null>(null);
+  const [anularMotivo, setAnularMotivo] = useState(''); // obligatorio → DescripcionAnulado_IN
+  const [desasignando, setDesasignando] = useState<Incidente | null>(null);
+  const [desasignarBusy, setDesasignarBusy] = useState(false);
+  const [desasignarError, setDesasignarError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -307,13 +345,8 @@ export function Incidentes() {
     },
     [displayList]
   );
-  const edificioOpts = useMemo<MultiOption[]>(
-    () =>
-      [...new Set(displayList.map((i) => i.NombreEdificio_IN).filter(Boolean))]
-        .sort((a, b) => a.localeCompare(b, 'es'))
-        .map((e) => ({ value: e, label: e })),
-    [displayList]
-  );
+  // Edificio: del CATÁLOGO (ABM.Edificios ALTA), no de los incidentes cargados — ver edificioOptions.
+  const edificioOpts = useMemo<MultiOption[]>(() => edificioOptions(edificiosAbm), [edificiosAbm]);
   const tipoOpts = useMemo<MultiOption[]>(
     () =>
       [...new Set(displayList.map((i) => i.NoResuelto_IN).filter(Boolean))]
@@ -378,17 +411,45 @@ export function Incidentes() {
 
   const handleAnular = async () => {
     if (!anulando) return;
+    const motivo = anularMotivo.trim();
+    if (!motivo) {
+      setAnularError('Indicá el motivo de la anulación.');
+      return;
+    }
     setAnularBusy(true);
     setAnularError(null);
     try {
-      await anularIncidente(anulando.ID);
+      await anularIncidente(anulando.ID, motivo);
       setAnulando(null);
+      setAnularMotivo('');
     } catch (err) {
       setAnularError(err instanceof Error ? err.message : 'No se pudo anular el reclamo.');
     } finally {
       setAnularBusy(false);
     }
   };
+
+  const handleDesasignar = async () => {
+    if (!desasignando) return;
+    setDesasignarBusy(true);
+    setDesasignarError(null);
+    try {
+      await desasignarIncidente(desasignando.ID);
+      setDesasignando(null);
+    } catch (err) {
+      setDesasignarError(err instanceof Error ? err.message : 'No se pudo desasignar el reclamo.');
+    } finally {
+      setDesasignarBusy(false);
+    }
+  };
+
+  // Desasignar: solo sobre "A Revisar" con técnico avisado (paridad con el PowerApps de la
+  // mobile, que blanqueaba TecnicoAsignado_IN al "No Resuelto"). Sobre un "Asignado" NO se
+  // ofrece: ese ya comprometió stock y el camino es "Cambiar técnico" (gate también server-side).
+  const desasignarAction = (i: Incidente) =>
+    i.Status_IN === 'A Revisar' && !!i.TecnicoAsignado_IN ? (
+      <IconBtn icon={UserMinus} tone="warning" title="Desasignar técnico" onClick={() => setDesasignando(i)} />
+    ) : null;
 
   // Acción SOLO Admin: anular (baja lógica) un reclamo abierto.
   const adminAction = (i: Incidente) =>
@@ -528,6 +589,7 @@ export function Incidentes() {
                             <IconBtn icon={Pencil} tone="brand" title="Editar reclamo" onClick={() => setEditing(i)} />
                           )}
                           {primaryAction(i)}
+                          {desasignarAction(i)}
                           {adminAction(i)}
                         </div>
                       </div>
@@ -649,6 +711,7 @@ export function Incidentes() {
                             <IconBtn icon={Pencil} tone="brand" title="Editar reclamo" onClick={() => setEditing(i)} />
                           )}
                           {primaryAction(i)}
+                          {desasignarAction(i)}
                           {adminAction(i)}
                         </div>
                       </div>
@@ -733,26 +796,97 @@ export function Incidentes() {
         onSave={editIncidente}
       />
 
-      {/* Anular reclamo (baja lógica) — solo Admin */}
+      {/* Desasignar técnico de un "A Revisar" */}
       <ConfirmDialog
-        open={!!anulando}
-        tone="danger"
-        title="Anular reclamo"
+        open={!!desasignando}
+        title="Desasignar técnico"
         message={
-          anulando
-            ? `¿Anulás el reclamo #${anulando.ID} de ${anulando.NombreEdificio_IN}? Queda anulado (baja lógica) y deja de aparecer entre los abiertos.`
+          desasignando
+            ? `¿Sacás a ${desasignando.TecnicoAsignado_IN} del reclamo #${desasignando.ID} de ${desasignando.NombreEdificio_IN}? El reclamo sigue "A Revisar" pero queda sin técnico avisado. No se toca el stock.`
             : ''
         }
-        confirmLabel={anularBusy ? 'Anulando…' : 'Anular reclamo'}
+        confirmLabel={desasignarBusy ? 'Desasignando…' : 'Desasignar'}
         cancelLabel="Volver"
-        busy={anularBusy}
-        error={anularError}
+        busy={desasignarBusy}
+        error={desasignarError}
         onCancel={() => {
+          setDesasignando(null);
+          setDesasignarError(null);
+        }}
+        onConfirm={handleDesasignar}
+      />
+
+      {/* Anular reclamo (baja lógica) — solo Admin. El motivo es obligatorio: va a
+          DescripcionAnulado_IN, la misma columna que escribe la mobile, y es lo que después se
+          lee en "Motivo de anulación" del detalle. */}
+      <Modal
+        open={!!anulando}
+        onClose={() => {
+          if (anularBusy) return;
           setAnulando(null);
           setAnularError(null);
+          setAnularMotivo('');
         }}
-        onConfirm={handleAnular}
-      />
+        title="Anular reclamo"
+        width={480}
+      >
+        {anularError && (
+          <div
+            role="alert"
+            className="mb-3 flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700"
+          >
+            <AlertCircle size={14} className="shrink-0" />
+            {anularError}
+          </div>
+        )}
+        <p className="text-wash-text-strong">
+          {anulando
+            ? `¿Anulás el reclamo #${anulando.ID} de ${anulando.NombreEdificio_IN}? Queda anulado (baja lógica) y deja de aparecer entre los abiertos.`
+            : ''}
+        </p>
+        <label className="mt-4 block">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
+            Motivo de la anulación <span className="text-red-600">*</span>
+          </span>
+          <textarea
+            value={anularMotivo}
+            onChange={(e) => setAnularMotivo(e.target.value)}
+            disabled={anularBusy}
+            rows={3}
+            autoFocus
+            placeholder="Por qué se anula este reclamo…"
+            className="mt-1.5 w-full resize-none rounded-lg border border-wash-border bg-wash-surface px-3 py-2 text-sm text-wash-text-strong outline-none transition placeholder:text-wash-text-faint focus:border-wash-brand focus:ring-2 focus:ring-wash-brand/20 disabled:opacity-50"
+          />
+          {/* Por qué el botón está apagado. Sin esto el usuario ve un botón gris y no sabe qué le falta. */}
+          {anularMotivo.trim() === '' && (
+            <span className="mt-1.5 block text-[11.5px] text-wash-text-muted">
+              Escribí el motivo para poder anular el reclamo.
+            </span>
+          )}
+        </label>
+        <ModalActions>
+          <button
+            type="button"
+            onClick={() => {
+              setAnulando(null);
+              setAnularError(null);
+              setAnularMotivo('');
+            }}
+            disabled={anularBusy}
+            className="rounded-lg border border-wash-border bg-wash-surface px-5 py-2 font-medium text-wash-text-strong hover:bg-wash-canvas disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={handleAnular}
+            disabled={anularBusy || anularMotivo.trim() === ''}
+            className="rounded-lg bg-wash-status-rejected px-5 py-2 font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {anularBusy ? 'Anulando…' : 'Anular reclamo'}
+          </button>
+        </ModalActions>
+      </Modal>
     </div>
   );
 }
@@ -1240,6 +1374,7 @@ function DetailBody({
           value={incidente.TecnicoAsignado_IN || <span className="font-semibold text-amber-700">Sin asignar</span>}
         />
         <MetaItem label="Asignador" value={incidente.User_IN || '—'} />
+        {incidente.Status_IN === 'Anulado' && <MetaItem label="Anulado por" value={anuladoPor(incidente)} />}
         {incidente.FechaAsignada_IN && <MetaItem label="Asignada" value={incidente.FechaAsignada_IN} />}
         {incidente.FechaResuelto_IN && <MetaItem label="Resuelto" value={incidente.FechaResuelto_IN} />}
         {incidente.MaquinaAsignada_IN && (
@@ -1616,7 +1751,7 @@ function IconBtn({ icon: Icon, tone, title, onClick }: { icon: typeof Eye; tone:
     danger: 'text-red-600 ring-red-400/40 hover:bg-red-50 hover:ring-red-500',
   }[tone];
   return (
-    <button type="button" onClick={onClick} title={title} aria-label={title} className={cn('flex h-8 w-8 items-center justify-center rounded-lg ring-1 transition', cls)}>
+    <button type="button" onClick={onClick} title={title} aria-label={title} className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition', cls)}>
       <Icon size={15} />
     </button>
   );

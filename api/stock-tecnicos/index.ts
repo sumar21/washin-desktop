@@ -9,6 +9,7 @@ import {
   mapTecnicos,
   tecnicosSelectFields,
   STOCK_TEC_EDIT_ROLES,
+  STOCK_TEC_TRANSFER_ROLES,
   STOCK_TEC_REINGRESO_ROLES,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
@@ -53,10 +54,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const cantidad = Number(body.cantidad);
   if (!id) return res.status(400).json({ error: 'invalid_id' });
 
-  // Permisos por acción: editar cantidad y transferir entre técnicos → solo Admin; reingresar al
-  // stock general (devolver) → Admin o Jefe Taller. El Jefe de Taller solo puede devolver.
+  // Permisos por acción, tomados del `Visible` de cada control del msapp (ojo con los nombres
+  // cruzados — ver el bloque de constantes en api/_lib/lists.ts): editar cantidad → solo Admin
+  // (edit_STT); transferir entre técnicos y reingresar al general → Admin o Jefe Taller.
   const denyEdit = () =>
     res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para esta acción sobre el stock de técnicos.' });
+  const denyTransfer = () =>
+    res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para transferir stock entre técnicos.' });
   const denyReingreso = () =>
     res.status(403).json({ error: 'forbidden', message: 'No tenés permiso para reingresar stock.' });
 
@@ -66,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return await edit(id, cantidad, res);
     }
     if (body.action === 'transfer') {
-      if (!STOCK_TEC_EDIT_ROLES.has(session.rol)) return denyEdit();
+      if (!STOCK_TEC_TRANSFER_ROLES.has(session.rol)) return denyTransfer();
       return await transfer(id, cantidad, body.toTecnico, res);
     }
     if (body.action === 'reingreso') {

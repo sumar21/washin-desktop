@@ -34,6 +34,24 @@ export function mesAnoOptions(mesAnos: (string | undefined | null)[]): MultiOpti
     });
 }
 
+/**
+ * Opciones de Edificio para los filtros, desde el CATÁLOGO (`ABM.Edificios` con Status='ALTA',
+ * que es lo que devuelve `GET /api/abm` → `CollectAbmEdificios`), NO desde los datos de la
+ * pantalla. Es el modelo del msapp: `Items = Distinct(CollectEdificios, Edificio)` con
+ * `CollectEdificios = Filter('ABM.Edificios', Status = "ALTA")` — los combos de edificio salen
+ * siempre del catálogo, y sólo los atributos de máquina (marca/modelo/encendido) salen de los datos.
+ *
+ * Antes cada pantalla derivaba sus opciones de las filas cargadas, así que un edificio activo sin
+ * movimientos abiertos no aparecía (reporte de Paul: "Green House Sucre") y la lista cambiaba según
+ * los demás filtros. Ojo con la contracara, asumida a propósito para no divergir del msapp: un
+ * edificio dado de BAJA, o renombrado en ABM después de que se cargó la fila, no está en esta lista
+ * — sus filas viejas conservan el nombre anterior en la columna del dato y no se pueden filtrar.
+ */
+export function edificioOptions(edificios: { Edificio: string }[]): MultiOption[] {
+  const uniq = [...new Set(edificios.map((e) => e.Edificio?.trim()).filter((e): e is string => !!e))];
+  return uniq.sort((a, b) => a.localeCompare(b, 'es')).map((e) => ({ value: e, label: e }));
+}
+
 /** Opciones de estado (valores distintos presentes), en orden dado o alfabético. */
 export function estadoOptions(estados: (string | undefined | null)[], orden?: string[]): MultiOption[] {
   const uniq = [...new Set(estados.filter((e): e is string => !!e && e.trim() !== ''))];

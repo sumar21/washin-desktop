@@ -30,7 +30,7 @@ import {
 import { PopoverClose } from '@/components/ui/popover';
 import { Combobox } from '@/components/ui/combobox';
 import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
-import { last12MesesOptions, estadoOptions } from '@/lib/filters';
+import { last12MesesOptions, estadoOptions, edificioOptions } from '@/lib/filters';
 import { DatePicker, formatDateDDMMYYYY, parseDateString } from '@/components/ui/date-picker';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -89,8 +89,10 @@ export function Ventilaciones() {
   const frecuencias = useAppStore((s) => s.CollectFrecuenciasVent);
   const grupos = useAppStore((s) => s.CollectGruposVent);
   const tecnicos = useAppStore((s) => s.CollectTecnicosDisponibles);
+  const edificiosAbm = useAppStore((s) => s.CollectAbmEdificios);
   const fetchVentilaciones = useAppStore((s) => s.fetchVentilaciones);
   const fetchTecnicos = useAppStore((s) => s.fetchTecnicos);
+  const fetchAbm = useAppStore((s) => s.fetchAbm);
   const asignarVentilacion = useAppStore((s) => s.asignarVentilacion);
   const addVentilacionEdificio = useAppStore((s) => s.addVentilacionEdificio);
   const deleteVentilacion = useAppStore((s) => s.deleteVentilacion);
@@ -121,10 +123,12 @@ export function Ventilaciones() {
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    return Promise.all([fetchVentilaciones(), fetchTecnicos()])
+    // fetchAbm alimenta el catálogo de edificios (ABM.Edificios ALTA) del filtro por Edificio.
+    // Best-effort: si el bundle de ABM falla, el filtro queda sin opciones pero la pantalla carga.
+    return Promise.all([fetchVentilaciones(), fetchTecnicos(), fetchAbm().catch(() => {})])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar las ventilaciones.'))
       .finally(() => setLoading(false));
-  }, [fetchVentilaciones, fetchTecnicos]);
+  }, [fetchVentilaciones, fetchTecnicos, fetchAbm]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; "Reintentar" también dispara load().
@@ -163,13 +167,8 @@ export function Ventilaciones() {
   const mesAnoOpts = useMemo(() => last12MesesOptions(), []);
   // Estado canónico siempre presente + valores extra de los datos (nunca "Sin opciones").
   const estadoOpts = useMemo(() => estadoOptions([...ESTADOS, ...base.map((v) => v.Estado_VE)], ESTADOS), [base]);
-  const edificioOpts = useMemo<MultiOption[]>(
-    () =>
-      [...new Set(base.map((v) => v.Edificio_VE).filter(Boolean))]
-        .sort((a, b) => a.localeCompare(b, 'es'))
-        .map((e) => ({ value: e, label: e })),
-    [base]
-  );
+  // Edificio: del CATÁLOGO (ABM.Edificios ALTA), no de las ventilaciones cargadas — ver edificioOptions.
+  const edificioOpts = useMemo<MultiOption[]>(() => edificioOptions(edificiosAbm), [edificiosAbm]);
   const mesAnoLabel = useMemo(() => new Map(mesAnoOpts.map((o) => [o.value, o.label])), [mesAnoOpts]);
 
   const activeChips = useMemo<{ cat: string; label: string }[]>(() => {

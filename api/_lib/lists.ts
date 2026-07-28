@@ -162,15 +162,28 @@ export const ROLE_TO_LPP_COLUMN: Record<string, string | null> = {
   Tecnico: null, // sin acceso al Desktop
 };
 
-// Permisos de stock (replicados en el frontend). Restauran el modelo del msapp original
-// (VarTipoUser = "Admin" para editar el stock general), con el pedido de gerencia sobre el Jefe
-// de Taller: no toca el stock general y en el de técnicos solo puede reingresar al general.
-/** Stock GENERAL (04.Stock): agregar, editar cantidad, asignar a técnico → solo Admin (como el msapp). */
+// Permisos de stock (replicados en el frontend), tomados del `Visible` de cada control del msapp.
+//
+// ⚠️ En el msapp los NOMBRES de los controles están cruzados respecto de lo que hacen — leer
+// siempre el OnSelect, no el nombre:
+//   · Screen_Stock/img_rotarStockTecnico        → ASIGNAR a técnico   (Set(AsignarStockTecnico,true))
+//   · Screen_StockTecnicos/img_transferir_STT   → REINGRESAR al gral. (Set(ReingresoStock,true))
+//   · Screen_StockTecnicos/img_rotarStockTecnico_STT → TRANSFERIR entre técnicos
+//                                                  (Set(TransferirEntreTecnicos,true))
+//
+/** Stock GENERAL (04.Stock): agregar ítem y editar cantidad → solo Admin (msapp bt_addStock / edit_ST). */
 export const STOCK_GENERAL_EDIT_ROLES = new Set(['Admin']);
-/** Stock de TÉCNICO (99.ABMRepuestos_Tecnico): editar cantidad y transferir entre técnicos → solo Admin. */
+/** Stock de TÉCNICO (99.ABMRepuestos_Tecnico): editar cantidad → solo Admin (msapp edit_STT). */
 export const STOCK_TEC_EDIT_ROLES = new Set(['Admin']);
-/** Stock de TÉCNICO: reingresar al stock general (devolver) → Admin o Jefe Taller. */
+/** Stock de TÉCNICO: transferir entre técnicos → Admin o Jefe Taller (msapp img_rotarStockTecnico_STT). */
+export const STOCK_TEC_TRANSFER_ROLES = new Set(['Admin', 'Jefe Taller']);
+/** Stock de TÉCNICO: reingresar al stock general (devolver) → Admin o Jefe Taller (msapp img_transferir_STT). */
 export const STOCK_TEC_REINGRESO_ROLES = new Set(['Admin', 'Jefe Taller']);
+// NOTA: "asignar del general a un técnico" NO lleva lista de roles. En el msapp ese control
+// (Screen_Stock/img_rotarStockTecnico) tiene `Visible: =ThisItem.Tipo_ST = "REPUESTO"`, sin gate
+// de rol: lo puede hacer cualquiera que tenga el módulo Stock en 99.ListaPermisosDesktop. El
+// `VarTipoUser = "Admin"` que aparece en ese control está sólo en la propiedad X (posición del
+// ícono). El gate equivalente acá es puedeAccederModulo(rol, 'Stock') — ver api/stock/assign.ts.
 
 /** Roles elegibles como "técnico" para asignar stock (igual que la PowerApp original). */
 export const TECNICO_ROLES = new Set(['Tecnico', 'Jefe Taller']);
@@ -769,7 +782,12 @@ export interface HistorialRow {
   ID: number;
   Fecha_IN: string;
   Titulo: string;
+  /** Cierre del incidente según su estado (resolución / motivo de anulación / diagnóstico). */
   Descripcion?: string;
+  /** El RECLAMO original — DescripcionCarga_IN, el problema tal como se reportó. */
+  Reclamo?: string;
+  /** Técnico asignado (TecnicoAsignado_IN). Vacío si nunca se asignó. */
+  Tecnico_IN?: string;
   Edificio_IN: string;
   Status_IN: string;
   Resuelto_IN: string;
@@ -788,6 +806,7 @@ const HISTORIAL_SELECT = [
   'Resuelto_IN',
   'ConcatMaquina_IN',
   'MaquinaAsignada_IN',
+  'TecnicoAsignado_IN',
 ];
 
 export function historialSelectFields(): string[] {
@@ -808,11 +827,17 @@ export function mapHistorial(item: SharePointItem): HistorialRow {
         : status === 'Resuelto'
           ? clean(item.DescripcionResuelto_IN) || clean(item.Descripcion_IN) || clean(item.DescripcionCarga_IN) || undefined
           : clean(item.Descripcion_IN) || clean(item.DescripcionCarga_IN) || clean(item.DescripcionResuelto_IN) || undefined;
+  // El reclamo original siempre viaja aparte del cierre, para poder mostrar las dos caras del
+  // incidente en el historial de la máquina (qué se reportó vs. cómo terminó). Se omite cuando
+  // `desc` YA es DescripcionCarga_IN (estados sin cierre propio) para no repetir el mismo texto.
+  const carga = clean(item.DescripcionCarga_IN) || undefined;
   return {
     ID: Number(item.id),
     Fecha_IN: String(item.Fecha_IN ?? ''),
     Titulo: titulo,
     Descripcion: desc,
+    Reclamo: carga && carga !== desc ? carga : undefined,
+    Tecnico_IN: clean(item.TecnicoAsignado_IN) || undefined,
     Edificio_IN: String(item.NombreEdificio_IN ?? ''),
     Status_IN: String(item.Status_IN ?? ''),
     Resuelto_IN: String(item.Resuelto_IN ?? ''),
@@ -848,6 +873,8 @@ export interface IncidenteRow {
   DescripcionCarga_IN?: string;
   DescripcionResuelto_IN?: string;
   DescripcionAnulado_IN?: string;
+  /** Quién anuló (columna UsuarioAnulado_IN, creada a mano en SharePoint). */
+  UsuarioAnulado_IN?: string;
   FechaResuelto_IN?: string;
   FechaAsignada_IN?: string;
   User_IN: string;
@@ -872,6 +899,11 @@ const INCIDENTE_SELECT = [
   'DescripcionCarga_IN',
   'DescripcionResuelto_IN',
   'DescripcionAnulado_IN',
+  // Auditoría de la anulación: quién apretó "Anular". Se creó a mano en SharePoint (la app no
+  // tiene Sites.Manage.All). Pedirla en el $select es seguro aunque una lista no la tenga:
+  // verificado contra el tenant, Graph ignora las columnas desconocidas del select en lugar de
+  // fallar o vaciar el resto de los campos.
+  'UsuarioAnulado_IN',
   'FechaResuelto_IN',
   'FechaAsignada_IN',
   'User_IN',
@@ -908,6 +940,7 @@ export function mapIncidente(item: SharePointItem): IncidenteRow {
     DescripcionCarga_IN: item.DescripcionCarga_IN ? String(item.DescripcionCarga_IN) : undefined,
     DescripcionResuelto_IN: item.DescripcionResuelto_IN ? String(item.DescripcionResuelto_IN) : undefined,
     DescripcionAnulado_IN: item.DescripcionAnulado_IN ? String(item.DescripcionAnulado_IN) : undefined,
+    UsuarioAnulado_IN: item.UsuarioAnulado_IN ? String(item.UsuarioAnulado_IN) : undefined,
     FechaResuelto_IN: item.FechaResuelto_IN ? String(item.FechaResuelto_IN) : undefined,
     FechaAsignada_IN: item.FechaAsignada_IN ? String(item.FechaAsignada_IN) : undefined,
     User_IN: String(item.User_IN ?? ''),
