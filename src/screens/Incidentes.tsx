@@ -73,6 +73,28 @@ const requiereRepuesto = (i: Incidente) => /repuesto/i.test(i.NoResuelto_IN);
 const esCambioMaquina = (i: Incidente) => /cambio/i.test(i.NoResuelto_IN);
 const segmentoDe = (concat?: string) => (concat ? concat.split(' - ')[0].trim() : '');
 
+// Item que va a Item_DC de 06.DetalleCompra: tiene que ser la clave de MODELO (ConcatMaquina_DM),
+// que es la misma que Item_ST de 04.Stock y la que la recepción de compra le copia a la máquina
+// nueva (api/_lib/stock.ts, crearUnidadMaquinaDeposito: ConcatMaquina_DM = item).
+// ConcatMaquina_IN del incidente NO sirve: viene en clave de UNIDAD ("Segmento - Marca - Serie -
+// ID"), tanto en el alta del desktop (api/incidentes/index.ts, maquinaConcat =
+// ConcatMaquinaIncidente_DM) como en las bitácoras de máquina (api/_lib/maquinaMoves.ts).
+// Mandarla tal cual abre un ítem de stock por unidad, que nunca matchea con el del modelo.
+// Por eso resolvemos la máquina por ConcatMaquinaIncidente_DM y usamos su ConcatMaquina_DM.
+// Si no se identifica la unidad, se cae al comportamiento anterior: la compra igual se genera
+// (la revisa Compras antes de recibir), pero con un item impreciso.
+const itemCompraMaquina = (
+  concatUnidad: string | undefined,
+  maquinas: { ConcatMaquina_DM: string; ConcatMaquinaIncidente_DM: string }[],
+  segmento: string
+) => {
+  const clave = (concatUnidad ?? '').trim().toLowerCase();
+  const maq = clave
+    ? maquinas.find((m) => (m.ConcatMaquinaIncidente_DM ?? '').trim().toLowerCase() === clave)
+    : undefined;
+  return (maq?.ConcatMaquina_DM ?? '').trim() || (concatUnidad ?? '').trim() || segmento;
+};
+
 // Bitácoras de movimiento de máquina: cada transferencia/baja crea un 10.Incidentes YA resuelto
 // como historial (api/_lib/maquinaMoves.ts, NoResuelto_IN 'Transferencia' / 'Baja de Maquina').
 // No son OTs — se ven en el historial de la máquina (DetalleMaquina), NO en la grilla de incidentes;
@@ -775,7 +797,7 @@ export function Incidentes() {
         }}
         onComprar={async (segmento) => {
           if (!cambioMaq) return;
-          const item = cambioMaq.ConcatMaquina_IN || segmento;
+          const item = itemCompraMaquina(cambioMaq.ConcatMaquina_IN, maquinas, segmento);
           await generarCompraIncidente(cambioMaq.ID, { tipoCompra: 'maquina', item, segmento });
           setCambioMaq(null);
         }}
@@ -1532,7 +1554,16 @@ function NuevoIncidenteModal({
   /** Si viene un incidente, el modal está en modo EDICIÓN (solo "A Revisar"). */
   editing?: Incidente | null;
   edificios: { edificio: string; codigo: string }[];
-  maquinas: { ID: number; ConcatMaquinaIncidente_DM: string; IDMaquina_DM: string; Edificio_DM: string; CodigoEdificio_DM?: string; Status_DM: string }[];
+  maquinas: {
+    ID: number;
+    ConcatMaquinaIncidente_DM: string;
+    /** Clave de MODELO (cardinalidad N): la que guardan los incidentes creados desde la mobile. */
+    ConcatMaquina_DM?: string;
+    IDMaquina_DM: string;
+    Edificio_DM: string;
+    CodigoEdificio_DM?: string;
+    Status_DM: string;
+  }[];
   tecnicos: { ID: number; Nombre_Tecnico: string; Telefono?: string }[];
   onClose: () => void;
   onCreate: (payload: IncidentePayload) => Promise<Incidente>;
@@ -1546,6 +1577,10 @@ function NuevoIncidenteModal({
   const [tecId, setTecId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // El incidente TIENE máquina pero no se pudo precargar (dato que este modal no sabe representar).
+  // En ese caso el guardado NO manda las columnas de máquina, para no borrar la identidad de la que
+  // depende la mobile al resolver un cambio de máquina. Se apaga apenas el usuario toca el campo.
+  const [maqSinResolver, setMaqSinResolver] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1553,15 +1588,30 @@ function NuevoIncidenteModal({
     setError(null);
     if (editing) {
       // Precarga desde el incidente. Máquina: match por IDMaquina_DM + edificio (identidad compuesta),
-      // fallback por concat. Técnico: por nombre.
+      // fallback por concat UNITARIO y, para los incidentes creados desde la mobile, por concat de
+      // MODELO acotado al edificio del incidente (ConcatMaquina_DM matchea N unidades del parque:
+      // solo sirve si dentro del edificio queda UNA). Técnico: por nombre.
       setEdificio(editing.NombreEdificio_IN ?? '');
       setDesc(editing.DescripcionCarga_IN ?? '');
-      const maq = maquinas.find(
+      const concatInc = (editing.ConcatMaquina_IN ?? '').trim();
+      let maq = maquinas.find(
         (m) =>
           (editing.IDMaquina_IN && m.IDMaquina_DM === editing.IDMaquina_IN && m.Edificio_DM === editing.NombreEdificio_IN) ||
-          (!!editing.ConcatMaquina_IN && m.ConcatMaquinaIncidente_DM === editing.ConcatMaquina_IN)
+          (!!concatInc && m.ConcatMaquinaIncidente_DM === concatInc)
       );
+      if (!maq && concatInc) {
+        const codInc = (editing.CodigoEdifcio_IN ?? '').trim();
+        const nomInc = (editing.NombreEdificio_IN ?? '').trim().toLowerCase();
+        const porModelo = maquinas.filter(
+          (m) =>
+            m.Status_DM !== 'ELIMINADA' &&
+            (m.ConcatMaquina_DM ?? '').trim().toLowerCase() === concatInc.toLowerCase() &&
+            (codInc ? m.CodigoEdificio_DM === codInc : m.Edificio_DM.trim().toLowerCase() === nomInc)
+        );
+        if (porModelo.length === 1) maq = porModelo[0];
+      }
       setMaqId(maq ? String(maq.ID) : '');
+      setMaqSinResolver(!maq && !!concatInc);
       const tec = tecnicos.find((t) => t.Nombre_Tecnico === editing.TecnicoAsignado_IN);
       setTecId(tec ? String(tec.ID) : '');
     } else {
@@ -1569,6 +1619,7 @@ function NuevoIncidenteModal({
       setMaqId('');
       setDesc('');
       setTecId('');
+      setMaqSinResolver(false);
     }
   }, [open, editing, isOpen, maquinas, tecnicos]);
 
@@ -1618,7 +1669,7 @@ function NuevoIncidenteModal({
               <Combobox
                 options={edificioOpts}
                 value={edificio || null}
-                onChange={(v) => { setEdificio(v); setMaqId(''); }}
+                onChange={(v) => { setEdificio(v); setMaqId(''); setMaqSinResolver(false); }}
                 placeholder="Elegir edificio…"
                 searchPlaceholder="Buscar edificio o código…"
                 emptyText="Sin edificios"
@@ -1631,9 +1682,11 @@ function NuevoIncidenteModal({
               <Combobox
                 options={maquinaOpts}
                 value={maqId || null}
-                onChange={setMaqId}
+                onChange={(v) => { setMaqId(v); setMaqSinResolver(false); }}
                 disabled={!edificio}
-                placeholder={edificio ? 'Sin asignar' : 'Elegí edificio primero'}
+                placeholder={
+                  maqSinResolver ? 'Máquina cargada (no listada) — se conserva' : edificio ? 'Sin asignar' : 'Elegí edificio primero'
+                }
                 searchPlaceholder="Buscar máquina…"
                 emptyText="Sin máquinas"
               />
@@ -1678,11 +1731,15 @@ function NuevoIncidenteModal({
               const maq = maqsDelEdificio.find((m) => String(m.ID) === maqId);
               const tec = tecnicos.find((t) => String(t.ID) === tecId);
               const tecnico = tec?.Nombre_Tecnico;
+              // Máquina: si no se pudo precargar y el usuario no tocó el campo, se mandan
+              // `undefined` y el backend NO pisa ConcatMaquina_IN/IDMaquina_IN (borrarlas deja a la
+              // mobile sin identidad para mover la unidad al resolver un cambio de máquina).
+              // Con el campo tocado —o precarga exitosa— se manda '' explícito y sí se limpia.
+              const maquinaFields = maqSinResolver && !maq ? {} : { maquinaConcat: maq?.ConcatMaquinaIncidente_DM ?? '', idMaquina: maq?.IDMaquina_DM ?? '' };
               const payload: IncidentePayload = {
                 edificio,
                 codigoEdificio: codigo,
-                maquinaConcat: maq?.ConcatMaquinaIncidente_DM,
-                idMaquina: maq?.IDMaquina_DM,
+                ...maquinaFields,
                 descripcion: desc.trim(),
                 tecnico: tecnico || undefined,
               };

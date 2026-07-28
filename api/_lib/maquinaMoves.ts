@@ -11,6 +11,35 @@ import {
 } from './lists.js';
 
 export const DEPOSITO = 'Wash Inn';
+export const DEPOSITO_CODIGO = 'C-9999';
+
+/**
+ * ¿Esta fila de 08.DetalleMaquina está en el depósito?
+ *
+ * CONTRATO CRUZADO — tiene que decidir IGUAL que `estabaEnDeposito` de la mobile
+ * (washin-mobile/api/_lib/incidentes.ts). Gatea el ±1 de 04.Stock desde los dos lados: la mobile
+ * suma al resolver un cambio de máquina, esta app resta al reinstalar desde depósito. Si divergen,
+ * el desbalance queda tapado por el clamp ≥0 de `ajustarStock` y se vuelve invisible.
+ *
+ * Se miran las TRES señales, normalizadas con trim + uppercase:
+ *   1. CodigoEdificio_DM === 'C-9999'  → la más confiable: es un código, no un nombre tipeado.
+ *   2. Status_DM === 'DEPOSITO'
+ *   3. Edificio_DM === 'Wash Inn'
+ * Antes acá era `maquina.Edificio_DM.trim() === DEPOSITO`: una sola señal y case-sensitive, así que
+ * 'WASH INN' o 'Wash inn' —o una fila vieja con solo el código cargado— no la detectaba.
+ */
+export function enDeposito(m: {
+  Edificio_DM?: string;
+  Status_DM?: string;
+  CodigoEdificio_DM?: string;
+}): boolean {
+  const norm = (v?: string) => (v ?? '').trim().toUpperCase();
+  return (
+    norm(m.CodigoEdificio_DM) === norm(DEPOSITO_CODIGO) ||
+    norm(m.Status_DM) === 'DEPOSITO' ||
+    norm(m.Edificio_DM) === norm(DEPOSITO)
+  );
+}
 
 /** Segmentos cuyo stock en 04.Stock se matchea por el NOMBRE del segmento (no por ConcatMaquina). */
 const STOCK_BY_SEGMENT = new Set(['encendedora', 'encendedor', 'cargadora', 'expendedora']);
@@ -91,7 +120,7 @@ export interface TransferInput {
 export async function applyMaquinaTransfer(input: TransferInput): Promise<void> {
   const { maquina, destino, codigoDestino, motivo, encendidoElegido, usuario } = input;
   const vaADeposito = destino.trim() === DEPOSITO;
-  const veniaDeDeposito = maquina.Edificio_DM.trim() === DEPOSITO;
+  const veniaDeDeposito = enDeposito(maquina);
   const key = stockKeyOf(maquina);
 
   if (vaADeposito) {

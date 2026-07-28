@@ -304,11 +304,17 @@ async function editIncidente(id: number, body: Body, res: VercelResponse) {
       message: 'Solo se pueden editar los incidentes en estado "A Revisar".',
     });
   }
+  // ConcatMaquina_IN + IDMaquina_IN son la IDENTIDAD de la máquina del incidente, y de ellas
+  // depende que la mobile pueda encontrar la unidad en 08.DetalleMaquina al resolver un cambio de
+  // máquina (findMaquinaDM). Se escriben SOLO si vienen definidas: el modal manda `undefined`
+  // cuando no logró precargar la máquina (p. ej. incidentes viejos de la mobile, que guardan la
+  // clave de MODELO), y pisarlas con '' borraba esa identidad para siempre en una edición que solo
+  // quería corregir la descripción. Mandar '' explícito sí las limpia (cambio de edificio).
   await updateItem(LIST_IDS.incidentes, id, {
     NombreEdificio_IN: edificio,
     CodigoEdifcio_IN: body.codigoEdificio?.trim() ?? '',
-    ConcatMaquina_IN: body.maquinaConcat?.trim() ?? '',
-    IDMaquina_IN: body.idMaquina?.trim() ?? '',
+    ...(body.maquinaConcat !== undefined && { ConcatMaquina_IN: body.maquinaConcat.trim() }),
+    ...(body.idMaquina !== undefined && { IDMaquina_IN: body.idMaquina.trim() }),
     DescripcionCarga_IN: descripcion,
     TecnicoAsignado_IN: body.tecnico?.trim() ?? '',
   });
