@@ -48,9 +48,14 @@ function CalendarDropdown({
         } as React.ChangeEvent<HTMLSelectElement>)
       }
     >
+      {/* `relative z-10` NO es cosmético: el `nav` del calendario es `absolute inset-x-0 top-0` a
+          TODO el ancho y, por estar posicionado, se pinta encima de la fila del caption — su div
+          transparente tapa el centro, que es donde viven estos desplegables. El default de shadcn
+          se salvaba porque envolvía el <select> en un `dropdown_root` con `relative`; al reemplazar
+          el componente entero ese wrapper desaparece y sin esto el trigger no recibe el click. */}
       <SelectTrigger
         aria-label={ariaLabel}
-        className="h-7 w-auto gap-1 border-0 bg-transparent px-2 text-sm font-medium shadow-none hover:bg-muted focus:ring-0 focus-visible:ring-0"
+        className="relative z-10 h-7 w-auto gap-1 border-0 bg-transparent px-2 text-sm font-medium shadow-none hover:bg-muted focus:ring-0 focus-visible:ring-0"
       >
         <SelectValue />
       </SelectTrigger>
