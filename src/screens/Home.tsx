@@ -185,8 +185,14 @@ export function Home() {
   }, [CollectResumen]);
 
   // ── Incidentes / Ventilaciones que requieren acción ──
+  // `Resuelto_IN === 'NO'` NO alcanza: al anular desde acá se escribe sólo Status_IN='Anulado' y
+  // Resuelto_IN queda en 'NO' a propósito (un anulado no es un resuelto: contarlo como resuelto
+  // ensuciaría los KPIs de resolución — ver api/incidentes/[id].ts). El contrato es que los
+  // consumidores descarten por Status_IN, y este KPI era el que no lo estaba haciendo: sumaba todos
+  // los anulados desde gerencia, para siempre. La grilla de Incidentes ya filtra igual (:414).
+  // Los anulados desde la mobile no entraban porque esa escribe además Resuelto_IN='SI'.
   const incidentesAbiertos = useMemo(
-    () => CollectIncidentes.filter((i) => i.Resuelto_IN === 'NO'),
+    () => CollectIncidentes.filter((i) => i.Resuelto_IN === 'NO' && i.Status_IN !== 'Anulado'),
     [CollectIncidentes]
   );
   const incidentesSinAsignar = useMemo(
