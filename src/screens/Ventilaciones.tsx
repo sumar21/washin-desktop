@@ -929,14 +929,23 @@ function AddEdificioModal({
   const [error, setError] = useState<string | null>(null);
 
   const selected = edificios.find((e) => String(e.ID) === selectedId) ?? null;
+  // Solo los que NO están en el circuito. Antes se listaban todos, y elegir uno que ya estaba
+  // creaba una ventilación DUPLICADA para el mismo edificio: el alta siempre inserta una fila
+  // nueva en 19.Ventilaciones (`addVentilacionEdificio`), no actualiza la existente. El badge
+  // "Ya está en el circuito" avisaba pero no frenaba nada.
+  // `EnCircuito` es `Ventilaciones_ED === 'SI'` de ABM.Edificios, la misma bandera que el alta
+  // pone en 'SI' y la baja en 'NO', así que la lista se mantiene sola.
+  // Para cambiarle grupo o frecuencia a un edificio que YA está en el circuito, se edita la
+  // ventilación existente desde la grilla — no se vuelve a dar de alta.
+  const disponibles = useMemo(() => edificios.filter((e) => !e.EnCircuito), [edificios]);
   const edificioOptions = useMemo(
     () =>
-      edificios.map((e) => ({
+      disponibles.map((e) => ({
         value: String(e.ID),
         label: e.Edificio,
         sublabel: e.Codigo ? `${e.Codigo} · ${e.Direccion}` : e.Direccion,
       })),
-    [edificios]
+    [disponibles]
   );
 
   const reset = () => {
@@ -990,7 +999,7 @@ function AddEdificioModal({
               onChange={pickEdificio}
               placeholder="Elegir edificio…"
               searchPlaceholder="Buscar por nombre, código o dirección…"
-              emptyText="Sin edificios"
+              emptyText="Todos los edificios ya están en el circuito"
             />
           </div>
           {selected && (
