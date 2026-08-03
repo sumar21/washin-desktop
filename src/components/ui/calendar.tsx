@@ -8,7 +8,66 @@ import {
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react"
+
+/**
+ * Desplegables de mes/año con el `Select` de shadcn en vez del `<select>` nativo.
+ *
+ * El default de shadcn deja el select NATIVO con `opacity-0` superpuesto sobre un label
+ * estilizado: el disparador se ve bien, pero la lista que abre es la del sistema operativo y
+ * desentona con el resto de la app. Reemplazando el componente `Dropdown` entero se descarta ese
+ * DOM (`<span dropdown_root><select/><span caption_label/></span>`) y con él las clases que lo
+ * sostenían, así que la lista pasa a ser un popover de Radix como cualquier otro Select del repo.
+ *
+ * react-day-picker espera un `onChange` de `<select>`, así que se le fabrica el evento mínimo que
+ * consume: sólo lee `target.value` (ver `useCalendar`/`DropdownNav`).
+ */
+function CalendarDropdown({
+  options = [],
+  value,
+  onChange,
+  disabled,
+  "aria-label": ariaLabel,
+}: React.ComponentProps<"select"> & {
+  options?: { value: number; label: string; disabled?: boolean }[]
+}) {
+  return (
+    <Select
+      value={value != null ? String(value) : undefined}
+      disabled={disabled}
+      onValueChange={(v) =>
+        onChange?.({
+          target: { value: v },
+        } as React.ChangeEvent<HTMLSelectElement>)
+      }
+    >
+      <SelectTrigger
+        aria-label={ariaLabel}
+        className="h-7 w-auto gap-1 border-0 bg-transparent px-2 text-sm font-medium shadow-none hover:bg-muted focus:ring-0 focus-visible:ring-0"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      {/* z-[90]: por encima del z-[70] del PopoverContent que contiene al calendario.
+          `avoidCollisions` va en true (el repo lo tiene en false por defecto) porque la lista de
+          años son 21 ítems y el calendario suele abrirse cerca del borde inferior: sin esto se
+          va de pantalla. */}
+      <SelectContent className="z-[90] max-h-[280px]" avoidCollisions>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={String(o.value)} disabled={o.disabled}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
 
 function Calendar({
   className,
@@ -161,6 +220,7 @@ function Calendar({
         DayButton: ({ ...props }) => (
           <CalendarDayButton locale={locale} {...props} />
         ),
+        Dropdown: CalendarDropdown,
         WeekNumber: ({ children, ...props }) => {
           return (
             <td {...props}>

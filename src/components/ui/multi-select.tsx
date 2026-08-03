@@ -26,7 +26,7 @@ export function MultiSelect({
   maxHeight = 240,
   emptyText = 'Sin resultados',
   placeholder = 'Todos',
-  maxRender = 60,
+  maxRender,
 }: {
   label: string;
   options: MultiOption[];
@@ -37,15 +37,21 @@ export function MultiSelect({
   maxHeight?: number;
   emptyText?: string;
   placeholder?: string;
+  /** Tope opcional de opciones renderizadas. Sin valor: se renderizan todas. */
   maxRender?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
 
-  const filtered = useMemo(() => {
+  // Ver la nota de `Combobox`: se renderizan todas por defecto y el aviso sale sólo si se truncó
+  // de verdad (antes al buscar recortaba en 60 sin decirlo).
+  const { filtered, coincidencias } = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const list = needle ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
-    return list.slice(0, maxRender);
+    return {
+      filtered: maxRender != null ? list.slice(0, maxRender) : list,
+      coincidencias: list.length,
+    };
   }, [options, q, maxRender]);
 
   // Sin opciones (dataset vacío) → no renderizar el bloque.
@@ -130,9 +136,9 @@ export function MultiSelect({
                 );
               })
             )}
-            {q.trim() === '' && options.length > maxRender && (
+            {coincidencias > filtered.length && (
               <div className="px-3 py-2 text-center text-[11px] text-wash-text-muted">
-                Mostrando {maxRender} de {options.length}. Escribí para filtrar.
+                Mostrando {filtered.length} de {coincidencias}. Escribí para filtrar.
               </div>
             )}
           </div>

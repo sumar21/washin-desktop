@@ -10,9 +10,15 @@ export interface ComboboxOption {
 }
 
 /**
- * Single-select buscable (Popover + input + lista virtual-lite). Bindea por
- * `value` único (nunca por label) → seguro ante labels repetidos. Pensado para
- * catálogos grandes (edificios, técnicos): solo renderiza `maxRender` a la vez.
+ * Single-select buscable (Popover + input + lista scrolleable). Bindea por
+ * `value` único (nunca por label) → seguro ante labels repetidos.
+ *
+ * Por defecto renderiza TODAS las opciones. Antes cortaba en 60 y avisaba
+ * "Mostrando 60 de 93": molesto al elegir de una lista mediana, y encima al
+ * BUSCAR también cortaba en 60 pero SIN avisar — resultados desaparecidos en
+ * silencio. La lista ya vive en un contenedor con scroll (`max-h-[280px]`), así
+ * que los catálogos reales (≈500 edificios) entran sin problema.
+ * `maxRender` queda como válvula de escape para un catálogo patológico.
  */
 export function Combobox({
   options,
@@ -23,7 +29,7 @@ export function Combobox({
   emptyText = 'Sin resultados',
   disabled,
   className,
-  maxRender = 60,
+  maxRender,
 }: {
   options: ComboboxOption[];
   value: string | null;
@@ -33,20 +39,26 @@ export function Combobox({
   emptyText?: string;
   disabled?: boolean;
   className?: string;
+  /** Tope opcional de opciones renderizadas. Sin valor: se renderizan todas. */
   maxRender?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const selected = options.find((o) => o.value === value) ?? null;
 
-  const filtered = useMemo(() => {
+  // `coincidencias` es el total real; `filtered` lo que se pinta. Se separan para poder avisar
+  // cuando se truncó de verdad — también al buscar, que antes recortaba en silencio.
+  const { filtered, coincidencias } = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const list = needle
       ? options.filter(
           (o) => o.label.toLowerCase().includes(needle) || (o.sublabel ?? '').toLowerCase().includes(needle)
         )
       : options;
-    return list.slice(0, maxRender);
+    return {
+      filtered: maxRender != null ? list.slice(0, maxRender) : list,
+      coincidencias: list.length,
+    };
   }, [options, q, maxRender]);
 
   return (
@@ -115,9 +127,9 @@ export function Combobox({
               </button>
             ))
           )}
-          {q.trim() === '' && options.length > maxRender && (
+          {coincidencias > filtered.length && (
             <div className="px-3 py-2 text-center text-[11px] text-wash-text-muted">
-              Mostrando {maxRender} de {options.length}. Escribí para filtrar.
+              Mostrando {filtered.length} de {coincidencias}. Escribí para filtrar.
             </div>
           )}
         </div>
