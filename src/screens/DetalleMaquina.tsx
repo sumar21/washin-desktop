@@ -108,6 +108,26 @@ export function DetalleMaquina() {
   // Edificio)) — ver edificioOptions en @/lib/filters. El resto sí sale del universo de máquinas,
   // también como el msapp (Distinct(CollectDetalleMaquina, Marca_DM/Modelo_DM/Encendido_DM)).
   const edificioOpts = useMemo(() => uniqSorted(edificiosAbm.map((e) => e.Edificio)), [edificiosAbm]);
+
+  // Destinos de una transferencia: catálogo ABM (Status = ALTA) ∪ edificios que ya tienen máquinas.
+  //
+  // Antes salía SOLO de lo segundo (`/api/maquinas` deriva la lista recorriendo el parque), así que
+  // un edificio recién dado de alta era invisible como destino hasta tener su primera máquina —
+  // justo el caso de estrenar un edificio, que es cuando más se necesita.
+  // La unión, y no el reemplazo, es a propósito: el DEPÓSITO ('Wash Inn' / C-9999) no es un edificio
+  // de ABM y desaparecería de la lista, rompiendo el traslado a depósito. Lo mismo con cualquier
+  // edificio viejo que tenga máquinas pero ya no esté en ALTA: se lo sigue ofreciendo para poder
+  // sacarle las máquinas de encima.
+  const destinoOpts = useMemo(() => {
+    const porNombre = new Map<string, { edificio: string; codigo: string }>();
+    for (const e of edificiosDestino) porNombre.set(e.edificio, e); // primero los del parque (traen el depósito)
+    for (const e of edificiosAbm) {
+      if (!e.Edificio) continue;
+      // El código del catálogo manda: es el dato de ABM, no el copiado en cada fila de máquina.
+      porNombre.set(e.Edificio, { edificio: e.Edificio, codigo: e.Codigo ?? '' });
+    }
+    return [...porNombre.values()].sort((a, b) => a.edificio.localeCompare(b.edificio, 'es'));
+  }, [edificiosDestino, edificiosAbm]);
   const segmentoOpts = useMemo(() => uniqSorted(maquinas.map((m) => m.Segmento_DM)), [maquinas]);
   const marcaOpts = useMemo(() => uniqSorted(maquinas.map((m) => m.Marca_DM)), [maquinas]);
   const encendidoOpts = useMemo(
@@ -247,7 +267,7 @@ export function DetalleMaquina() {
       <TransferModal
         maquina={transferring}
         allMaquinas={maquinas}
-        edificios={edificiosDestino}
+        edificios={destinoOpts}
         encendidoOpts={encendidoOpts}
         onClose={() => setTransferring(null)}
         onConfirm={async (payload) => {
