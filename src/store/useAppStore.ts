@@ -58,8 +58,8 @@ import {
   mockGruposVent,
   mockEncendedores,
   mockMaquinasCompra,
-  appVersion,
 } from '@/mock/data';
+import { APP_VERSION } from '@/lib/version';
 import * as api from '@/services/api';
 
 interface AppState {
@@ -357,7 +357,7 @@ const initialState: Omit<
   sidebarCollapsed: readStoredCollapsed(),
   VarUsuario: null,
   VarTipoUser: null,
-  VarVersion: appVersion,
+  VarVersion: APP_VERSION,
   loggedUser: null,
   CollectUser: mockUsuarios,
   Collect_LPP: mockPermisos,

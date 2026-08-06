@@ -44,9 +44,10 @@ export const LIST_IDS = {
 
 /**
  * Versión de la app que la PowerApp guarda en `Version_*` de cada lista.
- * Se replica acá para que los writes del backend queden con el mismo formato.
+ * La fuente única es ./version.ts — acá solo se reexporta para no tocar los imports que ya
+ * existen (`import { APP_VERSION } from '../_lib/lists.js'`).
  */
-export const APP_VERSION = 'v20260520.1.0.0';
+export { APP_VERSION } from './version.js';
 
 // ── Helpers de fecha (formato exacto de la PowerApp: Text(Today(),"[$-es-ES]...")) ──
 // SharePoint guarda TODO como texto (incluso Cantidad_* y las fechas), así que

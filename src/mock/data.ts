@@ -684,4 +684,5 @@ export const mockStockCatalog: StockCatalogItem[] = [
   { ID: 21031, Tipo: 'REPUESTO', Item: 'Turbina Speed Queen', Marca: 'Speed Queen', Codigo: 'S82' },
 ];
 
-export const appVersion = 'v20260520.1.0.0';
+// La versión de la app se mudó a @/lib/version (fuente única en api/_lib/version.ts): no es un
+// dato mock, va a producción y se escribe en SharePoint.
