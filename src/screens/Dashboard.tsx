@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import type { ElementType } from 'react';
 import { LayoutDashboard, MapPin, AlertOctagon, CalendarDays, Filter, Lock } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
@@ -7,6 +7,7 @@ import { dashboardTabsForRole } from '@/lib/nav';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ViewToggle, type GridView } from '@/components/dashboard/GridPanel';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { cn } from '@/lib/utils';
 import DashboardGeneral from '@/screens/dashboard/DashboardGeneral';
 import DashboardVisitas from '@/screens/dashboard/DashboardVisitas';
@@ -52,6 +53,26 @@ export function Dashboard() {
 
   const [tab, setTab] = useState<TabId>(() => allowedTabs[0] ?? 'general');
   const [view, setView] = useState<GridView>('graficos');
+
+  /**
+   * Cambiar de tab (o de gráficos↔grilla) monta un árbol CARO: los memos sobre ~1000 filas
+   * del período más los charts de recharts, todo en un render sincrónico. En un celular eso
+   * bloquea el hilo cientos de ms y el browser no puede pintar NADA mientras dura — ni el
+   * LoadingOverlay del tab nuevo. Efecto: tocás el botón, no pasa nada, y de golpe aparece
+   * el otro reporte.
+   *
+   * `useTransition` marca ese render como no urgente: `swapping` se commitea en el tick del
+   * tap (paint inmediato del spinner) y React arma el árbol nuevo después, cediendo el hilo.
+   */
+  const [swapping, startSwap] = useTransition();
+  const cambiarTab = (t: TabId) => {
+    if (t === tab) return;
+    startSwap(() => setTab(t));
+  };
+  const cambiarView = (v: GridView) => {
+    if (v === view) return;
+    startSwap(() => setView(v));
+  };
   const meses = useMemo(() => monthOptions(24), []);
   // Período por defecto: el mes anterior (el mes en curso suele estar incompleto y da
   // números parciales). meses[1] = mes pasado; fallback a meses[0] si sólo hay uno.
@@ -108,16 +129,21 @@ export function Dashboard() {
                 hastaLabel={hastaLabel}
               />
             )}
-            {rangeVisible && <ViewToggle value={view} onChange={setView} />}
+            {rangeVisible && <ViewToggle value={view} onChange={cambiarView} />}
             {/* Un solo tab visible ⇒ no tiene sentido el segmented control. */}
-            {visibleTabs.length > 1 && <TabControl tabs={visibleTabs} tab={activeId} onTab={setTab} />}
+            {visibleTabs.length > 1 && <TabControl tabs={visibleTabs} tab={activeId} onTab={cambiarTab} />}
           </div>
         }
       />
 
-      {activeId === 'general' && <DashboardGeneral />}
-      {activeId === 'visitas' && <DashboardVisitas desde={desde} hasta={hasta} view={view} />}
-      {activeId === 'incidentes' && <DashboardIncidentes desde={desde} hasta={hasta} view={view} />}
+      {/* Wrapper `relative` propio: el overlay del swap tapa SOLO el contenido, no el header,
+          así los botones siguen respondiendo mientras se arma el reporte nuevo. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <LoadingOverlay visible={swapping} label="Cargando reporte…" />
+        {activeId === 'general' && <DashboardGeneral />}
+        {activeId === 'visitas' && <DashboardVisitas desde={desde} hasta={hasta} view={view} />}
+        {activeId === 'incidentes' && <DashboardIncidentes desde={desde} hasta={hasta} view={view} />}
+      </div>
     </div>
   );
 }

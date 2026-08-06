@@ -5,7 +5,8 @@ import {
   mapStock,
   stockSelectFields,
   STOCK_GENERAL_EDIT_ROLES,
-  isMachineSegment,
+  requiereSerieManual,
+  esUnidadDeMaquina,
   fechasHoy,
   APP_VERSION,
 } from '../_lib/lists.js';
@@ -57,12 +58,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'invalid', message: 'Faltan datos del item o la cantidad' });
     }
 
-    // Máquinas SERIADAS (lavadora/secadora): serie + ID por CADA unidad, y una fila por unidad en
-    // 08.DetalleMaquina. Cargadora/expendedora/encendedora NO son seriadas (isMachineSegment=false):
-    // van como cantidad simple en 04.Stock con item = nombre del segmento (paridad con el msapp).
-    const esMaquina = isMachineSegment(tipo);
+    // Máquinas SERIADAS (lavadora/secadora): serie + ID por CADA unidad.
+    // Cargadora/expendedora/encendedora no piden serie ni item (item = nombre del segmento),
+    // pero SÍ son máquinas: también se dan de alta en el parque más abajo.
+    const pideSerie = requiereSerieManual(tipo);
     const unidades = body.unidades ?? [];
-    if (esMaquina) {
+    if (pideSerie) {
       if (
         unidades.length !== cantidad ||
         unidades.some((u) => !u?.nroSerie?.trim() || !u?.idMaquina?.trim())
@@ -119,15 +120,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stockResult = created;
       }
 
-      // Máquinas seriadas: una fila por unidad en 08.DetalleMaquina (mismo helper que el receive).
-      if (esMaquina) {
-        for (const u of unidades) {
+      // Alta en el parque (08.DetalleMaquina, DEPOSITO / Wash Inn): UNA fila por unidad, para
+      // todo lo que no sea repuesto. Las seriadas usan la serie/ID que cargó el usuario; las
+      // que no piden serie (cargadora/expendedora/encendedora) la reciben del RowID.
+      if (esUnidadDeMaquina(tipo)) {
+        for (let u = 0; u < cantidad; u++) {
+          const unidad = pideSerie ? unidades[u] : undefined;
           await crearUnidadMaquinaDeposito({
             segmento: tipo,
             item,
             marca: body.marca ?? '',
-            nroSerie: u.nroSerie ?? '',
-            idMaquina: u.idMaquina ?? '',
+            nroSerie: unidad?.nroSerie ?? '',
+            idMaquina: unidad?.idMaquina ?? '',
             fecha: f.fecha,
             mesAno: f.mesAno,
           });

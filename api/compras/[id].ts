@@ -9,7 +9,8 @@ import {
   mapStock,
   stockSelectFields,
   fechasHoy,
-  isMachineSegment,
+  requiereSerieManual,
+  esUnidadDeMaquina,
   APP_VERSION,
 } from '../_lib/lists.js';
 import { readSession, type SessionPayload } from '../_lib/session.js';
@@ -192,7 +193,7 @@ async function recibir(id: number, req: VercelRequest, res: VercelResponse, sess
   // Validación de obligatoriedad (antes de mutar nada): para cada línea de MÁQUINA con
   // cantidad real > 0, debe venir una serie + ID por CADA unidad. Serie e ID obligatorios.
   for (const d of detalles) {
-    if (!isMachineSegment(d.Segmento_DC)) continue;
+    if (!requiereSerieManual(d.Segmento_DC)) continue;
     const line = byId.get(d.ID);
     const qreal = Math.max(0, Math.floor(line?.cantidadReal ?? d.Cantidad_DC));
     if (qreal <= 0) continue;
@@ -257,9 +258,10 @@ async function recibir(id: number, req: VercelRequest, res: VercelResponse, sess
       stockByItem.set(key, created);
     }
 
-    // Máquinas seriadas (no repuesto/cargadora/expendedora/encendedora): una fila por unidad en
-    // 08.DetalleMaquina. Mismo helper que usa el alta manual de stock (api/_lib/stock.ts).
-    if (isMachineSegment(d.Segmento_DC)) {
+    // Alta en el parque: una fila por unidad en 08.DetalleMaquina para todo lo que no sea
+    // repuesto (cargadora/expendedora/encendedora incluidas — no piden serie, se autoasigna
+    // del RowID). Mismo helper que el alta manual de stock (api/_lib/stock.ts).
+    if (esUnidadDeMaquina(d.Segmento_DC)) {
       for (let u = 0; u < qreal; u++) {
         const unidad = line?.unidades?.[u];
         await crearUnidadMaquinaDeposito({

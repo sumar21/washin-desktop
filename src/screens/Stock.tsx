@@ -548,11 +548,13 @@ export function Stock() {
   );
 }
 
-// Segmentos SERIADOS: máquinas individuales que llevan Nº serie + ID por unidad y van al parque
-// (08.DetalleMaquina). Regla idéntica al backend `isMachineSegment` — en la práctica: lavadora,
-// secadora simple y secadora doble.
+// Segmentos SERIADOS: los que llevan Nº serie + ID tipeados por unidad (lavadora, secadora
+// simple y doble). Espeja al backend `requiereSerieManual`.
+// OJO: esto NO decide si va al parque (08.DetalleMaquina) — cargadora/expendedora/encendedora
+// no piden serie pero también son máquinas y se dan de alta igual. Eso lo decide el backend
+// con `esUnidadDeMaquina`; el front solo elige qué campos pedir.
 const SIMPLE_SEGMENTS = new Set(['repuesto', 'cargadora', 'expendedora', 'encendedor', 'encendedora']);
-const isMachineSegment = (s: string) => !SIMPLE_SEGMENTS.has(s.trim().toLowerCase());
+const requiereSerieManual = (s: string) => !SIMPLE_SEGMENTS.has(s.trim().toLowerCase());
 
 // Segmentos "el item ES el segmento": cargadora/expendedora/encendedora NO se eligen de un catálogo
 // de ítems (por eso el combo salía vacío y el botón quedaba deshabilitado); el item es el nombre del
@@ -715,7 +717,7 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
 
   // Tres modos: SERIADA (lavadora/secadora) pide serie+ID por unidad; SEGMENTO-COMO-ITEM
   // (cargadora/expendedora/encendedora) no pide item ni serie; el resto (repuesto) elige item.
-  const isSerial = segmento ? isMachineSegment(segmento) : false;
+  const isSerial = segmento ? requiereSerieManual(segmento) : false;
   const isSegItem = segmento ? isSegmentAsItem(segmento) : false;
   const needsItem = !!segmento && !isSegItem; // repuesto + máquinas seriadas eligen item del catálogo
   const qty = Math.max(0, Math.floor(Number(cantidad) || 0));
@@ -738,7 +740,7 @@ function AddStockModal({ open, onClose, catalog, segmentos, onAdd }: AddStockMod
   const changeSegmento = (value: string) => {
     setSegmento(value);
     setSelectedId(null);
-    setUnidades(isMachineSegment(value) ? resizeUnidades([], qty) : []);
+    setUnidades(requiereSerieManual(value) ? resizeUnidades([], qty) : []);
   };
   // Cambiar cantidad: para seriadas, mantiene las N unidades sincronizadas.
   const changeCantidad = (nextStr: string) => {

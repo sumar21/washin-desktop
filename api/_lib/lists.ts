@@ -106,12 +106,28 @@ export function ventanaMesActualYSiguiente(now = new Date()): [string, string] {
   return [mesAno, `${String(nextMm).padStart(2, '0')}/${nextYyyy}`];
 }
 
-/** Segmentos que se reciben como "repuesto simple" (solo suman a 04.Stock, sin crear máquina en 08). */
-const SIMPLE_RECEIVE_SEGMENTS = new Set(['repuesto', 'cargadora', 'expendedora', 'encendedor', 'encendedora']);
+// OJO — son DOS preguntas distintas, no una. Confundirlas hacía que cargadora/expendedora/
+// encendedora entraran a 04.Stock pero NUNCA se crearan como máquina en el depósito:
+//   1. ¿Lleva Nº de serie e ID tipeados a mano?  → NO para repuesto ni para esos tres.
+//   2. ¿Es una unidad de máquina que vive en 08.DetalleMaquina? → SÍ para todo lo que no es repuesto.
+// El msapp original hace exactamente eso: `If(tipoItem <> "Repuesto", Patch('08.DetalleMaquina', …))`
+// y para esos tres deja IDMaquina_DM en blanco, autoasignando serie/ID desde el RowID después.
 
-/** ¿El segmento representa una máquina con número de serie (crea fila en 08.DetalleMaquina al recibir)? */
-export function isMachineSegment(segmento: string): boolean {
-  return !SIMPLE_RECEIVE_SEGMENTS.has(segmento.trim().toLowerCase());
+/** Segmentos sin Nº de serie / ID propios: se autoasignan del RowID de SharePoint. */
+const SEGMENTOS_SIN_SERIE_MANUAL = new Set(['repuesto', 'cargadora', 'expendedora', 'encendedor', 'encendedora']);
+
+/** ¿Hay que pedir Nº de serie + ID de máquina por cada unidad? (lavadora / secadoras) */
+export function requiereSerieManual(segmento: string): boolean {
+  return !SEGMENTOS_SIN_SERIE_MANUAL.has(segmento.trim().toLowerCase());
+}
+
+/**
+ * ¿El segmento es una unidad de máquina que se da de alta en el parque (08.DetalleMaquina,
+ * DEPOSITO / Wash Inn)? Todo lo que no sea repuesto: cargadora, expendedora y encendedora
+ * TAMBIÉN son máquinas — se instalan en un edificio, se transfieren y tienen incidentes.
+ */
+export function esUnidadDeMaquina(segmento: string): boolean {
+  return segmento.trim().toLowerCase() !== 'repuesto';
 }
 
 // ── Usuarios ──────────────────────────────────────────────────────────────
@@ -290,7 +306,10 @@ export interface RegistroRow {
   Edificio: string;
   NroRuta_R: string;
   NroCircuito_R: string;
-  Estado: 'Pendiente' | 'Finalizado' | 'Anulado';
+  // 'Cancelado' = el técnico fue al edificio y NO pudo ingresar (lo escribe la app móvil
+  // junto con MotivoCancelacion_R). 'Anulado' = la visita se anuló desde el Desktop.
+  // Ninguno de los dos es una visita realizada.
+  Estado: 'Pendiente' | 'Finalizado' | 'Cancelado' | 'Anulado';
   Usuario: string;
   MesAño: string;
   HoraInicio?: string;
@@ -311,6 +330,10 @@ export interface RegistroRow {
   Check?: number;
   Codigo?: string;
   Direccion?: string;
+  /** Por qué no pudo ingresar (solo en Estado 'Cancelado'). */
+  MotivoCancelacion?: string;
+  /** Texto libre del técnico sobre la cancelación. */
+  ObservacionCancelacion?: string;
 }
 
 const REGISTROS_SELECT = [
@@ -332,6 +355,8 @@ const REGISTROS_SELECT = [
   'ObservacionEdificio_R',
   'Codigo',
   'Direccion',
+  'MotivoCancelacion_R',
+  'ObservacionCancelacion_R',
 ];
 
 export function mapRegistro(item: SharePointItem): RegistroRow {
@@ -361,6 +386,12 @@ export function mapRegistro(item: SharePointItem): RegistroRow {
     Check: item.Check != null ? check : undefined,
     Codigo: item.Codigo ? String(item.Codigo) : undefined,
     Direccion: item.Direccion ? String(item.Direccion) : undefined,
+    // Los motivos vienen con espacios y saltos de línea al final ("Falta De Respuesta\n"):
+    // se normalizan acá para que agrupen bien aguas abajo.
+    MotivoCancelacion: item.MotivoCancelacion_R ? String(item.MotivoCancelacion_R).trim() : undefined,
+    ObservacionCancelacion: item.ObservacionCancelacion_R
+      ? String(item.ObservacionCancelacion_R).trim()
+      : undefined,
   };
 }
 
@@ -379,7 +410,11 @@ export interface DetalleRow {
   Check: string; // 'Ok' | 'No'
   Observacion: string; // ObservacionUnica
   IDUnico: string; // linkea con 01.Registros.IDUnico
-  Edificio: string;
+  // OJO: en 02.Detalles la columna `Edificio` guarda el CÓDIGO (ej. 'C-0123') y el nombre
+  // vive en `NombreEdificio_D`. Acá se exponen con los mismos nombres que 01.Registros
+  // (Edificio = nombre, Codigo = código) para que la UI no tenga que saber la diferencia.
+  Edificio: string; // NombreEdificio_D
+  Codigo: string; // col. Edificio (código)
   Tecnico: string; // Nombre (técnico)
   Fecha: string; // Fecha_D (dd/mm/yyyy)
   MesAno: string; // FechaMesAno_D (mm/yyyy)
@@ -392,6 +427,7 @@ const DETALLE_SELECT = [
   'ObservacionUnica',
   'IDUnico',
   'Edificio',
+  'NombreEdificio_D',
   'Nombre',
   'Fecha_D',
   'FechaMesAno_D',
@@ -409,7 +445,9 @@ export function mapDetalle(item: SharePointItem): DetalleRow {
     Check: String(item.Check ?? '').trim(),
     Observacion: String(item.ObservacionUnica ?? '').trim(),
     IDUnico: String(item.IDUnico ?? '').trim(),
-    Edificio: String(item.Edificio ?? '').trim(),
+    // Si NombreEdificio_D viniera vacío (filas viejas), cae al código para no mostrar '—'.
+    Edificio: String(item.NombreEdificio_D ?? item.Edificio ?? '').trim(),
+    Codigo: String(item.Edificio ?? '').trim(),
     Tecnico: String(item.Nombre ?? '').trim(),
     Fecha: String(item.Fecha_D ?? '').trim(),
     MesAno: String(item.FechaMesAno_D ?? '').trim(),

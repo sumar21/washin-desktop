@@ -12,11 +12,17 @@ import { cn } from '@/lib/utils';
  *  - `columns`  → vista UNIFICADA/curada (pocas columnas, datos que importan).
  *  - `toFlat`   → export CRUDO (una columna por campo, sin unificar) para el .xlsx.
  *
- * El export respeta el filtro de búsqueda y trae TODO (sin el cap de display).
+ * El export respeta el filtro de búsqueda y trae TODO.
+ *
+ * SIN tope de filas en pantalla: se muestra todo lo que traiga el período. Había un cap
+ * (500, después 2000) para que `DataTable` no metiera decenas de miles de filas en el DOM
+ * —no virtualiza—, pero el número era arbitrario y el costo era peor que el problema: la
+ * tabla escondía la mitad de los datos sin que se notara. Referencia de volumen real: un mes
+ * son ~1.000 filas en Resumen y ~7.800 en el Detalle (≈8 ítems por visita).
+ *
+ * ponytail: si con rangos largos el scroll se pone pesado, la salida NO es volver a topear
+ * sino virtualizar `DataTable` (renderizar solo las filas visibles).
  */
-
-// Cap de filas en pantalla (DataTable no virtualiza). El Excel igual exporta todo.
-const DISPLAY_CAP = 500;
 
 export type GridView = 'graficos' | 'grilla';
 
@@ -56,8 +62,6 @@ export function GridPanel<T>({
     return rows.filter((r) => search(r).toLowerCase().includes(t));
   }, [rows, q, search]);
 
-  const capped = filtered.length > DISPLAY_CAP ? filtered.slice(0, DISPLAY_CAP) : filtered;
-
   const download = async () => {
     if (downloading || filtered.length === 0) return;
     setDownloading(true);
@@ -76,8 +80,10 @@ export function GridPanel<T>({
 
   return (
     <div className="flex h-full flex-col gap-3">
+      {/* En mobile el buscador se lleva su propia fila (basis-full) y los controles bajan a la
+          segunda: con el sub-toggle de 3 modos, todo en una sola línea no entraba. */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-w-0 basis-full sm:basis-auto sm:flex-1">
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-wash-text-faint" />
           <input
             value={q}
@@ -91,26 +97,23 @@ export function GridPanel<T>({
           {filtered.length !== rows.length ? ` / ${rows.length}` : ''} fila{filtered.length === 1 ? '' : 's'}
         </span>
         {headerExtra}
+        {/* En <sm queda solo el ícono: el texto "Excel" le comía el lugar al sub-toggle. */}
         <button
           type="button"
           onClick={download}
           disabled={downloading || filtered.length === 0}
-          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-wash-action px-3.5 text-sm font-medium text-white transition-colors hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          title="Descargar Excel"
+          aria-label="Descargar Excel"
+          className="ml-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-wash-action px-2.5 text-sm font-medium text-white transition-colors hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50 sm:ml-0 sm:px-3.5"
         >
-          <Download size={15} />
-          {downloading ? 'Generando…' : 'Excel'}
+          <Download size={15} className={cn('shrink-0', downloading && 'animate-pulse')} />
+          <span className="hidden sm:inline">{downloading ? 'Generando…' : 'Excel'}</span>
         </button>
       </div>
 
-      {filtered.length > DISPLAY_CAP && (
-        <p className="text-[11px] text-wash-text-faint">
-          Mostrando las primeras {DISPLAY_CAP} de {filtered.length} filas. Descargá el Excel para el detalle completo.
-        </p>
-      )}
-
       <div className="min-h-0 flex-1">
         <DataTable
-          rows={capped}
+          rows={filtered}
           columns={columns}
           rowKey={rowKey}
           mobileCard={mobileCard}

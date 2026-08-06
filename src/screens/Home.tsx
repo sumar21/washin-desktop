@@ -698,7 +698,10 @@ export function Home() {
                   />
                 ) : (
                   <div className="grid max-h-[440px] grid-cols-1 gap-2 overflow-y-auto pr-0.5 md:grid-cols-2">
-                    {visitasVisibles.slice(0, 50).map((r) => (
+                    {/* Sin tope: antes cortaba en 50 sin avisar, así que con el filtro "todas"
+                        se veían 50 de ~1.000 visitas del mes y nada lo indicaba. El contenedor
+                        ya scrollea. */}
+                    {visitasVisibles.map((r) => (
                       <VisitaCard
                         key={r.ID}
                         registro={r}

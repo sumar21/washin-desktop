@@ -62,6 +62,14 @@ const palette: Record<string, Tone> = {
     dot: 'bg-slate-400',
     ring: 'ring-slate-300/70',
   },
+  // Visita en la que el técnico fue pero no pudo ingresar: no es un error del sistema
+  // pero sí algo a mirar → rose, como Rechazada.
+  Cancelado: {
+    bg: 'bg-rose-50',
+    text: 'text-rose-800',
+    dot: 'bg-rose-500',
+    ring: 'ring-rose-300/70',
+  },
   Asignado: {
     bg: 'bg-sky-50',
     text: 'text-sky-800',

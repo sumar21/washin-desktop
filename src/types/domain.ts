@@ -81,7 +81,11 @@ export interface Registro {
   Edificio: string;
   NroRuta_R: string;
   NroCircuito_R: string;
-  Estado: 'Pendiente' | 'Finalizado';
+  /**
+   * 'Cancelado' = el técnico fue al edificio y NO pudo ingresar (trae `MotivoCancelacion`).
+   * 'Anulado' = la visita se anuló desde el Desktop. Ninguno cuenta como visita realizada.
+   */
+  Estado: 'Pendiente' | 'Finalizado' | 'Cancelado' | 'Anulado';
   Usuario: string;
   MesAño: string;
   HoraInicio?: string;
@@ -103,6 +107,10 @@ export interface Registro {
   Check?: number;
   Codigo?: string;
   Direccion?: string;
+  /** Por qué no pudo ingresar (solo en Estado 'Cancelado'). */
+  MotivoCancelacion?: string;
+  /** Texto libre del técnico sobre la cancelación. */
+  ObservacionCancelacion?: string;
 }
 
 /**
@@ -119,7 +127,10 @@ export interface DetalleVisita {
   Observacion: string;
   /** Clave que agrupa los ítems de una misma visita (01.Registros.IDUnico). */
   IDUnico: string;
+  /** Nombre del edificio (en la lista vive en `NombreEdificio_D`). */
   Edificio: string;
+  /** Código del edificio (en la lista vive en la columna `Edificio`). */
+  Codigo: string;
   Tecnico: string;
   /** Fecha del día de la visita (dd/mm/yyyy). */
   Fecha: string;

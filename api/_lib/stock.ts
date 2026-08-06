@@ -57,7 +57,9 @@ export async function crearUnidadMaquinaDeposito(u: {
     // ConcatMaquina_DM NO se toca: quedó = item en el create, y ESA es la clave con la que 04.Stock
     // identifica el ítem (el match de stock es por Item_ST). ConcatMaquinaIncidente_DM identifica
     // la UNIDAD: "Segmento - Marca - Serie - ID".
-    ConcatMaquinaIncidente_DM: [u.segmento, marca, nroSerie, idMaquina]
+    // Sin serie manual (cargadora/expendedora/encendedora) serie e ID son los dos el RowID:
+    // se escribe una sola vez para no quedar "Cargadora - 1234 - 1234".
+    ConcatMaquinaIncidente_DM: [u.segmento, marca, nroSerie, nroSerie === idMaquina ? '' : idMaquina]
       .filter((p) => String(p).trim() !== '')
       .join(' - '),
   });

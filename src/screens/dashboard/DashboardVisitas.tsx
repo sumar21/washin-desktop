@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import type { ElementType, ReactNode } from 'react';
 import {
   Building2,
@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   XCircle,
   ClipboardList,
+  DoorClosed,
 } from 'lucide-react';
 import {
   Bar,
@@ -92,6 +93,15 @@ function fmtHMS(total: number | null): string {
   return `${pad2(Math.floor(s / 3600))}:${pad2(Math.floor((s % 3600) / 60))}:${pad2(s % 60)}`;
 }
 
+// ── Visita REALIZADA vs. no realizada ─────────────────────────────────────────
+// 01.Registros tiene 4 estados: Finalizado (la visita se hizo), Cancelado (el técnico
+// fue y NO pudo ingresar — trae MotivoCancelacion), Anulado (anulada desde el Desktop)
+// y Pendiente. Solo Finalizado cuenta como visita: contar las filas crudas infla los
+// KPIs ~5% todos los meses.
+const esRealizada = (r: Registro) => r.Estado === 'Finalizado';
+/** Fue al edificio y no pudo entrar. Es lo que se lista en la vista "No ingresadas". */
+const esNoIngresada = (r: Registro) => r.Estado === 'Cancelado';
+
 // ── Métricas de un conjunto de registros (un mes) ─────────────────────────────
 interface MonthMetrics {
   visitas: number;
@@ -101,9 +111,12 @@ interface MonthMetrics {
   okItems: number; // Σ ítems OK
   revisarItems: number; // Σ ítems a revisar
   controladas: number; // visitas con control (Ok+Check > 0)
+  noIngresadas: number; // fue y no pudo ingresar (Estado 'Cancelado')
 }
 
-function metricsFor(rows: Registro[]): MonthMetrics {
+function metricsFor(todas: Registro[]): MonthMetrics {
+  const noIngresadas = todas.filter(esNoIngresada).length;
+  const rows = todas.filter(esRealizada);
   const edificios = new Set(rows.map((r) => r.Edificio.trim()).filter(Boolean)).size;
 
   let durSum = 0;
@@ -141,6 +154,7 @@ function metricsFor(rows: Registro[]): MonthMetrics {
     okItems,
     revisarItems,
     controladas,
+    noIngresadas,
   };
 }
 
@@ -321,9 +335,12 @@ const DETALLE_COLUMNS: Column<DetalleVisita>[] = [
     header: 'Edificio',
     width: 'minmax(150px,1.1fr)',
     render: (r) => (
-      <span className="truncate font-medium text-wash-text-strong" title={r.Edificio}>
-        {r.Edificio || '—'}
-      </span>
+      <div className="min-w-0">
+        <div className="truncate font-medium text-wash-text-strong" title={r.Edificio}>
+          {r.Edificio || '—'}
+        </div>
+        {r.Codigo && <div className="truncate text-[11px] text-wash-text-muted">{r.Codigo}</div>}
+      </div>
     ),
   },
   {
@@ -400,12 +417,137 @@ function detalleCard(r: DetalleVisita) {
 }
 
 const detalleSearch = (r: DetalleVisita) =>
-  `${r.Item} ${r.Edificio} ${r.Tecnico} ${r.Observacion} ${r.Estado} ${r.Fecha} ${r.Check}`;
+  `${r.Item} ${r.Edificio} ${r.Codigo} ${r.Tecnico} ${r.Observacion} ${r.Estado} ${r.Fecha} ${r.Check}`;
+
+// ── No ingresadas (01.Registros con Estado 'Cancelado') ───────────────────────
+// El técnico llegó al edificio (hay HoraVisita) pero no pudo entrar: no hay HoraSalida
+// ni ítems de control. El POR QUÉ es lo único que importa acá → motivo + observación
+// se llevan el ancho de la tabla.
+const NO_INGRESO_COLUMNS: Column<Registro>[] = [
+  {
+    key: 'edificio',
+    header: 'Edificio',
+    width: 'minmax(170px,1.3fr)',
+    render: (r) => (
+      <div className="min-w-0">
+        <div className="truncate font-medium text-wash-text-strong" title={r.Edificio}>
+          {r.Edificio || '—'}
+        </div>
+        {r.Codigo && <div className="truncate text-[11px] text-wash-text-muted">{r.Codigo}</div>}
+      </div>
+    ),
+  },
+  {
+    key: 'tecnico',
+    header: 'Técnico',
+    width: 'minmax(120px,0.9fr)',
+    render: (r) => <span className="truncate text-wash-text">{proper(r.Usuario) || '—'}</span>,
+  },
+  {
+    key: 'fecha',
+    header: 'Fecha',
+    width: '104px',
+    align: 'center',
+    truncate: false,
+    render: (r) => <span className="tabular-nums text-wash-text">{fechaTxt(r)}</span>,
+  },
+  {
+    key: 'llegada',
+    header: 'Llegada',
+    width: '92px',
+    align: 'center',
+    truncate: false,
+    render: (r) => <span className="tabular-nums text-wash-text">{r.HoraVisita || '—'}</span>,
+  },
+  {
+    key: 'motivo',
+    header: 'Motivo',
+    width: 'minmax(180px,1.3fr)',
+    render: (r) =>
+      r.MotivoCancelacion ? (
+        <span className="truncate font-medium text-wash-text-strong" title={r.MotivoCancelacion}>
+          {proper(r.MotivoCancelacion)}
+        </span>
+      ) : (
+        <span className="text-wash-text-faint">Sin motivo indicado</span>
+      ),
+  },
+  {
+    key: 'observacion',
+    header: 'Observación del técnico',
+    width: 'minmax(200px,1.8fr)',
+    render: (r) =>
+      r.ObservacionCancelacion ? (
+        <span className="truncate text-wash-text" title={r.ObservacionCancelacion}>
+          {r.ObservacionCancelacion}
+        </span>
+      ) : (
+        <span className="text-wash-text-faint">—</span>
+      ),
+  },
+];
+
+/** Card mobile de una visita no ingresada: el motivo es el título. */
+function noIngresoCard(r: Registro) {
+  return (
+    <div className="rounded-xl bg-wash-surface p-3 shadow-sm ring-1 ring-wash-border">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-[14px] font-semibold text-wash-text-strong">{r.Edificio || '—'}</p>
+          {r.Codigo && <p className="truncate text-[11px] text-wash-text-muted">{r.Codigo}</p>}
+        </div>
+        <StatusBadge status={r.Estado} />
+      </div>
+      <div className="mt-2.5 flex items-start gap-1.5 border-t border-wash-divider/60 pt-2.5">
+        <DoorClosed size={13} className="mt-0.5 shrink-0 text-rose-500" />
+        <p className="min-w-0 text-[13px] font-medium text-wash-text-strong">
+          {r.MotivoCancelacion ? proper(r.MotivoCancelacion) : 'Sin motivo indicado'}
+        </p>
+      </div>
+      {r.ObservacionCancelacion && (
+        <p className="mt-1.5 text-[12px] text-wash-text">{r.ObservacionCancelacion}</p>
+      )}
+      <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-wash-divider/60 pt-2.5 text-[12px] text-wash-text-muted">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <User size={12} className="shrink-0" />
+          <span className="truncate">{proper(r.Usuario) || '—'}</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <CalendarDays size={12} className="shrink-0" />
+          {fechaTxt(r)}
+        </span>
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <Clock size={12} className="shrink-0" />
+          llegó {r.HoraVisita || '—'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const noIngresoSearch = (r: Registro) =>
+  `${r.Edificio} ${r.Codigo ?? ''} ${r.Usuario} ${r.MotivoCancelacion ?? ''} ${r.ObservacionCancelacion ?? ''} ${fechaTxt(r)} ${r.NroRuta_R} ${r.NroCircuito_R}`;
+
+const noIngresoFlat = (r: Registro): Record<string, string | number> => ({
+  Edificio: r.Edificio,
+  Código: r.Codigo ?? '',
+  Dirección: r.Direccion ?? '',
+  Técnico: r.Usuario,
+  Fecha: r.FechaVisita ?? '',
+  Período: r.MesAño,
+  'Hora de llegada': r.HoraVisita ?? '',
+  Motivo: r.MotivoCancelacion ?? '',
+  'Observación del técnico': r.ObservacionCancelacion ?? '',
+  Ruta: r.NroRuta_R,
+  Circuito: r.NroCircuito_R,
+  Estado: r.Estado,
+});
 
 const detalleFlat = (r: DetalleVisita): Record<string, string | number> => ({
   Fecha: r.Fecha,
   Técnico: r.Tecnico,
   Edificio: r.Edificio,
+  Código: r.Codigo,
   Ítem: r.Item,
   Check: r.Check,
   Observación: r.Observacion,
@@ -436,10 +578,14 @@ const visitaFlat = (r: Registro): Record<string, string | number> => ({
   'Progreso %': r.Progreso ?? 0,
   'Observación general': r.ObservacionGeneral ?? '',
   'Observación edificio': r.ObservacionEdificio ?? '',
+  'Motivo de no ingreso': r.MotivoCancelacion ?? '',
+  'Observación de no ingreso': r.ObservacionCancelacion ?? '',
 });
 
 const fileTag = (desde: string, hasta: string) =>
   desde === hasta ? desde.replace('/', '-') : `${desde.replace('/', '-')}_a_${hasta.replace('/', '-')}`;
+
+type GridMode = 'resumen' | 'detalle' | 'noingreso';
 
 export default function DashboardVisitas({ desde, hasta, view }: { desde: string; hasta: string; view: GridView }) {
   const registros = useAppStore((s) => s.CollectDashboardVisitas);
@@ -449,9 +595,17 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // Sub-vista de la grilla: 'resumen' (columnas curadas, 01.Registros) |
-  // 'detalle' (tabla plana por ÍTEM del checklist, 02.Detalles — carga lazy).
-  const [gridMode, setGridMode] = useState<'resumen' | 'detalle'>('resumen');
+  // Sub-vista de la grilla: 'resumen' (columnas curadas, 01.Registros) | 'detalle' (tabla
+  // plana por ÍTEM del checklist, 02.Detalles — carga lazy) | 'noingreso' (las que no
+  // pudieron entrar, con motivo — sale de los mismos registros ya cargados).
+  const [gridMode, setGridMode] = useState<GridMode>('resumen');
+  // Mismo motivo que el swap de tabs en Dashboard.tsx: pasar a Detalle monta miles de filas
+  // en un render sincrónico y sin esto el toggle se siente muerto en mobile.
+  const [swappingGrid, startGridSwap] = useTransition();
+  const cambiarGridMode = (m: GridMode) => {
+    if (m === gridMode) return;
+    startGridSwap(() => setGridMode(m));
+  };
   // Estado propio del detalle por ítem (carga lazy, separada del resumen).
   const [detalleLoading, setDetalleLoading] = useState(false);
   const [detalleError, setDetalleError] = useState<string | null>(null);
@@ -498,6 +652,17 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
   }, [view, gridMode, rangeKey, detalleKey, detalleLoading, loadDetalles]);
 
   const detalleReady = detalleKey === rangeKey && !detalleError;
+
+  // Un puñado de filas de 02.Detalles viene sin `NombreEdificio_D` (el backend deja el
+  // código en `Edificio` como fallback). El nombre está en los registros del mismo rango,
+  // que ya están cargados → se resuelve por código, sin otro fetch.
+  const detalleRows = useMemo(() => {
+    const nombrePorCodigo = new Map(registros.filter((r) => r.Codigo).map((r) => [r.Codigo!, r.Edificio]));
+    return detalles.map((d) => {
+      const nombre = d.Edificio === d.Codigo ? nombrePorCodigo.get(d.Codigo) : undefined;
+      return nombre ? { ...d, Edificio: nombre } : d;
+    });
+  }, [detalles, registros]);
 
   // ── Meses presentes en el rango cargado (ascendente) ──
   const months = useMemo(() => {
@@ -549,7 +714,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
   // Combo estilo BI — la barra dice CUÁNTO TARDA en promedio y la línea CÓN QUÉ CALIDAD (% control).
   const porTecnico = useMemo(() => {
     const map = new Map<string, Registro[]>();
-    for (const r of registros) {
+    for (const r of registros.filter(esRealizada)) {
       const k = proper(r.Usuario || '—') || '—';
       const arr = map.get(k);
       if (arr) arr.push(r);
@@ -592,12 +757,31 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
       .slice(0, 8);
   }, [registros]);
 
+  // ── No ingresadas: el técnico fue al edificio y no pudo entrar ──
+  const noIngresadas = useMemo(() => registros.filter(esNoIngresada), [registros]);
+
+  /** Ranking de motivos de no ingreso (todo el rango). */
+  const motivos = useMemo(() => {
+    const agg = new Map<string, number>();
+    for (const r of noIngresadas) {
+      const k = proper(r.MotivoCancelacion || '') || 'Sin motivo indicado';
+      agg.set(k, (agg.get(k) ?? 0) + 1);
+    }
+    return [...agg.entries()]
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+  }, [noIngresadas]);
+
   // Etiqueta del período elegido (mm/yyyy → 'mmm yy'); un solo mes si desde === hasta.
   const periodo = desde === hasta ? mesAnoLabel(desde) : `${mesAnoLabel(desde)} – ${mesAnoLabel(hasta)}`;
 
   return (
     <div className="relative min-h-0 flex-1">
-      <LoadingOverlay visible={loading} label="Cargando visitas…" />
+      <LoadingOverlay
+        visible={loading || swappingGrid}
+        label={loading ? 'Cargando visitas…' : 'Cambiando de vista…'}
+      />
 
       {loadError ? (
         <div className="h-full overflow-y-auto">
@@ -610,7 +794,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
               {detalleError ? (
                 <div className="flex h-full flex-col">
                   <div className="mb-3 flex justify-end">
-                    <GridModeToggle value={gridMode} onChange={setGridMode} />
+                    <GridModeToggle value={gridMode} onChange={cambiarGridMode} />
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto">
                     <ErrorState message={detalleError} onRetry={loadDetalles} />
@@ -620,7 +804,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
                 <>
                   <LoadingOverlay visible={detalleLoading} label="Cargando detalle…" />
                   <GridPanel<DetalleVisita>
-                    rows={detalleReady ? detalles : []}
+                    rows={detalleReady ? detalleRows : []}
                     columns={DETALLE_COLUMNS}
                     rowKey={(r) => r.ID}
                     search={detalleSearch}
@@ -628,11 +812,23 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
                     exportName={`visitas_detalle_${fileTag(desde, hasta)}`}
                     placeholder="Buscar ítem, edificio, técnico, observación…"
                     mobileCard={detalleCard}
-                    headerExtra={<GridModeToggle value={gridMode} onChange={setGridMode} />}
+                    headerExtra={<GridModeToggle value={gridMode} onChange={cambiarGridMode} />}
                   />
                 </>
               )}
             </div>
+          ) : gridMode === 'noingreso' ? (
+            <GridPanel<Registro>
+              rows={noIngresadas}
+              columns={NO_INGRESO_COLUMNS}
+              rowKey={(r) => r.ID}
+              search={noIngresoSearch}
+              toFlat={noIngresoFlat}
+              exportName={`visitas_no_ingresadas_${fileTag(desde, hasta)}`}
+              placeholder="Buscar edificio, técnico, motivo…"
+              mobileCard={noIngresoCard}
+              headerExtra={<GridModeToggle value={gridMode} onChange={cambiarGridMode} />}
+            />
           ) : (
             <GridPanel<Registro>
               rows={registros}
@@ -643,7 +839,7 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
               exportName={`visitas_${fileTag(desde, hasta)}`}
               placeholder="Buscar edificio, técnico, código, ruta…"
               mobileCard={visitaCard}
-              headerExtra={<GridModeToggle value={gridMode} onChange={setGridMode} />}
+              headerExtra={<GridModeToggle value={gridMode} onChange={cambiarGridMode} />}
             />
           )}
         </div>
@@ -656,7 +852,12 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
               label="Visitas a edificios"
               value={intFmt(cur.visitas)}
               accent
-              sub={<span>período {periodo}</span>}
+              sub={
+                <span>
+                  período {periodo}
+                  {cur.noIngresadas > 0 && ` · ${intFmt(cur.noIngresadas)} no ingresadas`}
+                </span>
+              }
             />
             <KpiCard
               icon={Timer}
@@ -775,6 +976,25 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
             <TecnicoCombo data={porTecnico} />
           </ChartCard>
 
+          {/* ── Motivos de no ingreso: por qué el técnico fue y no pudo entrar ── */}
+          <ChartCard
+            icon={DoorClosed}
+            title="Motivos de no ingreso"
+            subtitle={`${intFmt(cur.noIngresadas)} visitas sin ingreso — ${periodo}`}
+            empty={
+              motivos.length === 0 && (
+                <EmptyState compact icon={DoorClosed} title="Se pudo ingresar a todos los edificios" />
+              )
+            }
+          >
+            <HBar
+              data={motivos}
+              color={C_REVISAR}
+              height={Math.max(120, motivos.length * 34)}
+              labelWidth={210}
+            />
+          </ChartCard>
+
           {/* ── Edificios por debajo del 100% ── */}
           <ChartCard
             icon={AlertTriangle}
@@ -786,7 +1006,8 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
           </ChartCard>
 
           <p className="text-xs text-wash-text-faint">
-            Período actual: {periodo} · {intFmt(cur.visitas)} visitas · {months.length} mes
+            Período actual: {periodo} · {intFmt(cur.visitas)} visitas realizadas ·{' '}
+            {intFmt(cur.noIngresadas)} sin ingreso · {months.length} mes
             {months.length === 1 ? '' : 'es'} con datos.
           </p>
         </div>
@@ -797,17 +1018,15 @@ export default function DashboardVisitas({ desde, hasta, view }: { desde: string
 
 // ── Subcomponentes ─────────────────────────────────────────────────────────────
 
-/** Sub-toggle de la grilla de visitas: Resumen (curado) / Detalle (por visita, con observación). */
-function GridModeToggle({
-  value,
-  onChange,
-}: {
-  value: 'resumen' | 'detalle';
-  onChange: (v: 'resumen' | 'detalle') => void;
-}) {
-  const opts: { id: 'resumen' | 'detalle'; label: string; icon: ElementType }[] = [
+/**
+ * Sub-toggle de la grilla de visitas: Resumen (curado, 01.Registros) / Detalle (por ítem
+ * del checklist, 02.Detalles) / No ingresadas (fue y no pudo entrar, con el motivo).
+ */
+function GridModeToggle({ value, onChange }: { value: GridMode; onChange: (v: GridMode) => void }) {
+  const opts: { id: GridMode; label: string; icon: ElementType }[] = [
     { id: 'resumen', label: 'Resumen', icon: Table2 },
     { id: 'detalle', label: 'Detalle', icon: ScrollText },
+    { id: 'noingreso', label: 'No ingresadas', icon: DoorClosed },
   ];
   return (
     <div className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-wash-surface-2 p-1 ring-1 ring-wash-border">
@@ -830,7 +1049,9 @@ function GridModeToggle({
             )}
           >
             <Icon size={14} className="shrink-0" />
-            <span className="hidden sm:inline">{o.label}</span>
+            {/* md y no sm, igual que el ViewToggle: con 3 modos ("No ingresadas" es largo) los
+                textos no entraban entre 640 y 768px. Abajo de md quedan los 3 íconos con title. */}
+            <span className="hidden md:inline">{o.label}</span>
           </button>
         );
       })}
@@ -954,12 +1175,15 @@ function HBar({
   suffix = '',
   domainMax,
   height = 220,
+  labelWidth = 132,
 }: {
   data: { name: string; value: number }[];
   color: string;
   suffix?: string;
   domainMax?: number;
   height?: number;
+  /** Ancho del eje de etiquetas — subirlo cuando los nombres son largos (ej. motivos). */
+  labelWidth?: number;
 }) {
   return (
     <ChartContainer config={barConfig} className="w-full" style={{ height }}>
@@ -971,7 +1195,7 @@ function HBar({
           dataKey="name"
           {...AXIS}
           tick={{ fontSize: 12, fill: 'var(--color-wash-text-muted)' }}
-          width={132}
+          width={labelWidth}
         />
         <ChartTooltip
           content={<ChartTooltipContent hideLabel formatter={(v) => `${v}${suffix}`} />}
