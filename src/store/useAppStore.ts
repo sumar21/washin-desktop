@@ -266,6 +266,7 @@ interface AppState {
   removeEdificioCircuito: (detalleId: number) => Promise<void>;
   updateCircuitoObs: (nroCircuito: number, observaciones: string) => Promise<void>;
   createRuta: (nroRuta: number) => Promise<void>;
+  setCircuitosRuta: (nroRuta: number, nroCircuitos: number[]) => Promise<void>;
   deleteRuta: (nroRuta: number) => Promise<void>;
   createEdificio: (payload: api.EdificioAbmInput) => Promise<void>;
   updateEdificio: (id: number, payload: api.EdificioAbmInput) => Promise<void>;
@@ -349,6 +350,7 @@ const initialState: Omit<
   | 'removeEdificioCircuito'
   | 'updateCircuitoObs'
   | 'createRuta'
+  | 'setCircuitosRuta'
   | 'deleteRuta'
   | 'createEdificio'
   | 'updateEdificio'
@@ -1123,6 +1125,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   createRuta: async (nroRuta) => {
     try {
       await api.createRuta(nroRuta);
+      await get().fetchAbm();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  setCircuitosRuta: async (nroRuta, nroCircuitos) => {
+    try {
+      await api.setCircuitosRuta(nroRuta, nroCircuitos);
       await get().fetchAbm();
     } catch (err) {
       handleAuthError(err, set);

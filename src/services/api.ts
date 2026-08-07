@@ -544,8 +544,28 @@ export function createRuta(nroRuta: number): Promise<{ nroRuta: number }> {
   return request('/abm/rutas', { method: 'POST', body: JSON.stringify({ action: 'create', nroRuta }) });
 }
 
-export function deleteRuta(nroRuta: number): Promise<{ nroRuta: number; circuitosEliminados: number; edificiosLiberados: number }> {
+/**
+ * Baja de ruta: sus circuitos NO se eliminan, quedan libres para otra ruta. La
+ * planificación viva de esos circuitos (16/18 del mes actual y el siguiente) SÍ se anula
+ * antes de liberarlos — si no, al re-engancharlos en otra ruta la mobile vería el
+ * circuito y sus edificios duplicados (ver api/abm/rutas.ts, `remove`).
+ */
+export function deleteRuta(
+  nroRuta: number,
+): Promise<{ nroRuta: number; circuitosLiberados: number; detalleAnulados: number; edificiosAnulados: number }> {
   return request('/abm/rutas', { method: 'POST', body: JSON.stringify({ action: 'delete', nroRuta }) });
+}
+
+/**
+ * Set FINAL de circuitos de una ruta existente (agrega los que faltan, libera los que
+ * sobran). Solo acepta circuitos LIBRES: uno que ya pertenece a otra ruta hay que
+ * quitarlo de ahí primero (regla del msapp, un circuito = una ruta).
+ */
+export function setCircuitosRuta(
+  nroRuta: number,
+  nroCircuitos: number[]
+): Promise<{ nroRuta: number; agregados: number[]; quitados: number[] }> {
+  return request('/abm/rutas', { method: 'POST', body: JSON.stringify({ action: 'set-circuitos', nroRuta, nroCircuitos }) });
 }
 
 // Edificios

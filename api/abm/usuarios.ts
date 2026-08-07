@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { listItems, createItem, updateItem, getItem, GraphError } from '../_lib/graph.js';
 import { LIST_IDS, mapUsuario, usuarioAbmSelectFields, canEditAbm, mapRolesActivos } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { concatNombreApellido } from '../_lib/tecnico.js';
 
 /**
  * ABM de usuarios (lista `Usuarios`) — vive en Configuración, SOLO Admin.
@@ -68,7 +69,12 @@ function safe(u: ReturnType<typeof mapUsuario>) {
   };
 }
 
-const concat = (nombre: string, apellido: string) => `${nombre} ${apellido}`.replace(/\s+/g, ' ').trim();
+// Forma canónica compartida con la mobile (PA: Proper(apellido) & ", " & Proper(nombre)).
+// Antes acá era `${nombre} ${apellido}` — invertido respecto de PA y de la mobile. Como esta
+// columna es la clave de scoping de Tecnico_RT, Tecnico_DP, TecnicoAsignado_EV/_IN y Asignado_VE,
+// cada usuario editado desde el escritorio quedaba con una identidad que la mobile no reconocía:
+// el técnico se quedaba sin stock, sin circuito y sin incidentes. Ver api/_lib/tecnico.ts.
+const concat = concatNombreApellido;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const session = readSession(req.headers.cookie);
@@ -159,7 +165,13 @@ async function update(body: Body, res: VercelResponse) {
   const fields = toFields(body);
   const nombre = body.nombre?.trim() ?? prev.Nombre;
   const apellido = body.apellido?.trim() ?? prev.Apellido;
-  fields.Concat_Nombre_Apellido = concat(nombre, apellido);
+  // El concat se reescribe SOLO si cambió el nombre o el apellido. Antes se reescribía en CADA
+  // update —editar un teléfono le cambiaba la identidad al técnico— y como es la clave de scoping
+  // de media app, lo dejaba sin stock, sin circuito y sin incidentes hasta que alguien lo notara.
+  // Reescribirlo cuando no hace falta no es "inofensivo": es lo que genera el drift.
+  const cambioIdentidad =
+    nombre !== prev.Nombre || apellido !== prev.Apellido;
+  if (cambioIdentidad) fields.Concat_Nombre_Apellido = concat(nombre, apellido);
   await updateItem(LIST_IDS.usuarios, id, fields);
   const updated = mapUsuario((await getItem(LIST_IDS.usuarios, id, usuarioAbmSelectFields()))!);
   return res.status(200).json(safe(updated));

@@ -1,17 +1,23 @@
 import { useMemo, useState } from 'react';
 import {
   Eye,
+  Pencil,
   Trash2,
   Map as MapIcon,
   Building2,
   MapPin,
   Hash,
   GitBranch,
+  Plus,
+  X,
+  AlertTriangle,
+  Info,
   Loader2,
 } from 'lucide-react';
 import { DataTable, type Column } from '@/components/DataTable';
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -30,8 +36,10 @@ export function ConfigRutas({ query, addOpen, setAddOpen, canEdit = false }: Con
   const detalles = useAppStore((s) => s.CollectAbmDetalles);
   const createRuta = useAppStore((s) => s.createRuta);
   const deleteRuta = useAppStore((s) => s.deleteRuta);
+  const setCircuitosRuta = useAppStore((s) => s.setCircuitosRuta);
 
   const [viewing, setViewing] = useState<RutaAbm | null>(null);
+  const [editing, setEditing] = useState<RutaAbm | null>(null);
   const [deleting, setDeleting] = useState<RutaAbm | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -156,12 +164,15 @@ export function ConfigRutas({ query, addOpen, setAddOpen, canEdit = false }: Con
     {
       key: 'actions',
       header: 'Acciones',
-      width: '110px',
+      width: '150px',
       align: 'right',
       truncate: false,
       render: (r) => (
         <div className="flex items-center justify-end gap-1.5">
           <ActionBtn icon={Eye} tone="brand" title="Ver detalle" onClick={(e) => { e.stopPropagation(); setViewing(r); }} />
+          {canEdit && (
+            <ActionBtn icon={Pencil} tone="neutral" title="Agregar / quitar circuitos" onClick={(e) => { e.stopPropagation(); setEditing(r); }} />
+          )}
           {canEdit && (
             <ActionBtn icon={Trash2} tone="danger" title="Eliminar" onClick={(e) => { e.stopPropagation(); setDeleting(r); setDeleteError(null); }} />
           )}
@@ -228,6 +239,9 @@ export function ConfigRutas({ query, addOpen, setAddOpen, canEdit = false }: Con
                     <div className="flex shrink-0 items-center gap-1.5">
                       <ActionBtn icon={Eye} tone="brand" title="Ver detalle" onClick={(e) => { e.stopPropagation(); setViewing(r); }} />
                       {canEdit && (
+                        <ActionBtn icon={Pencil} tone="neutral" title="Agregar / quitar circuitos" onClick={(e) => { e.stopPropagation(); setEditing(r); }} />
+                      )}
+                      {canEdit && (
                         <ActionBtn icon={Trash2} tone="danger" title="Eliminar" onClick={(e) => { e.stopPropagation(); setDeleting(r); setDeleteError(null); }} />
                       )}
                     </div>
@@ -262,6 +276,21 @@ export function ConfigRutas({ query, addOpen, setAddOpen, canEdit = false }: Con
 
       <DetalleRutaModal ruta={viewing} circuitos={circuitos} detalles={detalles} onClose={() => setViewing(null)} />
 
+      {/* Agregar / quitar circuitos de una ruta viva. `key` por ruta: reinicia la selección al abrir otra. */}
+      {editing && (
+        <EditarCircuitosRutaModal
+          key={editing.ID}
+          ruta={editing}
+          circuitos={circuitos}
+          edificiosByCircuito={edificiosByCircuito}
+          onClose={() => setEditing(null)}
+          onSave={async (nroCircuitos) => {
+            await setCircuitosRuta(editing.NroRuta, nroCircuitos);
+            setEditing(null);
+          }}
+        />
+      )}
+
       <AddRutaModal
         open={addOpen}
         rutas={rutas}
@@ -278,7 +307,7 @@ export function ConfigRutas({ query, addOpen, setAddOpen, canEdit = false }: Con
         title="Eliminar ruta"
         message={
           deleting
-            ? `¿Eliminar la Ruta ${deleting.NroRuta}? Se eliminan también sus ${circuitsByRuta.get(deleting.NroRuta)?.length ?? 0} circuito(s) y se liberan sus edificios. Esta acción no se puede deshacer.`
+            ? `¿Eliminar la Ruta ${deleting.NroRuta}? Sus ${circuitsByRuta.get(deleting.NroRuta)?.length ?? 0} circuito(s) NO se eliminan: quedan libres, con sus edificios, y los podés asignar a otra ruta. Esta acción no se puede deshacer.`
             : ''
         }
         confirmLabel={deleteBusy ? 'Eliminando…' : 'Eliminar'}
@@ -345,7 +374,7 @@ function DetalleRutaModal({
               compact
               icon={GitBranch}
               title="Ruta sin circuitos"
-              description="Asigná circuitos a esta ruta desde la pestaña Circuitos."
+              description="Asignale circuitos con el botón de editar (lápiz) de la fila de la ruta."
             />
           </div>
         ) : (
@@ -396,6 +425,238 @@ function DetalleRutaModal({
   );
 }
 
+// ----- Agregar / quitar circuitos de una ruta existente -----
+//
+// Port de Group_EditarRutas del msapp (Screen_Configuracion.pa.yaml): combo de circuitos
+// `bt_circuito_ER` (:1895-1903), botón agregar `bt_addCircuito_ER` (:1908-1941), tacho por
+// fila que marca el circuito como sacado (:2039) y guardado `bt_aceptar_ER` (:1711-1853).
+//
+// REGLA DEL MSAPP — el combo SOLO ofrece circuitos LIBRES (`NroRuta_RC = Blank()`, :1903;
+// idéntico en el alta de ruta, :1462): un circuito pertenece a lo sumo a UNA ruta y
+// moverlo es un ciclo de dos pasos (liberarlo desde su ruta actual, después adoptarlo).
+// La restricción es deliberada, así que se mantiene — pero acá se EXPLICA, en vez de
+// dejar el combo vacío sin decir por qué.
+
+function EditarCircuitosRutaModal({
+  ruta,
+  circuitos,
+  edificiosByCircuito,
+  onClose,
+  onSave,
+}: {
+  ruta: RutaAbm;
+  circuitos: CircuitoAbm[];
+  edificiosByCircuito: Map<number, number>;
+  onClose: () => void;
+  onSave: (nroCircuitos: number[]) => Promise<void>;
+}) {
+  const originales = useMemo(
+    () => circuitos.filter((c) => c.NroRuta === ruta.NroRuta).map((c) => c.NroCircuito).sort((a, b) => a - b),
+    [circuitos, ruta.NroRuta]
+  );
+
+  const [seleccion, setSeleccion] = useState<number[]>(originales);
+  const [pickVal, setPickVal] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const porNro = useMemo(() => new Map(circuitos.map((c) => [c.NroCircuito, c])), [circuitos]);
+  // Pool de libres: circuitos activos sin ruta (NroRuta llega en 0 cuando NroRuta_RC está vacío).
+  const libres = useMemo(
+    () => circuitos.filter((c) => !c.NroRuta && !seleccion.includes(c.NroCircuito)).sort((a, b) => a.NroCircuito - b.NroCircuito),
+    [circuitos, seleccion]
+  );
+  const enOtraRuta = useMemo(() => circuitos.filter((c) => c.NroRuta && c.NroRuta !== ruta.NroRuta), [circuitos, ruta.NroRuta]);
+
+  const options = libres.map((c) => {
+    const n = edificiosByCircuito.get(c.NroCircuito) ?? 0;
+    return { value: String(c.NroCircuito), label: `Circuito ${c.NroCircuito}`, sublabel: `${n} edificio${n === 1 ? '' : 's'} · sin ruta` };
+  });
+
+  const agregados = seleccion.filter((n) => !originales.includes(n));
+  const quitados = originales.filter((n) => !seleccion.includes(n));
+  const totalEdificios = seleccion.reduce((acc, n) => acc + (edificiosByCircuito.get(n) ?? 0), 0);
+  // Igual que el DisplayMode de bt_aceptar_ER (:1721-1722): sin circuitos activos no se guarda.
+  const ready = seleccion.length > 0 && (agregados.length > 0 || quitados.length > 0);
+
+  const add = () => {
+    const n = Number(pickVal);
+    if (!n || seleccion.includes(n)) return;
+    setSeleccion((arr) => [...arr, n].sort((a, b) => a - b));
+    setPickVal(null);
+  };
+
+  return (
+    <Modal open onClose={() => { if (!saving) onClose(); }} title={`Circuitos de la Ruta ${ruta.NroRuta}`} width={720}>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl bg-wash-surface-2/50 p-4 ring-1 ring-wash-border">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+          <MapIcon size={18} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-display text-[15px] font-black text-wash-accent">Ruta {ruta.NroRuta}</p>
+          <p className="mt-0.5 flex items-center gap-2 text-xs text-wash-text-muted">
+            <span className="inline-flex items-center gap-1"><GitBranch size={11} /> {seleccion.length} circuito{seleccion.length === 1 ? '' : 's'}</span>
+            <span className="text-wash-text-faint">·</span>
+            <span className="inline-flex items-center gap-1"><Building2 size={11} /> {totalEdificios} edificio{totalEdificios === 1 ? '' : 's'}</span>
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div role="alert" className="mt-3 flex items-start gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {/* Agregar circuito libre */}
+      <div className="mt-4 rounded-xl border border-wash-border bg-wash-surface-2/40 p-3.5">
+        <Label>Agregar circuito a la ruta</Label>
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <Combobox
+              options={options}
+              value={pickVal}
+              onChange={setPickVal}
+              placeholder="Elegir circuito libre…"
+              searchPlaceholder="Buscar por número de circuito…"
+              emptyText="No hay circuitos libres"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={!pickVal || saving}
+            onClick={add}
+            className="flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-wash-action px-3.5 text-[12.5px] font-semibold text-white transition hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus size={15} />
+            Agregar
+          </button>
+        </div>
+
+        {/* La explicación que faltaba: por qué un circuito de otra ruta no aparece en el combo. */}
+        <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-wash-surface px-2.5 py-2 ring-1 ring-wash-border">
+          <Info size={13} className="mt-0.5 shrink-0 text-wash-brand" />
+          <p className="text-[10.5px] leading-relaxed text-wash-text-muted">
+            Un circuito pertenece a <strong>una sola ruta</strong>, así que solo se ofrecen los que están libres
+            {libres.length > 0 ? ` (${libres.length} disponible${libres.length === 1 ? '' : 's'})` : ''}.
+            {enOtraRuta.length > 0 && (
+              <>
+                {' '}Hay <strong>{enOtraRuta.length}</strong> circuito{enOtraRuta.length === 1 ? '' : 's'} asignado{enOtraRuta.length === 1 ? '' : 's'} a otras rutas: para traer uno acá,
+                abrí su ruta actual, quitalo de ahí (queda libre) y volvé a esta pantalla.
+              </>
+            )}
+          </p>
+        </div>
+      </div>
+
+      {/* Circuitos que va a tener la ruta */}
+      <div className="mt-4">
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">Circuitos de la ruta ({seleccion.length})</p>
+        {seleccion.length === 0 ? (
+          <EmptyState
+            compact
+            icon={GitBranch}
+            title="La ruta quedaría vacía"
+            description="Una ruta necesita al menos un circuito. Agregá uno libre o cancelá."
+          />
+        ) : (
+          <ul className="space-y-2">
+            {seleccion.map((n) => {
+              const c = porNro.get(n);
+              const nEdif = edificiosByCircuito.get(n) ?? 0;
+              const esNuevo = agregados.includes(n);
+              return (
+                <li key={n} className="flex items-center gap-3 rounded-xl bg-wash-surface px-3.5 py-2.5 ring-1 ring-wash-border">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-wash-brand/10 text-wash-brand ring-1 ring-wash-brand/20">
+                    <MapPin size={13} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-display text-[13px] font-bold text-wash-accent">Circuito {n}</p>
+                      {esNuevo && (
+                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-500/25">
+                          Nuevo
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-wash-text-muted">
+                      <Building2 size={10} />
+                      {nEdif} edificio{nEdif === 1 ? '' : 's'}
+                      {c?.Observaciones ? ` · ${c.Observaciones}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => setSeleccion((arr) => arr.filter((x) => x !== n))}
+                    title="Quitar de la ruta (queda libre)"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-rose-600 ring-1 ring-rose-500/30 transition hover:bg-rose-500/10 hover:ring-rose-500 disabled:opacity-50"
+                  >
+                    <X size={14} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {/* Qué pasa al guardar: la cascada a las visitas del mes no es obvia. */}
+      {(agregados.length > 0 || quitados.length > 0) && (
+        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-300/70 bg-amber-50 px-3 py-2.5">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-500" />
+          <div className="text-[11.5px] leading-relaxed text-amber-900">
+            <p className="font-semibold">Al guardar se actualizan las planificaciones vivas (mes actual y siguiente):</p>
+            <ul className="mt-1 space-y-0.5">
+              {agregados.length > 0 && (
+                <li>
+                  Se agregan las visitas del/los circuito(s) <strong>{agregados.join(', ')}</strong> al técnico que ya tiene la ruta.
+                </li>
+              )}
+              {quitados.length > 0 && (
+                <li>
+                  Se anulan las visitas pendientes del/los circuito(s) <strong>{quitados.join(', ')}</strong>, que quedan libres (no se eliminan).
+                </li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      <ModalActions>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={onClose}
+          className="rounded-lg border border-wash-border px-5 py-2.5 font-medium text-wash-text-strong hover:bg-wash-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          disabled={!ready || saving}
+          onClick={async () => {
+            setSaving(true);
+            setError(null);
+            try {
+              await onSave(seleccion);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'No se pudieron guardar los circuitos de la ruta.');
+            } finally {
+              setSaving(false);
+            }
+          }}
+          className="inline-flex items-center rounded-lg bg-wash-action px-5 py-2.5 font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
+          {saving ? 'Guardando…' : 'Guardar cambios'}
+        </button>
+      </ModalActions>
+    </Modal>
+  );
+}
+
 // ----- Agregar Ruta modal (solo número; los circuitos se crean en la pestaña Circuitos) -----
 
 function AddRutaModal({
@@ -429,7 +690,8 @@ function AddRutaModal({
         <div>
           <p className="font-display text-[13px] font-bold text-wash-accent">Nueva ruta</p>
           <p className="mt-0.5 text-[11.5px] leading-relaxed text-wash-text-muted">
-            Creá el número de ruta. Después, en la pestaña <strong>Circuitos</strong>, agregás circuitos a esta ruta.
+            Creá el número de ruta. Después le sumás circuitos: con el <strong>lápiz</strong> de la fila si ya existen y están
+            libres, o creando circuitos nuevos desde la pestaña <strong>Circuitos</strong>.
           </p>
         </div>
       </div>

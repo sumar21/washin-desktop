@@ -13,6 +13,7 @@ import {
   STOCK_TEC_REINGRESO_ROLES,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { mismoTecnico } from '../_lib/tecnico.js';
 
 interface Body {
   action?: 'edit' | 'transfer' | 'reingreso';
@@ -104,13 +105,20 @@ async function transfer(id: number, cantidad: number, toTecnico: string | undefi
   if (cantidad > src.Cantidad_RT) {
     return res.status(400).json({ error: 'invalid', message: `El técnico solo tiene ${src.Cantidad_RT}` });
   }
-  if (destino === src.Tecnico_RT) return res.status(400).json({ error: 'invalid', message: 'Elegí un técnico distinto' });
+  // Comparación tolerante: con `===` exacto, si el concat del técnico cambió de formato el guard
+  // no lo reconocía y dejaba transferirle stock A SÍ MISMO, duplicándolo (suma al destino y
+  // descuenta del origen, que son la misma persona con dos nombres).
+  if (mismoTecnico(destino, src.Tecnico_RT)) return res.status(400).json({ error: 'invalid', message: 'Elegí un técnico distinto' });
   const repuesto = String(raw.Repuesto_RT ?? '');
 
   // Suma al destino primero (si falla el descuento, queda duplicado recuperable, no perdido).
+  // Igual que en assign.ts: el nombre no va en el $filter (dos formatos históricos en Tecnico_RT);
+  // se trae por estado y se refina en memoria, o se crearía una fila duplicada para el destino.
   const destinoRows = (
-    await listItems(LIST_IDS.repuestosTecnico, { select: repuestoTecnicoSelectFields(), filter: `fields/Tecnico_RT eq '${odataEscape(destino)}'` })
-  ).map(mapRepuestoTecnico);
+    await listItems(LIST_IDS.repuestosTecnico, { select: repuestoTecnicoSelectFields(), filter: `fields/Status_RT eq 'Activo'` })
+  )
+    .map(mapRepuestoTecnico)
+    .filter((r) => mismoTecnico(r.Tecnico_RT, destino));
   const existente = destinoRows.find((r) => r.Concat_RT.toLowerCase() === src.Concat_RT.toLowerCase());
   if (existente) {
     await updateItem(LIST_IDS.repuestosTecnico, existente.ID, { Cantidad_RT: String(existente.Cantidad_RT + cantidad) });

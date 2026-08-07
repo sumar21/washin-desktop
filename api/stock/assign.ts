@@ -9,17 +9,13 @@ import {
   buildConcatRT,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
+import { mismoTecnico } from '../_lib/tecnico.js';
 import { puedeAccederModulo } from '../_lib/permisos.js';
 
 interface AssignBody {
   id?: number;
   tecnico?: string;
   cantidad?: number;
-}
-
-/** OData: escapar comillas simples en valores de string dentro de un $filter. */
-function odataEscape(value: string): string {
-  return value.replace(/'/g, "''");
 }
 
 /**
@@ -67,12 +63,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const concatRT = buildConcatRT(stockRow);
     const tecnicoTrim = tecnico.trim();
 
+    // El nombre NO va en el $filter: `Tecnico_RT` guarda el Concat_Nombre_Apellido tal como estaba
+    // cuando se escribió la fila, y esa columna arrastró dos formatos históricos. Con un `eq` exacto,
+    // un usuario cuyo concat cambió no matcheaba su propia fila y esto CREABA UNA SEGUNDA: el técnico
+    // terminaba viendo el mismo repuesto partido en dos ítems. Se trae por estado y se refina en
+    // memoria con `mismoTecnico`, igual que la mobile. La lista es chica (~471 filas).
     const existingRows = await listItems(LIST_IDS.repuestosTecnico, {
       select: repuestoTecnicoSelectFields(),
-      filter: `fields/Tecnico_RT eq '${odataEscape(tecnicoTrim)}'`,
+      filter: `fields/Status_RT eq 'Activo'`,
     });
     const existing = existingRows
       .map(mapRepuestoTecnico)
+      .filter((r) => mismoTecnico(r.Tecnico_RT, tecnicoTrim))
       .find((r) => r.Concat_RT.toLowerCase() === concatRT.toLowerCase());
 
     // Orden: primero se suma al técnico, después se descuenta del depósito —

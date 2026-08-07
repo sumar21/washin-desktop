@@ -1,7 +1,8 @@
-import { listItems, updateItem } from './graph.js';
+import { listItems, createItem, updateItem } from './graph.js';
 import {
   LIST_IDS,
   ventanaMesActualYSiguiente,
+  fechasHoy,
   mapResumenPlanif,
   resumenPlanifSelectFields,
   mapDetallePlanif,
@@ -49,29 +50,16 @@ export function addDaysDDMMYYYY(
   return { fecha: `${D}/${M}/${Y}`, ano: Y, mesAno: `${M}/${Y}` };
 }
 
-// ── Cascada 1 — Eliminar circuito (Screen_Configuracion.pa.yaml:1279-1298) ──
-export async function cascadeEliminarCircuito(
+/**
+ * Anula en la planificación viva (ventana `W` = mes actual + siguiente) el 16 y los 18
+ * de UN circuito. Es el cuerpo común de la baja de circuito
+ * (Screen_Configuracion.pa.yaml:1279-1298) y de la mitad "sacar" de bt_aceptar_ER
+ * (:1734-1751), que en el msapp está escrita dos veces.
+ */
+async function anularCircuitoEnPlanificacion(
   nroCircuito: number,
-  nroRuta: number,
-  now?: Date
-): Promise<{ resumenTocados: number; detalleAnulados: number; edificiosAnulados: number }> {
-  const [m0, m1] = ventanaMesActualYSiguiente(now);
-  const W = [m0, m1];
-
-  // 15.ResumenPlanificaciones: Circuitos_RP - 1 en la ventana de meses.
-  const resumenRows = (
-    await listItems(LIST_IDS.resumenPlanif, {
-      select: resumenPlanifSelectFields(),
-      filter: `fields/NroRuta_RP eq '${nroRuta}'`,
-      top: 999,
-    })
-  )
-    .map(mapResumenPlanif)
-    .filter((r) => W.includes(r.MesAno));
-  for (const r of resumenRows) {
-    await updateItem(LIST_IDS.resumenPlanif, r.ID, { Circuitos_RP: dec(r.Circuitos) });
-  }
-
+  W: string[]
+): Promise<{ detalleAnulados: number; edificiosAnulados: number }> {
   // 16.DetallePlanificaciones: Status_DP → Anulado.
   const detalleRows = (
     await listItems(LIST_IDS.detallePlanif, {
@@ -100,11 +88,179 @@ export async function cascadeEliminarCircuito(
     await updateItem(LIST_IDS.edificiosVisitar, e.ID, { Estado_EV: 'Anulado' });
   }
 
-  return {
-    resumenTocados: resumenRows.length,
-    detalleAnulados: detalleRows.length,
-    edificiosAnulados: edificioRows.length,
-  };
+  return { detalleAnulados: detalleRows.length, edificiosAnulados: edificioRows.length };
+}
+
+// ── Cascada 1 — Eliminar circuito (Screen_Configuracion.pa.yaml:1279-1298) ──
+export async function cascadeEliminarCircuito(
+  nroCircuito: number,
+  nroRuta: number,
+  now?: Date
+): Promise<{ resumenTocados: number; detalleAnulados: number; edificiosAnulados: number }> {
+  const [m0, m1] = ventanaMesActualYSiguiente(now);
+  const W = [m0, m1];
+
+  // 15.ResumenPlanificaciones: Circuitos_RP - 1 en la ventana de meses.
+  const resumenRows = (
+    await listItems(LIST_IDS.resumenPlanif, {
+      select: resumenPlanifSelectFields(),
+      filter: `fields/NroRuta_RP eq '${nroRuta}'`,
+      top: 999,
+    })
+  )
+    .map(mapResumenPlanif)
+    .filter((r) => W.includes(r.MesAno));
+  for (const r of resumenRows) {
+    await updateItem(LIST_IDS.resumenPlanif, r.ID, { Circuitos_RP: dec(r.Circuitos) });
+  }
+
+  const { detalleAnulados, edificiosAnulados } = await anularCircuitoEnPlanificacion(nroCircuito, W);
+
+  return { resumenTocados: resumenRows.length, detalleAnulados, edificiosAnulados };
+}
+
+// ── Cascada 4 — Editar los circuitos de una ruta (Screen_Configuracion.pa.yaml:1729-1832) ──
+/**
+ * Propaga a las planificaciones VIVAS de la ruta (mes actual + siguiente) el diff de
+ * circuitos que hizo el ABM: los que SALEN se anulan en 16/18, los que ENTRAN se dan de
+ * alta en 16/18 con el técnico ya asignado a esa ruta, y el 15 queda con el total final
+ * de circuitos. Es el port de bt_aceptar_ER, en el mismo orden que el msapp:
+ *   - anular 16 de los quitados            (:1734-1749)
+ *   - anular 18 de esos 16                 (:1751)
+ *   - Circuitos_RP = CountRows(activos)    (:1755)
+ *   - alta de 16 + 18 de los agregados     (:1758-1816)
+ * Sin esto un circuito agregado a mitad de mes es invisible para el técnico en la mobile
+ * (que lee 16/18) hasta la planificación del mes siguiente.
+ *
+ * Idempotente en el alta: no crea el 16 de un circuito que ya está vivo en esa
+ * planificación, así un reintento no duplica visitas (desvío seguro vs el msapp, que
+ * no chequea).
+ */
+export async function cascadeCircuitosDeRuta(
+  nroRuta: number,
+  quitados: number[],
+  agregados: number[],
+  totalCircuitos: number,
+  now?: Date
+): Promise<{
+  resumenTocados: number;
+  detalleAnulados: number;
+  edificiosAnulados: number;
+  detalleCreados: number;
+  edificiosCreados: number;
+}> {
+  const [m0, m1] = ventanaMesActualYSiguiente(now);
+  const W = [m0, m1];
+
+  // 15.ResumenPlanificaciones de la ruta en la ventana (CollectRutaModificada, :1743-1745).
+  // NroRuta_RP es TEXTO → va entre comillas. Se excluyen las anuladas: revivirlas con
+  // circuitos nuevos no tiene sentido (el msapp no filtra; desvío seguro y declarado).
+  const resumenRows = (
+    await listItems(LIST_IDS.resumenPlanif, {
+      select: resumenPlanifSelectFields(),
+      filter: `fields/NroRuta_RP eq '${nroRuta}'`,
+      top: 999,
+    })
+  )
+    .map(mapResumenPlanif)
+    .filter((r) => W.includes(r.MesAno) && r.Status !== 'Anulado');
+
+  // 1) Los que SALEN: 16 → Anulado y sus 18 pendientes → Anulado.
+  let detalleAnulados = 0;
+  let edificiosAnulados = 0;
+  for (const nroCircuito of quitados) {
+    const r = await anularCircuitoEnPlanificacion(nroCircuito, W);
+    detalleAnulados += r.detalleAnulados;
+    edificiosAnulados += r.edificiosAnulados;
+  }
+
+  // 2) 15: Circuitos_RP = total final de circuitos de la ruta (:1755).
+  for (const r of resumenRows) {
+    await updateItem(LIST_IDS.resumenPlanif, r.ID, { Circuitos_RP: totalCircuitos });
+  }
+
+  // 3) Los que ENTRAN: alta de 16 + 18 en cada planificación viva de la ruta (:1758-1816).
+  let detalleCreados = 0;
+  let edificiosCreados = 0;
+  if (agregados.length && resumenRows.length) {
+    const [circRows, detRows] = await Promise.all([
+      listItems(LIST_IDS.resumenCircuito, { select: resumenCircuitoSelectFields(), filter: `fields/Status_RC eq 'Activo'`, top: 999 }),
+      listItems(LIST_IDS.detalleCircuito, { select: detalleCircuitoSelectFields(), filter: `fields/Status_DC eq 'Activo'`, top: 2000 }),
+    ]);
+    const circuitos = new Map(circRows.map(mapResumenCircuito).map((c) => [c.NroCircuito, c]));
+    const detalleCircuito = detRows.map(mapDetalleCircuito);
+    const f = fechasHoy(now);
+
+    for (const [i, r] of resumenRows.entries()) {
+      // Un stamp por planificación: dos meses vivos de la misma ruta/técnico NO pueden
+      // compartir IDUnivocoCircuito (los 18 se linkean por esa clave y se mezclarían).
+      const stamp = i === 0 ? f.stamp : `${f.stamp}${i}`;
+
+      // 16 vivos de esta planificación → no duplicar si se reintenta el guardado.
+      const yaEnPlan = new Set(
+        (
+          await listItems(LIST_IDS.detallePlanif, {
+            select: detallePlanifSelectFields(),
+            filter: `fields/IDUnivoco_DP eq '${odataEscape(r.IDUnivocoRuta)}'`,
+            top: 2000,
+          })
+        )
+          .map(mapDetallePlanif)
+          .filter((d) => d.Status !== 'Anulado')
+          .map((d) => d.NroCircuito)
+      );
+
+      for (const nroCircuito of agregados) {
+        if (yaEnPlan.has(nroCircuito)) continue;
+        const circuito = circuitos.get(nroCircuito);
+        const edifs = detalleCircuito.filter((d) => d.NroCircuito === nroCircuito);
+        const idUnivocoCircuito = `C${nroCircuito} - ${stamp} - ${r.Tecnico}`;
+
+        await createItem(LIST_IDS.detallePlanif, {
+          Title: 'sumar',
+          IDUnivoco_DP: r.IDUnivocoRuta,
+          IDUnivocoCircuito_DP: idUnivocoCircuito,
+          NroRuta_DP: Number(r.NroRuta) || 0,
+          NroCircuito_DP: nroCircuito,
+          Circuito_DP: nroCircuito,
+          CantidadEdificios_DP: edifs.length,
+          Status_DP: 'Pendiente',
+          Tecnico_DP: r.Tecnico,
+          MesAno_DP: r.MesAno,
+          Mes_DP: r.Mes,
+          ObservacionCircuito_DP: circuito?.Observaciones ?? '',
+        });
+        detalleCreados++;
+
+        for (const e of edifs) {
+          await createItem(LIST_IDS.edificiosVisitar, {
+            Title: 'sumar',
+            TecnicoAsignado_EV: r.Tecnico,
+            CodigoEdificio_EV: e.CodigoEdificio,
+            Edificio_EV: e.Edificio,
+            Direccion_EV: e.Direccion,
+            ConcatEdificio_EV: `${e.Edificio} - ${e.Direccion}`,
+            Estado_EV: 'Pendiente',
+            MesAno_EV: r.MesAno,
+            NroCircuito_EV: String(nroCircuito),
+            NroRuta_EV: r.NroRuta,
+            HoraSugerida_EV: e.Horario,
+            IDUnivocoCircuito_EV: idUnivocoCircuito,
+            IDUnivocoRuta_EV: r.IDUnivocoRuta,
+            Encargado_EV: e.Encargado,
+            Celular_EV: e.NroCelular,
+            Mail_EV: e.MailEdificio,
+            ObservacionEdificio_EV: e.Observaciones,
+            Latitud_EV: e.Latitud,
+            Longitud_EV: e.Longitud,
+          });
+          edificiosCreados++;
+        }
+      }
+    }
+  }
+
+  return { resumenTocados: resumenRows.length, detalleAnulados, edificiosAnulados, detalleCreados, edificiosCreados };
 }
 
 // ── Cascada 2 — Baja edificio (Screen_Configuracion.pa.yaml:2716-2741) ──

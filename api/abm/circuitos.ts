@@ -8,13 +8,12 @@ import {
   detalleCircuitoSelectFields,
   mapEdificioAbm,
   edificioAbmSelectFields,
-  mapRuta,
-  rutaSelectFields,
   canEditAbm,
   type EdificioAbmRow,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
 import { cascadeEliminarCircuito } from '../_lib/cascadas.js';
+import { recomputarContadoresRuta } from '../_lib/abmRutas.js';
 
 interface Body {
   action?: 'create' | 'delete' | 'add-edificio' | 'remove-edificio' | 'update-obs';
@@ -46,27 +45,6 @@ function detalleFields(nroCircuito: number, e: EdificioAbmRow) {
     Observaciones_DC: e.Observaciones,
     Status_DC: 'Activo',
   };
-}
-
-/** Recalcula y persiste los contadores denormalizados de una ruta y de sus circuitos activos. */
-async function recomputarContadores(nroRuta: number): Promise<void> {
-  const [circRows, detRows, rutaRows] = await Promise.all([
-    listItems(LIST_IDS.resumenCircuito, { select: resumenCircuitoSelectFields(), filter: `fields/Status_RC eq 'Activo'`, top: 999 }),
-    listItems(LIST_IDS.detalleCircuito, { select: detalleCircuitoSelectFields(), filter: `fields/Status_DC eq 'Activo'`, top: 2000 }),
-    listItems(LIST_IDS.rutas, { select: rutaSelectFields(), filter: `fields/Status_RT eq 'Activo'`, top: 999 }),
-  ]);
-  const circuitos = circRows.map(mapResumenCircuito);
-  const detalles = detRows.map(mapDetalleCircuito);
-  const circuitosDeRuta = circuitos.filter((c) => c.NroRuta === nroRuta);
-  const edificiosDeRuta = detalles.filter((d) => circuitosDeRuta.some((c) => c.NroCircuito === d.NroCircuito)).length;
-
-  const ruta = rutaRows.map(mapRuta).find((r) => r.NroRuta === nroRuta);
-  if (ruta) {
-    await updateItem(LIST_IDS.rutas, ruta.ID, {
-      CantidadCircuitos_RT: circuitosDeRuta.length,
-      CantEdificios_RT: edificiosDeRuta,
-    });
-  }
 }
 
 async function loadEdificiosById(ids: number[]): Promise<Map<number, EdificioAbmRow>> {
@@ -158,7 +136,7 @@ async function create(body: Body, res: VercelResponse) {
   for (const e of edificios.values()) {
     await createItem(LIST_IDS.detalleCircuito, detalleFields(nroCircuito, e));
   }
-  await recomputarContadores(nroRuta);
+  await recomputarContadoresRuta(nroRuta);
   return res.status(201).json({ nroCircuito, edificios: edificios.size });
 }
 
@@ -176,7 +154,7 @@ async function remove(body: Body, res: VercelResponse) {
   for (const d of detalles.filter((x) => x.NroCircuito === nroCircuito)) {
     await updateItem(LIST_IDS.detalleCircuito, d.ID, { Status_DC: 'Eliminado' });
   }
-  await recomputarContadores(circuito.NroRuta);
+  await recomputarContadoresRuta(circuito.NroRuta);
   await cascadeEliminarCircuito(nroCircuito, circuito.NroRuta);
   return res.status(200).json({ nroCircuito, deleted: true });
 }
@@ -203,7 +181,7 @@ async function addEdificio(body: Body, res: VercelResponse) {
   await createItem(LIST_IDS.detalleCircuito, detalleFields(nroCircuito, e));
   const nuevaCant = circuito.CantidadEdificios + 1;
   await updateItem(LIST_IDS.resumenCircuito, circuito.ID, { CantidadEdificio_RC: nuevaCant });
-  await recomputarContadores(circuito.NroRuta);
+  await recomputarContadoresRuta(circuito.NroRuta);
   return res.status(201).json({ nroCircuito, edificio: e.Edificio });
 }
 
@@ -222,7 +200,7 @@ async function removeEdificio(body: Body, res: VercelResponse) {
   const circuito = resumen.find((c) => c.NroCircuito === det.NroCircuito);
   if (circuito) {
     await updateItem(LIST_IDS.resumenCircuito, circuito.ID, { CantidadEdificio_RC: Math.max(0, circuito.CantidadEdificios - 1) });
-    await recomputarContadores(circuito.NroRuta);
+    await recomputarContadoresRuta(circuito.NroRuta);
   }
   return res.status(200).json({ detalleId, removed: true });
 }
