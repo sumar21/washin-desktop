@@ -324,6 +324,12 @@ export interface HistorialItem {
   Edificio_IN: string;
   Status_IN: string;
   Resuelto_IN: string;
+  /**
+   * Modo de cierre crudo (`NoResuelto_IN`). Decide qué mostrar en la celda de repuestos, igual
+   * que el msapp (Screen_HM.pa.yaml:110): "Resuelto Sin Repuesto" → texto "Sin Repuesto";
+   * cualquier otro modo → el link "Ver Repuestos".
+   */
+  NoResuelto_IN?: string;
 }
 
 export function getMaquinaHistorial(concat: string): Promise<HistorialItem[]> {
@@ -370,6 +376,15 @@ export function getIncidentes(resueltosMes?: string): Promise<IncidentesResponse
  */
 export function getFotosIncidente(id: number): Promise<{ fotos: FotoIncidente[] }> {
   return request(`/incidentes/${id}`);
+}
+
+/**
+ * Repuestos usados en la resolución de un incidente (13.RepuestosIncidentes). LAZY: se piden al
+ * abrir el detalle desde el historial de la máquina, igual que el msapp (Screen_HM.pa.yaml,
+ * bt_verRepuestos). Endpoint aparte de las fotos porque esas son base64 pesado.
+ */
+export function getRepuestosIncidente(id: number): Promise<{ repuestos: RepuestoIncidente[] }> {
+  return request(`/incidentes/${id}?repuestos=1`);
 }
 
 // ── Dashboard de Incidentes (scoped al rango de meses + repuestos con Precio_RI) ─

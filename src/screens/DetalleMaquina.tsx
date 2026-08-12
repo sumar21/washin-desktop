@@ -15,6 +15,7 @@ import {
   History,
   Loader2,
   UserCircle2,
+  Wrench,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Modal, ModalActions, ConfirmDialog } from '@/components/Modal';
@@ -33,8 +34,8 @@ import {
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
 import { cn, proper } from '@/lib/utils';
-import { getMaquinaHistorial, type HistorialItem } from '@/services/api';
-import type { DetalleMaquina as Maquina } from '@/types/domain';
+import { getMaquinaHistorial, getRepuestosIncidente, type HistorialItem } from '@/services/api';
+import type { DetalleMaquina as Maquina, RepuestoIncidente } from '@/types/domain';
 
 const DEPOSITO = 'Wash Inn';
 
@@ -564,6 +565,8 @@ function VirtualMachineTable({
 
 function DetailModal({ maquina, onClose }: { maquina: Maquina | null; onClose: () => void }) {
   const [historial, setHistorial] = useState<HistorialItem[]>([]);
+  // Incidente cuyo detalle de repuestos está abierto (null = cerrado).
+  const [repuestosDe, setRepuestosDe] = useState<HistorialItem | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -674,17 +677,137 @@ function DetailModal({ maquina, onClose }: { maquina: Maquina | null; onClose: (
                       {i.Descripcion}
                     </p>
                   )}
-                  {i.Tecnico_IN && (
-                    <p className="mt-1.5 flex items-center gap-1.5 text-xs text-wash-text-muted">
-                      <UserCircle2 size={12} className="shrink-0" />
-                      <span className="truncate">{proper(i.Tecnico_IN)}</span>
-                    </p>
-                  )}
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-wash-text-muted">
+                    {i.Tecnico_IN && (
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <UserCircle2 size={12} className="shrink-0" />
+                        <span className="truncate">{proper(i.Tecnico_IN)}</span>
+                      </span>
+                    )}
+                    {/* Repuestos usados, igual que el msapp (Screen_HM.pa.yaml:110-114 y 215-246):
+                        con "Resuelto Sin Repuesto" se muestra el texto plano, y con cualquier otro
+                        modo de cierre el link que abre el detalle. */}
+                    {i.NoResuelto_IN === 'Resuelto Sin Repuesto' ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Wrench size={12} className="shrink-0" />
+                        Sin repuesto
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setRepuestosDe(i)}
+                        className="inline-flex items-center gap-1.5 font-semibold text-wash-brand underline underline-offset-2 hover:text-wash-brand-dark"
+                      >
+                        <Wrench size={12} className="shrink-0" />
+                        Ver repuestos
+                      </button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </div>
+      </div>
+
+      <ModalActions>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg border border-wash-border px-5 py-2 font-medium text-wash-text-strong hover:bg-wash-surface-2"
+        >
+          Cerrar
+        </button>
+      </ModalActions>
+
+      <RepuestosIncidenteModal incidente={repuestosDe} onClose={() => setRepuestosDe(null)} />
+    </Modal>
+  );
+}
+
+// ===== Repuestos de un incidente del historial =====
+// Port del popup `PopUpVerRepuestos` del msapp (Screen_HM.pa.yaml:215-246): al tocar
+// "Ver repuestos" se traen las líneas de 13.RepuestosIncidentes de ESE incidente.
+// Se pide LAZY, al abrir: son N incidentes por máquina y traerlos todos de entrada sería
+// una consulta por incidente para un dato que casi nunca se mira.
+
+function RepuestosIncidenteModal({
+  incidente,
+  onClose,
+}: {
+  incidente: HistorialItem | null;
+  onClose: () => void;
+}) {
+  const [repuestos, setRepuestos] = useState<RepuestoIncidente[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!incidente) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga los repuestos al abrir el detalle de un incidente.
+    setLoading(true);
+    setError(null);
+    setRepuestos([]);
+    getRepuestosIncidente(incidente.ID)
+      .then((r) => {
+        if (!cancelled) setRepuestos(r.repuestos);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'No se pudieron cargar los repuestos.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [incidente]);
+
+  if (!incidente) return null;
+
+  return (
+    <Modal open onClose={onClose} title={`Repuestos del incidente N° ${incidente.ID}`} width={480}>
+      <p className="text-sm text-wash-text-muted">
+        {incidente.Fecha_IN}
+        {incidente.Edificio_IN ? ` · ${incidente.Edificio_IN}` : ''}
+      </p>
+
+      <div className="mt-4">
+        {loading ? (
+          <div className="rounded-xl border border-dashed border-wash-border px-3 py-6 text-center text-sm text-wash-text-muted">
+            Cargando repuestos…
+          </div>
+        ) : error ? (
+          <div className="flex items-center gap-2 rounded-r-md border-l-4 border-red-500 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-700">
+            <AlertCircle size={14} className="shrink-0" />
+            {error}
+          </div>
+        ) : repuestos.length === 0 ? (
+          // Un incidente puede haberse cerrado por cambio de máquina, o quedar con las líneas
+          // anuladas si el técnico no usó lo que se le había asignado: la lista vacía es un
+          // resultado válido, no un error.
+          <EmptyState
+            compact
+            icon={Wrench}
+            title="Sin repuestos"
+            description="Este incidente no registró repuestos utilizados."
+          />
+        ) : (
+          <ul className="space-y-2">
+            {repuestos.map((r) => (
+              <li
+                key={r.ID}
+                className="flex items-center justify-between gap-3 rounded-xl bg-wash-canvas px-3 py-2 ring-1 ring-wash-border"
+              >
+                <span className="min-w-0 truncate text-sm font-medium text-wash-text-strong">{r.Repuesto_RI}</span>
+                <span className="shrink-0 rounded-md bg-wash-surface-2 px-2 py-0.5 text-[12px] font-bold text-wash-text">
+                  ×{r.Cantidad_RI}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <ModalActions>

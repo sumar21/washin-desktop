@@ -67,6 +67,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const id = Number(Array.isArray(rawId) ? rawId[0] : rawId);
   if (!id) return res.status(400).json({ error: 'invalid_id' });
 
+  // ── GET ?repuestos=1: repuestos del incidente (13.RepuestosIncidentes) ──
+  // LAZY al abrir el detalle, igual que el msapp (Screen_HM.pa.yaml:233-234, bt_verRepuestos:
+  // `ClearCollect(CollectRepuestosIncidente, Filter('13.RepuestosIncidentes', IDIncidente_RI = …))`).
+  // Va en su propio parámetro y no junto a las fotos: esas son base64 de cientos de KB y traerlas
+  // para mostrar tres renglones de repuestos sería absurdo.
+  if (req.method === 'GET' && req.query.repuestos !== undefined) {
+    if (!(await puedeAccederModulo(session.rol, 'Incidentes'))) {
+      return res.status(403).json({ error: 'forbidden', message: 'Tu rol no tiene habilitado el módulo Incidentes.' });
+    }
+    try {
+      const repuestos = (
+        await listItems(LIST_IDS.repuestosIncidentes, {
+          select: repuestoIncidenteSelectFields(),
+          // OJO: display IDIncidente_RI → interno IDIncidente_IN, y es TEXTO → valor entrecomillado.
+          filter: `fields/IDIncidente_IN eq '${id}'`,
+          top: 999,
+        })
+      ).map(mapRepuestoIncidente);
+      return res.status(200).json({ repuestos });
+    } catch (err) {
+      console.error('incidentes GET repuestos error', err);
+      return res.status(err instanceof GraphError ? 502 : 500).json({ error: 'server_error' });
+    }
+  }
+
   // ── GET: fotos del incidente (12.FotoIncidentes) ────────────────────────
   // LAZY a propósito: Foto_FI es base64 de cientos de KB por fila. Nunca en el listado
   // general (mismo criterio que ImagenGral de 01.Registros).

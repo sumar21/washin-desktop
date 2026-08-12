@@ -830,6 +830,12 @@ export interface HistorialRow {
   Edificio_IN: string;
   Status_IN: string;
   Resuelto_IN: string;
+  /**
+   * Modo de cierre crudo (`NoResuelto_IN`). La UI lo necesita para decidir qué mostrar en la
+   * celda de repuestos, igual que el msapp (Screen_HM.pa.yaml:110): "Resuelto Sin Repuesto" →
+   * el texto "Sin Repuesto"; cualquier otro modo → el link "Ver Repuestos".
+   */
+  NoResuelto_IN?: string;
 }
 
 const HISTORIAL_SELECT = [
@@ -880,6 +886,7 @@ export function mapHistorial(item: SharePointItem): HistorialRow {
     Edificio_IN: String(item.NombreEdificio_IN ?? ''),
     Status_IN: String(item.Status_IN ?? ''),
     Resuelto_IN: String(item.Resuelto_IN ?? ''),
+    NoResuelto_IN: clean(item.NoResuelto_IN) || undefined,
   };
 }
 
