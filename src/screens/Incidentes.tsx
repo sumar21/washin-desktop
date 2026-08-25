@@ -111,8 +111,10 @@ const tipoTone: Record<string, string> = {
   'Reportado Por Tecnico': 'bg-sky-50 text-sky-800 ring-sky-300/70',
 };
 // Estado en que quedó la máquina (StatusMaquina_IN). Se pinta como un tag APARTE del tipo de OT:
-// "Cambio de Maquina" dice QUÉ pidió el técnico y esto dice CON QUÉ URGENCIA — una máquina fuera de
-// servicio deja al consorcio sin ese servicio, una provisoria puede esperar al próximo circuito.
+// el tipo dice QUÉ hace falta (un reemplazo, un repuesto) y esto dice CON QUÉ URGENCIA — una
+// máquina fuera de servicio deja al consorcio sin ese servicio, una provisoria puede esperar al
+// próximo circuito. Lo escribe la mobile en "Cambio de Maquina" y en "Requiere Repuesto"; el tag
+// NO se condiciona al tipo, aparece con que la columna traiga valor.
 const statusMaquinaTone = (s: string) =>
   /fuera de servicio/i.test(s)
     ? 'bg-red-50 text-red-800 ring-red-300/70'

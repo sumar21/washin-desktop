@@ -862,8 +862,9 @@ const HISTORIAL_SELECT = [
   'Resuelto_IN',
   'ConcatMaquina_IN',
   'MaquinaAsignada_IN',
-  // En qué estado quedó la máquina cuando el técnico pidió el cambio ("Maquina Fuera de Servicio"
-  // / "Funcionando Provisoriamente"). La escribe la mobile al resolver. Creada a mano en
+  // En qué estado quedó la máquina ("Maquina Fuera de Servicio" / "Funcionando Provisoriamente").
+  // La escribe la mobile en los modos que dejan la OT abierta con la máquina en falla: "Cambio de
+  // Maquina" y "Requiere Repuesto" (ver MODOS_CON_STATUS_MAQUINA en la mobile). Creada a mano en
   // SharePoint, igual que UsuarioAnulado_IN: pedirla en el $select es seguro aunque falte.
   'StatusMaquina_IN',
   'TecnicoAsignado_IN',
