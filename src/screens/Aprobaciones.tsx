@@ -64,7 +64,10 @@ export function Aprobaciones() {
   const [query, setQuery] = useState('');
   // Filtros multi-select: array vacío = "todos".
   const [filterTipos, setFilterTipos] = useState<TipoAprobacion[]>([]);
-  const [filterEstados, setFilterEstados] = useState<string[]>([]);
+  // La bandeja abre en PENDIENTES, que es para lo que se usa. El endpoint trae los 12 meses con
+  // todos los estados para que el filtro por Aprobada/Rechazada encuentre algo; sin este default
+  // la pantalla arrancaba mostrando las ~630 de un año entero.
+  const [filterEstados, setFilterEstados] = useState<string[]>(['En Aprobacion']);
   const [filterMesAnos, setFilterMesAnos] = useState<string[]>([]);
   const [viewing, setViewing] = useState<Aprobacion | null>(null);
   const [approving, setApproving] = useState<Aprobacion | null>(null);
@@ -126,13 +129,17 @@ export function Aprobaciones() {
   const mesAnoLabel = (v: string) => mesAnoOpts.find((o) => o.value === v)?.label ?? v;
   const activeFilters = filterTipos.length + filterEstados.length + filterMesAnos.length;
 
+  // Los KPI son de PENDIENTES y no dependen de los filtros: miden la cola de trabajo, no lo que
+  // se está mirando. Cuentan sobre `pendientes`, no sobre todo lo que trae el endpoint.
+  const pendientes = useMemo(() => aprobaciones.filter(esPendiente), [aprobaciones]);
+
   const countByTipo = useMemo(() => {
     const map: Record<string, number> = {};
     TIPOS.forEach((t) => {
-      map[t] = aprobaciones.filter((p) => p.TipoAprobacion_AP === t).length;
+      map[t] = pendientes.filter((p) => p.TipoAprobacion_AP === t).length;
     });
     return map;
-  }, [aprobaciones]);
+  }, [pendientes]);
 
   const columns: Column<Aprobacion>[] = [
     {
@@ -264,7 +271,7 @@ export function Aprobaciones() {
             <CounterCard
               icon={ClipboardList}
               label="Pendientes totales"
-              value={aprobaciones.length}
+              value={pendientes.length}
               tone="bg-wash-brand/10 text-wash-brand ring-wash-brand/20"
             />
             <CounterCard
