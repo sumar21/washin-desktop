@@ -230,6 +230,10 @@ export interface Aprobacion {
   IDCompra_AP?: string;
   IDRegistroDM_AP?: string;
   ConcatAprobacion_AP: string;
+  /** Edificio DESTINO del movimiento (adónde va la máquina). */
+  EdificioDestino_AP?: string;
+  /** Edificio de ORIGEN (dónde está hoy). */
+  EdificioSelect_AP?: string;
   FechaMesAnoGen_AP: string;
   FechaGen_AP: string;
   Fecha_AP?: string;
@@ -287,6 +291,8 @@ export interface Incidente {
   IDMaquina_IN?: string;
   ConcatMaquina_IN?: string;
   MaquinaAsignada_IN?: string;
+  /** Estado en que quedó la máquina al pedir el cambio (lo escribe la mobile). */
+  StatusMaquina_IN?: string;
   TecnicoAsignado_IN?: string;
   CantidadRepuestos_IN: number;
   Descripcion_IN?: string; // observación cruda del técnico; el backend la expone recién ahora

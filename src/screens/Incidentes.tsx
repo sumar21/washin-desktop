@@ -110,6 +110,14 @@ const tipoTone: Record<string, string> = {
   'Atencion al Cliente': 'bg-sky-50 text-sky-800 ring-sky-300/70',
   'Reportado Por Tecnico': 'bg-sky-50 text-sky-800 ring-sky-300/70',
 };
+// Estado en que quedó la máquina (StatusMaquina_IN). Se pinta como un tag APARTE del tipo de OT:
+// "Cambio de Maquina" dice QUÉ pidió el técnico y esto dice CON QUÉ URGENCIA — una máquina fuera de
+// servicio deja al consorcio sin ese servicio, una provisoria puede esperar al próximo circuito.
+const statusMaquinaTone = (s: string) =>
+  /fuera de servicio/i.test(s)
+    ? 'bg-red-50 text-red-800 ring-red-300/70'
+    : 'bg-amber-50 text-amber-800 ring-amber-300/70';
+
 const toneFor = (t: string) =>
   tipoTone[t] ??
   (/repuesto/i.test(t)
@@ -241,6 +249,7 @@ export function Incidentes() {
   const cambioMaquinaIncidente = useAppStore((s) => s.cambioMaquinaIncidente);
   const generarCompraIncidente = useAppStore((s) => s.generarCompraIncidente);
   const anularIncidente = useAppStore((s) => s.anularIncidente);
+  const cerrarIncidenteComplejo = useAppStore((s) => s.cerrarIncidenteComplejo);
   const VarTipoUser = useAppStore((s) => s.VarTipoUser);
   const isAdmin = VarTipoUser === 'Admin';
 
@@ -264,6 +273,10 @@ export function Incidentes() {
   const [newOpen, setNewOpen] = useState(false);
   const [editing, setEditing] = useState<Incidente | null>(null); // editar un "A Revisar"
   const [anulando, setAnulando] = useState<Incidente | null>(null);
+  // Cierre de un click de un reclamo "Problema del Complejo" (el problema no era de la máquina).
+  const [cerrandoComplejo, setCerrandoComplejo] = useState<Incidente | null>(null);
+  const [cerrarComplejoBusy, setCerrarComplejoBusy] = useState(false);
+  const [cerrarComplejoError, setCerrarComplejoError] = useState<string | null>(null);
   const [anularBusy, setAnularBusy] = useState(false);
   const [anularError, setAnularError] = useState<string | null>(null);
   const [anularMotivo, setAnularMotivo] = useState(''); // obligatorio → DescripcionAnulado_IN
@@ -473,11 +486,40 @@ export function Incidentes() {
       <IconBtn icon={UserMinus} tone="warning" title="Desasignar técnico" onClick={() => setDesasignando(i)} />
     ) : null;
 
+  // "Problema del Complejo": el técnico fue, revisó y el problema es del edificio (tablero, agua,
+  // gas), no de la máquina. No hay repuestos ni reemplazo que gestionar, así que gerencia lo cierra
+  // de un click en vez de hacerlo pasar por asignación. El gate real está en el backend.
+  const esProblemaComplejo = (i: Incidente) =>
+    (i.NoResuelto_IN ?? '').trim().toLowerCase() === 'problema del complejo';
+  const cerrarComplejoAction = (i: Incidente) =>
+    i.Resuelto_IN !== 'SI' && i.Status_IN !== 'Anulado' && esProblemaComplejo(i) ? (
+      <IconBtn
+        icon={CheckCircle2}
+        tone="success"
+        title="Cerrar: problema del complejo, no de la máquina"
+        onClick={() => setCerrandoComplejo(i)}
+      />
+    ) : null;
+
   // Acción SOLO Admin: anular (baja lógica) un reclamo abierto.
   const adminAction = (i: Incidente) =>
     isAdmin && esAnulable(i) ? (
       <IconBtn icon={Trash2} tone="danger" title="Anular reclamo" onClick={() => setAnulando(i)} />
     ) : null;
+
+  async function handleCerrarComplejo() {
+    if (!cerrandoComplejo) return;
+    setCerrarComplejoBusy(true);
+    setCerrarComplejoError(null);
+    try {
+      await cerrarIncidenteComplejo(cerrandoComplejo.ID);
+      setCerrandoComplejo(null);
+    } catch (err) {
+      setCerrarComplejoError(err instanceof Error ? err.message : 'No se pudo cerrar el reclamo.');
+    } finally {
+      setCerrarComplejoBusy(false);
+    }
+  }
 
   // Acción contextual de una fila/card según tipo + estado + stock (reusada en tabla y cards).
   const primaryAction = (i: Incidente) => {
@@ -604,6 +646,12 @@ export function Incidentes() {
                             <Wrench size={8} className="shrink-0" />
                             <span className="min-w-0 truncate">{i.NoResuelto_IN || '—'}</span>
                           </span>
+                          {i.StatusMaquina_IN && (
+                            <span className={cn('inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-semibold ring-1', statusMaquinaTone(i.StatusMaquina_IN))}>
+                              <AlertTriangle size={8} className="shrink-0" />
+                              <span className="min-w-0 truncate">{i.StatusMaquina_IN}</span>
+                            </span>
+                          )}
                         </div>
                         <div className="flex shrink-0 gap-1.5">
                           <IconBtn icon={Eye} tone="neutral" title="Ver detalle" onClick={() => setDetail(i)} />
@@ -611,6 +659,7 @@ export function Incidentes() {
                             <IconBtn icon={Pencil} tone="brand" title="Editar reclamo" onClick={() => setEditing(i)} />
                           )}
                           {primaryAction(i)}
+                          {cerrarComplejoAction(i)}
                           {desasignarAction(i)}
                           {adminAction(i)}
                         </div>
@@ -698,6 +747,17 @@ export function Incidentes() {
                             <Wrench size={9} className="shrink-0" />
                             <span className="min-w-0 truncate">{i.NoResuelto_IN || '—'}</span>
                           </span>
+                          {/* Segunda línea, no al lado: la columna es angosta y en un ancho de
+                              laptop los dos tags juntos se truncaban entre sí hasta ser ilegibles. */}
+                          {i.StatusMaquina_IN && (
+                            <span
+                              title={i.StatusMaquina_IN}
+                              className={cn('mt-1 inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ring-1', statusMaquinaTone(i.StatusMaquina_IN))}
+                            >
+                              <AlertTriangle size={9} className="shrink-0" />
+                              <span className="min-w-0 truncate">{i.StatusMaquina_IN}</span>
+                            </span>
+                          )}
                         </div>
                         <div className="min-w-0 pr-2">
                           <p className="flex min-w-0 items-center gap-1.5 truncate text-[13px] font-semibold text-wash-text-strong" title={i.NombreEdificio_IN}>
@@ -733,6 +793,7 @@ export function Incidentes() {
                             <IconBtn icon={Pencil} tone="brand" title="Editar reclamo" onClick={() => setEditing(i)} />
                           )}
                           {primaryAction(i)}
+                          {cerrarComplejoAction(i)}
                           {desasignarAction(i)}
                           {adminAction(i)}
                         </div>
@@ -816,6 +877,27 @@ export function Incidentes() {
         }}
         onCreate={createIncidente}
         onSave={editIncidente}
+      />
+
+      {/* Cerrar un "Problema del Complejo". Confirmación obligatoria: es un cierre definitivo que
+          salta el flujo normal (sin asignación, sin repuestos), y el backend no lo deja revertir. */}
+      <ConfirmDialog
+        open={!!cerrandoComplejo}
+        title="Cerrar reclamo"
+        message={
+          cerrandoComplejo
+            ? `El técnico marcó el reclamo #${cerrandoComplejo.ID} de ${cerrandoComplejo.NombreEdificio_IN} como problema del complejo: el desperfecto no era de la máquina. ¿Lo cerrás? Queda RESUELTO, sin consumir repuestos ni cambiar la máquina. No se puede deshacer.`
+            : ''
+        }
+        confirmLabel={cerrarComplejoBusy ? 'Cerrando…' : 'Cerrar reclamo'}
+        cancelLabel="Volver"
+        busy={cerrarComplejoBusy}
+        error={cerrarComplejoError}
+        onCancel={() => {
+          setCerrandoComplejo(null);
+          setCerrarComplejoError(null);
+        }}
+        onConfirm={handleCerrarComplejo}
       />
 
       {/* Desasignar técnico de un "A Revisar" */}
@@ -1799,10 +1881,11 @@ function MaquinaHeader({ incidente, icon: Icon, showStatus }: { incidente: Incid
   );
 }
 
-function IconBtn({ icon: Icon, tone, title, onClick }: { icon: typeof Eye; tone: 'neutral' | 'brand' | 'warning' | 'violet' | 'danger'; title: string; onClick: () => void }) {
+function IconBtn({ icon: Icon, tone, title, onClick }: { icon: typeof Eye; tone: 'neutral' | 'brand' | 'success' | 'warning' | 'violet' | 'danger'; title: string; onClick: () => void }) {
   const cls = {
     neutral: 'text-wash-text-muted ring-wash-border hover:bg-wash-surface-2 hover:text-wash-text-strong hover:ring-wash-text-muted/40',
     brand: 'text-wash-brand ring-wash-brand/30 hover:bg-wash-brand/10 hover:ring-wash-brand',
+    success: 'text-emerald-600 ring-emerald-400/40 hover:bg-emerald-50 hover:ring-emerald-600',
     warning: 'text-amber-600 ring-amber-400/40 hover:bg-amber-50 hover:ring-amber-500',
     violet: 'text-violet-600 ring-violet-500/30 hover:bg-violet-500/10 hover:ring-violet-500',
     danger: 'text-red-600 ring-red-400/40 hover:bg-red-50 hover:ring-red-500',

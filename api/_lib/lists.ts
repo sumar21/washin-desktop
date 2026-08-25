@@ -591,6 +591,10 @@ export interface AprobacionRow {
   IDCompra_AP?: string;
   IDRegistroDM_AP?: string;
   ConcatAprobacion_AP: string;
+  /** Edificio DESTINO del movimiento (adónde va la máquina). */
+  EdificioDestino_AP?: string;
+  /** Edificio de ORIGEN (dónde está hoy). */
+  EdificioSelect_AP?: string;
   FechaMesAnoGen_AP: string;
   FechaGen_AP: string;
   Fecha_AP?: string;
@@ -607,6 +611,11 @@ const APROBACION_SELECT = [
   'IDCompra_AP',
   'IDRegistroDM_AP',
   'ConcatAprobacion_AP',
+  // Edificio DESTINO del movimiento. Ya se escribía al generar la transferencia
+  // (maquinaMoves.ts) pero no viajaba al front, así que el detalle de la aprobación no decía
+  // ADÓNDE iba la máquina — que es justo lo que hay que mirar para aprobarla.
+  'EdificioDestino_AP',
+  'EdificioSelect_AP',
   'FechaMesAnoGen_AP',
   'FechaGen_AP',
   'Fecha_AP',
@@ -625,6 +634,8 @@ export function mapAprobacion(item: SharePointItem): AprobacionRow {
     IDCompra_AP: item.IDCompra_AP ? String(item.IDCompra_AP) : undefined,
     IDRegistroDM_AP: item.IDRegistroDM_AP ? String(item.IDRegistroDM_AP) : undefined,
     ConcatAprobacion_AP: String(item.ConcatAprobacion_AP ?? ''),
+    EdificioDestino_AP: item.EdificioDestino_AP ? String(item.EdificioDestino_AP) : undefined,
+    EdificioSelect_AP: item.EdificioSelect_AP ? String(item.EdificioSelect_AP) : undefined,
     FechaMesAnoGen_AP: String(item.FechaMesAnoGen_AP ?? ''),
     FechaGen_AP: String(item.FechaGen_AP ?? ''),
     Fecha_AP: item.Fecha_AP ? String(item.Fecha_AP) : undefined,
@@ -851,6 +862,10 @@ const HISTORIAL_SELECT = [
   'Resuelto_IN',
   'ConcatMaquina_IN',
   'MaquinaAsignada_IN',
+  // En qué estado quedó la máquina cuando el técnico pidió el cambio ("Maquina Fuera de Servicio"
+  // / "Funcionando Provisoriamente"). La escribe la mobile al resolver. Creada a mano en
+  // SharePoint, igual que UsuarioAnulado_IN: pedirla en el $select es seguro aunque falte.
+  'StatusMaquina_IN',
   'TecnicoAsignado_IN',
 ];
 
@@ -910,6 +925,8 @@ export interface IncidenteRow {
   IDMaquina_IN?: string;
   ConcatMaquina_IN?: string;
   MaquinaAsignada_IN?: string;
+  /** Estado en que quedó la máquina al pedir el cambio. Solo en incidentes "Cambio de Maquina". */
+  StatusMaquina_IN?: string;
   TecnicoAsignado_IN?: string;
   CantidadRepuestos_IN: number;
   // Derivado legacy = Descripcion_IN || DescripcionCarga_IN — NO borrar: lo consumen
@@ -939,6 +956,7 @@ const INCIDENTE_SELECT = [
   'ConcatMaquina_IN',
   'ConcatMaquinaIncidente_DM',
   'MaquinaAsignada_IN',
+  'StatusMaquina_IN',
   'TecnicoAsignado_IN',
   'CantidadRepuestos_IN',
   'Descripcion_IN',
@@ -976,6 +994,7 @@ export function mapIncidente(item: SharePointItem): IncidenteRow {
     IDMaquina_IN: item.IDMaquina_IN ? String(item.IDMaquina_IN) : undefined,
     ConcatMaquina_IN: item.ConcatMaquina_IN ? String(item.ConcatMaquina_IN) : undefined,
     MaquinaAsignada_IN: item.MaquinaAsignada_IN ? String(item.MaquinaAsignada_IN) : undefined,
+    StatusMaquina_IN: item.StatusMaquina_IN ? String(item.StatusMaquina_IN) : undefined,
     TecnicoAsignado_IN: item.TecnicoAsignado_IN ? String(item.TecnicoAsignado_IN) : undefined,
     CantidadRepuestos_IN: Number(item.CantidadRepuestos_IN ?? 0) || 0,
     DescripcionIncidente_IN:

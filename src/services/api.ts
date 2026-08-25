@@ -465,6 +465,15 @@ export function anularIncidente(id: number, motivo: string): Promise<{ ID: numbe
   return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'anular', motivo }) });
 }
 
+/**
+ * Cierra de un click un reclamo marcado "Problema del Complejo" (el problema no era de la máquina:
+ * tablero, agua, gas del edificio). No consume repuestos ni pide reemplazo. El backend valida el
+ * NoResuelto_IN y el estado.
+ */
+export function cerrarIncidenteComplejo(id: number): Promise<{ ID: number; Status_IN: string }> {
+  return request(`/incidentes/${id}`, { method: 'POST', body: JSON.stringify({ action: 'cerrar-complejo' }) });
+}
+
 // ── Ventilaciones (19.Ventilaciones + ABM.Edificios + catálogos) ─────────
 export interface VentilacionesResponse {
   ventilaciones: Ventilacion[];

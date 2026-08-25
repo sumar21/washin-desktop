@@ -219,6 +219,7 @@ interface AppState {
   ) => Promise<void>;
   /** Baja lógica de un incidente (Status_IN -> 'Anulado'). Solo Admin (gate server-side). `motivo` obligatorio. */
   anularIncidente: (id: number, motivo: string) => Promise<void>;
+  cerrarIncidenteComplejo: (id: number) => Promise<void>;
 
   // ── Detalle de Máquinas (08) — API real ───────────────────────────────
   /** Real: GET /api/maquinas — todas las máquinas activas, ordenadas edificio→segmento→alfabético. */
@@ -324,6 +325,7 @@ const initialState: Omit<
   | 'cambioMaquinaIncidente'
   | 'generarCompraIncidente'
   | 'anularIncidente'
+  | 'cerrarIncidenteComplejo'
   | 'fetchMaquinas'
   | 'transferMaquina'
   | 'bajaMaquina'
@@ -913,6 +915,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       // vea la compra recién generada y no permita generar otra para el mismo
       // incidente (msapp Screen_Incidentes.pa.yaml:192, CollectAUX).
       await get().fetchCompras();
+    } catch (err) {
+      handleAuthError(err, set);
+      throw err;
+    }
+  },
+
+  cerrarIncidenteComplejo: async (id) => {
+    try {
+      await api.cerrarIncidenteComplejo(id);
+      // Queda resuelto → sale de la lista de abiertos, igual que anular.
+      set((s) => ({ CollectIncidentes: s.CollectIncidentes.filter((it) => it.ID !== id) }));
     } catch (err) {
       handleAuthError(err, set);
       throw err;

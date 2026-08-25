@@ -12,6 +12,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Info as InfoIcon,
+  Building2,
+  ArrowRight,
 } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState } from '@/components/EmptyState';
@@ -648,11 +650,23 @@ function ViewDetailModal({ viewing, onClose }: { viewing: Aprobacion | null; onC
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        {/* 1 columna en mobile, 3 en tablet+: con `grid-cols-3` fijo, en 375px los nombres de
+            edificio quedaban en una tira de 2 caracteres por línea. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field icon={Clock} label="Generada" value={viewing.FechaGen_AP} />
           <Field label="Mes/Año" value={viewing.FechaMesAnoGen_AP} />
           <Field label="ID Solicitud" value={`#${viewing.ID}`} />
         </div>
+
+        {/* ADÓNDE va la máquina. Es el dato que hay que mirar para aprobar un movimiento y no
+            estaba en el detalle: en la transferencia ya se guardaba (EdificioDestino_AP) pero no
+            viajaba al front, y el cambio de máquina directamente no lo escribía. */}
+        {viewing.TipoAprobacion_AP !== 'Compra' && (viewing.EdificioDestino_AP || viewing.EdificioSelect_AP) && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field icon={Building2} label="Origen" value={viewing.EdificioSelect_AP || '—'} />
+            <Field icon={ArrowRight} label="Destino" value={viewing.EdificioDestino_AP || '—'} />
+          </div>
+        )}
 
         {viewing.TipoAprobacion_AP === 'Compra' ? (
           <CompraDetail pedido={pedido} detalles={pedidoDetalles} />

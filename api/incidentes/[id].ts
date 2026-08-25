@@ -23,7 +23,7 @@ import { puedeAccederModulo } from '../_lib/permisos.js';
 const ESTADOS_ANULABLES = ['A Revisar', 'Pendiente', 'Asignado'];
 
 interface Body {
-  action?: 'assign' | 'cambiar-tecnico' | 'desasignar' | 'cambio-maquina' | 'generar-compra' | 'anular' | 'edit';
+  action?: 'assign' | 'cambiar-tecnico' | 'desasignar' | 'cambio-maquina' | 'generar-compra' | 'cerrar-complejo' | 'anular' | 'edit';
   tecnico?: string;
   fechaAsignada?: string;
   maquinaConcat?: string; // ConcatMaquinaIncidente de la máquina de reemplazo
@@ -133,6 +133,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (body.action === 'desasignar') return await desasignar(id, res);
     if (body.action === 'cambio-maquina') return await cambioMaquina(id, body, res);
     if (body.action === 'generar-compra') return await generarCompra(id, body, res, session);
+    if (body.action === 'cerrar-complejo') return await cerrarComplejo(id, res, session);
     if (body.action === 'anular') return await anular(id, body, res, session);
     if (body.action === 'edit') return await editIncidente(id, body, res);
     return res.status(400).json({ error: 'invalid', message: 'Acción de incidente desconocida' });
@@ -220,6 +221,11 @@ async function cambioMaquina(id: number, body: Body, res: VercelResponse) {
     IDMaquina_AP: String(id), // el approve lee este ID para actualizar el incidente
     ConcatAprobacion_AP: `Cambio de Maquina - ${body.idMaquinaReemplazo?.trim() || maquinaConcat}`,
     MaquinaAprobacion_AP: maquinaConcat,
+    // Destino y origen del movimiento: en un cambio de máquina el reemplazo sale del depósito y va
+    // al edificio DEL INCIDENTE. La transferencia ya los escribía (maquinaMoves.ts) pero acá no, así
+    // que el detalle de la aprobación no decía adónde iba la máquina.
+    EdificioDestino_AP: mapIncidente(incRaw).NombreEdificio_IN,
+    EdificioSelect_AP: 'Wash Inn',
     Rechazada_AP: 'NO',
     Aprobada_AP: 'NO',
     FechaGen_AP: f.fecha,
@@ -282,6 +288,50 @@ async function generarCompra(id: number, body: Body, res: VercelResponse, sessio
 // ── Anular incidente (baja lógica) — SOLO Admin, Status_IN -> 'Anulado' ───
 // Mismo patrón que la anulación de visitas del Home (baja lógica + gate Admin
 // server-side). El estado 'Anulado' ya existe en el msapp (Screen_Incidentes).
+/**
+ * Cierre de un reclamo cuyo problema NO era de la máquina.
+ *
+ * El técnico fue, revisó y marcó "Problema del Complejo" desde la mobile: tablero eléctrico, agua
+ * o gas del edificio. No hay repuestos que consumir ni máquina que reemplazar, así que la OT no
+ * tiene que pasar por asignación ni por aprobación — se cierra de un click desde acá.
+ *
+ * Gate DURO por `NoResuelto_IN`: es lo único que distingue este cierre de saltearse el flujo
+ * normal. Sin él, este endpoint sería una puerta para cerrar cualquier reclamo sin repuestos ni
+ * trazabilidad, y el stock comprometido en `assign` quedaría descontado sin devolverse.
+ */
+async function cerrarComplejo(id: number, res: VercelResponse, session: SessionPayload) {
+  const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
+  if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
+  const inc = mapIncidente(incRaw);
+
+  if ((inc.NoResuelto_IN ?? '').trim().toLowerCase() !== 'problema del complejo') {
+    return res.status(409).json({
+      error: 'invalid_state',
+      message: 'Este cierre es sólo para los reclamos marcados como "Problema del Complejo".',
+    });
+  }
+  if (inc.Resuelto_IN === 'SI' || inc.Status_IN === 'Resuelto') {
+    return res.status(409).json({ error: 'invalid_state', message: 'El reclamo ya está resuelto.' });
+  }
+  if (inc.Status_IN === 'Anulado') {
+    return res.status(409).json({ error: 'invalid_state', message: 'El reclamo está anulado.' });
+  }
+
+  const f = fechasHoy();
+  await updateItem(LIST_IDS.incidentes, id, {
+    Status_IN: 'Resuelto',
+    Resuelto_IN: 'SI',
+    // Deja rastro de QUIÉN y POR QUÉ se cerró sin intervención: sin esto, en el historial de la
+    // máquina aparece un reclamo resuelto sin repuestos y sin explicación.
+    DescripcionResuelto_IN: `Cerrado sin intervención sobre la máquina: problema del complejo. Cerrado por ${session.usuario}.`,
+    FechaResuelto_IN: f.fecha,
+    HoraResuelto_IN: f.hora,
+    VersionResuelto_IN: APP_VERSION,
+    // CantidadRepuestos_IN queda como está: no se consumió ninguno.
+  });
+  return res.status(200).json({ ID: id, Status_IN: 'Resuelto', Resuelto_IN: 'SI' });
+}
+
 async function anular(id: number, body: Body, res: VercelResponse, session: SessionPayload) {
   if (session.rol !== 'Admin') {
     return res.status(403).json({ error: 'forbidden', message: 'Sólo un Admin puede anular un reclamo.' });
