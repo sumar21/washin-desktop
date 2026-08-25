@@ -51,6 +51,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!aprobRaw) return res.status(404).json({ error: 'not_found', message: 'La solicitud no existe' });
     const aprob = mapAprobacion(aprobRaw);
 
+    // Una solicitud ya resuelta no se vuelve a procesar. Antes la bandeja sólo traía pendientes,
+    // así que el caso no existía en la práctica; ahora que la pantalla muestra los 12 meses con
+    // todos los estados, sin este gate un doble click sobre una fila Aprobada volvería a correr
+    // los efectos (descuento de 04.Stock, baja de máquina, bitácora en 10.Incidentes).
+    if (aprob.Aprobada_AP === 'SI' || aprob.Rechazada_AP === 'SI') {
+      return res.status(409).json({
+        error: 'ya_resuelta',
+        message: `La solicitud ya está ${aprob.Aprobada_AP === 'SI' ? 'aprobada' : 'rechazada'}.`,
+      });
+    }
+
     if (action === 'approve') return await approve(id, aprob, res, session);
     if (action === 'reject') return await reject(id, aprob, reason ?? '', res, session);
     return res.status(400).json({ error: 'invalid', message: 'Acción de aprobación desconocida' });

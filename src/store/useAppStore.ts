@@ -750,8 +750,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   approveAprobacion: async (id) => {
     try {
       await api.approveAprobacion(id);
-      // Sale de la bandeja de pendientes; el pedido pasa a Aprobada (visible en Compras).
-      set((s) => ({ CollectAprobaciones: s.CollectAprobaciones.filter((a) => a.ID !== id) }));
+      // La bandeja ahora muestra los 12 meses con TODOS los estados, así que la fila no se saca:
+      // se actualiza en el lugar y queda visible bajo el filtro "Aprobada".
+      set((s) => ({
+        CollectAprobaciones: s.CollectAprobaciones.map((a) =>
+          a.ID === id ? { ...a, Status_AP: 'Aprobada' as const, Aprobada_AP: 'SI' as const } : a
+        ),
+      }));
     } catch (err) {
       handleAuthError(err, set);
       throw err;
@@ -761,7 +766,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   rejectAprobacion: async (id, reason) => {
     try {
       await api.rejectAprobacion(id, reason);
-      set((s) => ({ CollectAprobaciones: s.CollectAprobaciones.filter((a) => a.ID !== id) }));
+      set((s) => ({
+        CollectAprobaciones: s.CollectAprobaciones.map((a) =>
+          a.ID === id
+            ? { ...a, Status_AP: 'Rechazada' as const, Rechazada_AP: 'SI' as const, InfoRechazo_AP: reason }
+            : a
+        ),
+      }));
     } catch (err) {
       handleAuthError(err, set);
       throw err;

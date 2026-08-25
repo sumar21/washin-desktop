@@ -32,6 +32,11 @@ import type { Aprobacion } from '@/types/domain';
 
 type TipoAprobacion = Aprobacion['TipoAprobacion_AP'];
 
+/** Una solicitud sólo es accionable mientras no fue aprobada ni rechazada. La bandeja muestra
+ *  los últimos 12 meses con todos los estados, así que las resueltas se ven pero no se reprocesan
+ *  (el backend además responde 409 si se intenta). */
+const esPendiente = (a: Aprobacion) => a.Aprobada_AP === 'NO' && a.Rechazada_AP === 'NO';
+
 /** Orden canónico de los estados de una aprobación (para el filtro). */
 const ESTADO_ORDEN_AP = ['En Aprobacion', 'Aprobada', 'Rechazada'];
 
@@ -188,7 +193,7 @@ export function Aprobaciones() {
                 setViewing(a);
               }}
             />
-            {a.TipoAprobacion_AP === 'Compra' && (
+            {esPendiente(a) && a.TipoAprobacion_AP === 'Compra' && (
               <ActionButton
                 icon={Pencil}
                 tone="neutral"
@@ -199,24 +204,28 @@ export function Aprobaciones() {
                 }}
               />
             )}
-            <ActionButton
-              icon={Check}
-              tone="approve"
-              title="Aprobar"
-              onClick={(e) => {
-                e.stopPropagation();
-                setApproving(a);
-              }}
-            />
-            <ActionButton
-              icon={X}
-              tone="reject"
-              title="Rechazar"
-              onClick={(e) => {
-                e.stopPropagation();
-                setRejecting(a);
-              }}
-            />
+            {esPendiente(a) && (
+              <>
+                <ActionButton
+                  icon={Check}
+                  tone="approve"
+                  title="Aprobar"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setApproving(a);
+                  }}
+                />
+                <ActionButton
+                  icon={X}
+                  tone="reject"
+                  title="Rechazar"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRejecting(a);
+                  }}
+                />
+              </>
+            )}
           </div>
         );
       },
@@ -349,7 +358,7 @@ export function Aprobaciones() {
                             setViewing(a);
                           }}
                         />
-                        {a.TipoAprobacion_AP === 'Compra' && (
+                        {esPendiente(a) && a.TipoAprobacion_AP === 'Compra' && (
                           <ActionButton
                             icon={Pencil}
                             tone="neutral"
@@ -360,24 +369,28 @@ export function Aprobaciones() {
                             }}
                           />
                         )}
-                        <ActionButton
-                          icon={Check}
-                          tone="approve"
-                          title="Aprobar"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setApproving(a);
-                          }}
-                        />
-                        <ActionButton
-                          icon={X}
-                          tone="reject"
-                          title="Rechazar"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRejecting(a);
-                          }}
-                        />
+                        {esPendiente(a) && (
+                          <>
+                            <ActionButton
+                              icon={Check}
+                              tone="approve"
+                              title="Aprobar"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setApproving(a);
+                              }}
+                            />
+                            <ActionButton
+                              icon={X}
+                              tone="reject"
+                              title="Rechazar"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRejecting(a);
+                              }}
+                            />
+                          </>
+                        )}
                       </div>
                     </div>
                     {/* Fila 2: descripción */}

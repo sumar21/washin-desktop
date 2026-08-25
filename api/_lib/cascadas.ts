@@ -1,4 +1,4 @@
-import { listItems, createItem, updateItem } from './graph.js';
+import { listItems, createItem, updateItem, type SharePointItem } from './graph.js';
 import {
   LIST_IDS,
   ventanaMesActualYSiguiente,
@@ -32,6 +32,64 @@ const odataEscape = (v: string) => v.replace(/'/g, "''");
 
 /** Decremento con clamp ≥0 (deviación segura vs msapp, que no clampa). */
 const dec = (n: number) => Math.max(0, n - 1);
+
+/**
+ * Patchea SOLO los campos que cambiaron, y devuelve null si no cambió ninguno.
+ *
+ * Las cascadas reescribían las filas relacionadas SIEMPRE, con los mismos valores que ya tenían.
+ * Guardar un edificio tocándole sólo las Observaciones —un campo que ni siquiera se propaga—
+ * disparaba igual una escritura por cada circuito, cada visita pendiente y cada máquina.
+ */
+function soloCambios(
+  actual: SharePointItem,
+  nuevos: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const diff: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(nuevos)) {
+    // Comparación por string: SharePoint devuelve números como number y los escribimos como
+    // string en varias columnas, así que un === estricto daría "cambió" siempre.
+    const a = actual[k] == null ? '' : String(actual[k]).trim();
+    const b = v == null ? '' : String(v).trim();
+    if (a !== b) diff[k] = v;
+  }
+  return Object.keys(diff).length ? diff : null;
+}
+
+/**
+ * Corre tareas con un tope de concurrencia. Las cascadas hacían `for (…) await update(…)`, o sea
+ * una escritura por vez: medido contra este tenant, cada PATCH tarda ~540 ms, así que un edificio
+ * promedio (23 filas relacionadas) se iba a ~13 s — por encima del límite de la función serverless,
+ * que cortaba con 504 y el front lo mostraba como "No se pudo conectar con el servidor".
+ * El tope existe para no comerse un 429 de Graph: sin límite, un edificio grande dispara 40+
+ * requests simultáneos y SharePoint empieza a throttlear.
+ */
+/**
+ * Segundo par de coordenadas para las listas propagadas.
+ *
+ * Antes esto escribía el par 1 (`updated.Latitud`) dentro de las columnas `Latitud2_*`, o sea que
+ * el segundo punto que se carga en el ABM NUNCA llegaba a la mobile. Importa porque el checklist
+ * lee las coordenadas de la COPIA en 18.EdificiosVisitar (api/_lib/planificaciones.ts →
+ * parseCoords) y toma la distancia MÍNIMA a cualquiera de los dos puntos: en los edificios que
+ * abarcan media manzana, el 2º punto es el que deja abrir la visita.
+ * Peor: hay edificios con el par 1 mal cargado (C-2574 tiene "-34"/"-58"), donde el par 2 es lo
+ * ÚNICO que funciona — pisarlo con el par 1 dejaba al técnico sin poder iniciar el checklist.
+ *
+ * Si el ABM no tiene 2º par cargado NO se toca la columna (se omite del patch): puede haber un
+ * punto válido escrito por PowerApps y borrarlo sería quitarle un acceso al técnico.
+ */
+function coordenadas2(sufijo: 'DC' | 'EV', updated: EdificioAbmRow): Record<string, string> {
+  const lat = String(updated.Latitud2 ?? '').trim();
+  const lng = String(updated.Longitud2 ?? '').trim();
+  if (!lat || !lng) return {};
+  return { [`Latitud2_${sufijo}`]: lat, [`Longitud2_${sufijo}`]: lng };
+}
+
+const CONCURRENCIA = 8;
+async function enParalelo<T>(items: T[], fn: (item: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < items.length; i += CONCURRENCIA) {
+    await Promise.all(items.slice(i, i + CONCURRENCIA).map(fn));
+  }
+}
 
 /** Suma `days` a una fecha 'dd/mm/yyyy'. Devuelve null si no parsea (FechaUltima vacía). */
 export function addDaysDDMMYYYY(
@@ -379,55 +437,60 @@ export async function cascadeUpdateEdificio(
 
   if (codigo) {
     // 1) 99.ABM_DetalleCircuito activos del edificio → re-patch de datos.
-    const detalleRows = (
-      await listItems(LIST_IDS.detalleCircuito, {
-        select: detalleCircuitoSelectFields(),
-        filter: `fields/CodigoEdificio_DC eq '${odataEscape(codigo)}' and fields/Status_DC eq 'Activo'`,
-        top: 2000,
-      })
-    ).map(mapDetalleCircuito);
-    for (const d of detalleRows) {
-      await updateItem(LIST_IDS.detalleCircuito, d.ID, {
-        Edificio_DC: updated.Edificio,
-        Direccion_DC: dir,
-        CodigoEdificio_DC: updated.Codigo,
-        Latitud_DC: updated.Latitud,
-        Longitud_DC: updated.Longitud,
-        Latitud2_DC: updated.Latitud,
-        Longitud2_DC: updated.Longitud,
-        MailEdificio_DC: updated.Correo,
-        Encargado_DC: updated.Encargado,
-        NroCelular_DC: updated.Celular,
-        ConcatContacto_DC: contacto,
-        Horario_DC: updated.Horario,
-      });
-    }
-    detalleActualizados = detalleRows.length;
+    const nuevosDC = {
+      Edificio_DC: updated.Edificio,
+      Direccion_DC: dir,
+      CodigoEdificio_DC: updated.Codigo,
+      Latitud_DC: updated.Latitud,
+      Longitud_DC: updated.Longitud,
+      ...coordenadas2('DC', updated),
+      MailEdificio_DC: updated.Correo,
+      Encargado_DC: updated.Encargado,
+      NroCelular_DC: updated.Celular,
+      ConcatContacto_DC: contacto,
+      Horario_DC: updated.Horario,
+    };
+    // El $select se deriva de lo que se escribe: si mañana se suma una columna al patch, entra
+    // sola en la comparación. Pedir menos columnas de las que se escriben haría que el diff las
+    // viera siempre como "cambió" y volvería a patchear todo (que es el bug que esto arregla).
+    const detalleRows = await listItems(LIST_IDS.detalleCircuito, {
+      select: Object.keys(nuevosDC),
+      filter: `fields/CodigoEdificio_DC eq '${odataEscape(codigo)}' and fields/Status_DC eq 'Activo'`,
+      top: 2000,
+    });
+    const aPatchearDC = detalleRows
+      .map((row) => ({ id: Number(row.id), diff: soloCambios(row, nuevosDC) }))
+      .filter((x): x is { id: number; diff: Record<string, unknown> } => x.diff !== null);
+    await enParalelo(aPatchearDC, async ({ id, diff }) => {
+      await updateItem(LIST_IDS.detalleCircuito, id, diff);
+    });
+    detalleActualizados = aPatchearDC.length;
 
     // 2) 18.EdificiosVisitar pendientes del edificio → re-patch de datos.
-    const edificioVisitarRows = (
-      await listItems(LIST_IDS.edificiosVisitar, {
-        select: edificioVisitarSelectFields(),
-        filter: `fields/CodigoEdificio_EV eq '${odataEscape(codigo)}' and fields/Estado_EV eq 'Pendiente'`,
-        top: 4000,
-      })
-    ).map(mapEdificioVisitar);
-    for (const e of edificioVisitarRows) {
-      await updateItem(LIST_IDS.edificiosVisitar, e.ID, {
-        Edificio_EV: updated.Edificio,
-        Direccion_EV: dir,
-        CodigoEdificio_EV: updated.Codigo,
-        Latitud_EV: updated.Latitud,
-        Longitud_EV: updated.Longitud,
-        Latitud2_EV: updated.Latitud,
-        Longitud2_EV: updated.Longitud,
-        Mail_EV: updated.Correo,
-        Encargado_EV: updated.Encargado,
-        Celular_EV: updated.Celular,
-        HoraSugerida_EV: updated.Horario,
-      });
-    }
-    edificiosVisitarActualizados = edificioVisitarRows.length;
+    const nuevosEV = {
+      Edificio_EV: updated.Edificio,
+      Direccion_EV: dir,
+      CodigoEdificio_EV: updated.Codigo,
+      Latitud_EV: updated.Latitud,
+      Longitud_EV: updated.Longitud,
+      ...coordenadas2('EV', updated),
+      Mail_EV: updated.Correo,
+      Encargado_EV: updated.Encargado,
+      Celular_EV: updated.Celular,
+      HoraSugerida_EV: updated.Horario,
+    };
+    const edificioVisitarRows = await listItems(LIST_IDS.edificiosVisitar, {
+      select: Object.keys(nuevosEV),
+      filter: `fields/CodigoEdificio_EV eq '${odataEscape(codigo)}' and fields/Estado_EV eq 'Pendiente'`,
+      top: 4000,
+    });
+    const aPatchearEV = edificioVisitarRows
+      .map((row) => ({ id: Number(row.id), diff: soloCambios(row, nuevosEV) }))
+      .filter((x): x is { id: number; diff: Record<string, unknown> } => x.diff !== null);
+    await enParalelo(aPatchearEV, async ({ id, diff }) => {
+      await updateItem(LIST_IDS.edificiosVisitar, id, diff);
+    });
+    edificiosVisitarActualizados = aPatchearEV.length;
   }
 
   // 3) 19.Ventilaciones pendientes del edificio → sólo si cambió Frecuencia o Grupo.
@@ -440,7 +503,7 @@ export async function cascadeUpdateEdificio(
         top: 999,
       })
     ).map(mapVentilacion);
-    for (const v of ventilacionRows) {
+    await enParalelo(ventilacionRows, async (v) => {
       const fields: Record<string, unknown> = {
         Frecuencia_VE: Number(updated.Frecuencia) || 0,
         Grupo_VE: updated.Grupo,
@@ -452,7 +515,7 @@ export async function cascadeUpdateEdificio(
         fields.FechaMesAnoProxima_VE = nx.mesAno;
       }
       await updateItem(LIST_IDS.ventilaciones, v.ID, fields);
-    }
+    });
     ventilacionesActualizadas = ventilacionRows.length;
   }
 
@@ -469,18 +532,23 @@ export async function cascadeUpdateEdificio(
       filter: `fields/CodigoEdificio_DM eq '${odataEscape(codigo)}'`,
       top: 4000,
     });
-    for (const m of maqRows) {
-      const f = m.fields as { Edificio_DM?: string; CodigoEdificio_DM?: string };
-      const nombreActual = String(f.Edificio_DM ?? '').trim();
-      const codigoActual = String(f.CodigoEdificio_DM ?? '').trim();
-      if (nombreActual !== updated.Edificio.trim() || codigoActual !== updated.Codigo.trim()) {
-        await updateItem(LIST_IDS.detalleMaquina, Number(m.id), {
-          Edificio_DM: updated.Edificio,
-          CodigoEdificio_DM: updated.Codigo,
-        });
-        maquinasActualizadas++;
-      }
-    }
+    const aPatchearDM = maqRows.filter((m) => {
+      // OJO: listItems() devuelve el item APLANADO ({ id, ...fields }), no { id, fields }.
+      // El index signature de SharePointItem hace que un `m.fields` compile como `unknown`, así que
+      // el acceso equivocado no da error de tipos: simplemente compara contra undefined y "todo
+      // difiere". Este filtro no filtraba nada y repatcheaba cada máquina en cada guardado.
+      return (
+        String(m.Edificio_DM ?? '').trim() !== updated.Edificio.trim() ||
+        String(m.CodigoEdificio_DM ?? '').trim() !== updated.Codigo.trim()
+      );
+    });
+    await enParalelo(aPatchearDM, async (m) => {
+      await updateItem(LIST_IDS.detalleMaquina, Number(m.id), {
+        Edificio_DM: updated.Edificio,
+        CodigoEdificio_DM: updated.Codigo,
+      });
+    });
+    maquinasActualizadas = aPatchearDM.length;
   }
 
   return { detalleActualizados, edificiosVisitarActualizados, ventilacionesActualizadas, maquinasActualizadas };
