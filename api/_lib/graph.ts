@@ -160,3 +160,88 @@ export async function updateItem(
     body: JSON.stringify(fields),
   });
 }
+
+/**
+ * Resuelve el id de una lista por su displayName, cacheado por proceso.
+ *
+ * El resto del repo direcciona por GUID hardcodeado en LIST_IDS, que es más rápido y explícito.
+ * Esto existe para listas nuevas: el GUID recién se conoce DESPUÉS de crear la lista en
+ * SharePoint, así que hardcodearlo obligaría a un paso manual entre crear la lista y que el
+ * módulo ande — y si alguien se lo saltea, falla en runtime con un 404 opaco.
+ */
+const listIdPorNombre = new Map<string, string>();
+export async function resolveListIdByName(displayName: string): Promise<string> {
+  const cacheado = listIdPorNombre.get(displayName);
+  if (cacheado) return cacheado;
+  const siteId = await getSiteId();
+  const page = await graphRequest<{ value: { id: string; displayName: string }[] }>(
+    `/sites/${siteId}/lists?$select=id,displayName&$top=200`,
+  );
+  for (const l of page?.value ?? []) listIdPorNombre.set(l.displayName, l.id);
+  const found = listIdPorNombre.get(displayName);
+  if (!found) throw new GraphError(404, `Lista no encontrada: ${displayName}`);
+  return found;
+}
+
+/** Lista los archivos de una carpeta de la biblioteca "Documentos" del sitio. */
+export async function listarArchivosCarpeta(carpeta: string): Promise<
+  { id: string; nombre: string; tamano: number; mime: string; url?: string }[]
+> {
+  const siteId = await getSiteId();
+  const ruta = carpeta.split('/').map(encodeURIComponent).join('/');
+  try {
+    const r = await graphRequest<{
+      value?: {
+        id: string;
+        name: string;
+        size?: number;
+        file?: { mimeType?: string };
+        '@microsoft.graph.downloadUrl'?: string;
+      }[];
+    }>(
+      // OJO: NADA de $select acá. Graph DESCARTA `@microsoft.graph.downloadUrl` cuando la
+      // consulta lleva $select —aunque se la pida explícitamente— y sin esa URL la foto no se
+      // puede mostrar: el <img> quedaba vacío y sólo se veía el nombre del archivo.
+      // Son pocos archivos por novedad, así que traer el item completo no cuesta nada.
+      `/sites/${siteId}/drive/root:/${ruta}:/children?$top=100`,
+    );
+    return (r?.value ?? [])
+      .filter((x) => x.file)
+      .map((x) => ({
+        id: x.id,
+        nombre: x.name,
+        tamano: x.size ?? 0,
+        mime: x.file?.mimeType ?? 'application/octet-stream',
+        url: x['@microsoft.graph.downloadUrl'],
+      }));
+  } catch (err) {
+    // Carpeta inexistente = novedad sin evidencia, no es un error.
+    if (err instanceof GraphError && err.status === 404) return [];
+    throw err;
+  }
+}
+
+/**
+ * Cuántos archivos tiene cada subcarpeta de `raiz`, en UNA sola llamada.
+ *
+ * Graph devuelve `folder.childCount` por subcarpeta, así que el contador de adjuntos de todas las
+ * novedades sale de un request. Por eso la lista NO guarda una columna con el número: un contador
+ * guardado hay que mantenerlo sincronizado y se desfasa si una subida falla a mitad.
+ */
+export async function contarPorSubcarpeta(raiz: string): Promise<Map<string, number>> {
+  const siteId = await getSiteId();
+  const ruta = raiz.split('/').map(encodeURIComponent).join('/');
+  const out = new Map<string, number>();
+  try {
+    const r = await graphRequest<{ value?: { name: string; folder?: { childCount?: number } }[] }>(
+      `/sites/${siteId}/drive/root:/${ruta}:/children?$select=name,folder&$top=999`,
+    );
+    for (const x of r?.value ?? []) {
+      if (x.folder) out.set(x.name, x.folder.childCount ?? 0);
+    }
+  } catch (err) {
+    // Todavía no se subió ninguna evidencia: la raíz no existe y no hay nada que contar.
+    if (!(err instanceof GraphError && err.status === 404)) throw err;
+  }
+  return out;
+}

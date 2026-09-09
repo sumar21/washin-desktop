@@ -10,6 +10,7 @@ import {
   Wind,
   BarChart3,
   Settings,
+  Megaphone,
 } from 'lucide-react';
 import type { ModuloNombre, UserRole } from '@/types/domain';
 
@@ -24,6 +25,7 @@ export const moduleMeta: Record<ModuloNombre, { icon: typeof Home; path: string 
   'Stock Tecnico': { icon: HardHat, path: '/stock-tecnicos' },
   Planificaciones: { icon: Map, path: '/rutas' },
   Ventilacion: { icon: Wind, path: '/ventilaciones' },
+  Novedades: { icon: Megaphone, path: '/novedades' },
   Dashboard: { icon: BarChart3, path: '/dashboard' },
   Configuracion: { icon: Settings, path: '/configuracion' },
 };
