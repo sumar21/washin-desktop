@@ -6,7 +6,7 @@
 //
 // NO hay gestión de compras: "Resuelto" es un cambio de estado, no genera pedido ni aprobación.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Megaphone, Paperclip, Check, Ban, Eye, Building2 } from 'lucide-react';
+import { Megaphone, Paperclip, Check, Ban, Eye, Building2, Download, Play, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Modal, ModalActions } from '@/components/Modal';
@@ -169,7 +169,10 @@ export function Novedades() {
     {
       key: 'estado',
       header: 'Estado',
-      width: 'minmax(0,0.55fr)',
+      // Ancho fijo + truncate:false, igual que las columnas de estado de Ventilaciones y Compras.
+      // Con el truncate por defecto la celda recorta la pill a media palabra.
+      width: '160px',
+      truncate: false,
       render: (n) => <StatusBadge status={n.Estado} />,
     },
     {
@@ -369,11 +372,7 @@ function DetalleNovedad({
           ) : evidencia.length === 0 ? (
             <p className="text-[13px] text-wash-text-faint">Sin archivos adjuntos.</p>
           ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {evidencia.map((a) => (
-                <VistaArchivo key={a.id} a={a} />
-              ))}
-            </div>
+            <GaleriaEvidencia archivos={evidencia} />
           )}
         </div>
 
@@ -450,41 +449,119 @@ function DetalleNovedad({
   );
 }
 
-/** Miniatura de un archivo de evidencia: imagen y video se ven en línea; el resto, link. */
-function VistaArchivo({ a }: { a: ArchivoEvidencia }) {
-  const esImagen = a.mime.startsWith('image/');
-  const esVideo = a.mime.startsWith('video/');
+/**
+ * Galería de evidencia con visor DENTRO de la app.
+ *
+ * Antes cada archivo era un <a target="_blank"> a la URL de SharePoint: sacaba al usuario de la
+ * app y en muchos casos disparaba la descarga en vez de mostrar la foto. Ahora se amplía en un
+ * lightbox, el mismo patrón que el detalle de incidentes (z-[70] para quedar sobre el overlay
+ * del Modal, que es z-[60]).
+ */
+function GaleriaEvidencia({ archivos }: { archivos: ArchivoEvidencia[] }) {
+  const [abierto, setAbierto] = useState<number | null>(null);
+  const actual = abierto === null ? null : archivos[abierto];
+
+  // Escape cierra SOLO el visor: se escucha en capture y se corta la propagación antes de que
+  // llegue el listener de Modal.tsx, que si no cerraría el detalle entero.
+  useEffect(() => {
+    if (abierto === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setAbierto(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [abierto]);
+
   return (
-    <div className="overflow-hidden rounded-lg ring-1 ring-wash-border">
-      {esImagen && a.url ? (
-        <a href={a.url} target="_blank" rel="noreferrer">
-          <img src={a.url} alt={a.nombre} className="h-40 w-full bg-wash-canvas object-cover" />
-        </a>
-      ) : esVideo && a.url ? (
-        // El video se sirve desde SharePoint con una URL firmada; `preload="metadata"` evita
-        // bajar el archivo entero sólo por abrir el detalle.
-        <video src={a.url} controls preload="metadata" className="h-40 w-full bg-black object-contain" />
-      ) : (
-        <div className="flex h-40 items-center justify-center bg-wash-canvas">
-          <Paperclip size={20} className="text-wash-text-faint" />
+    <>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        {archivos.map((a, idx) => (
+          <div
+            key={a.id}
+            className="group relative overflow-hidden rounded-lg ring-1 ring-wash-border transition hover:ring-wash-action"
+          >
+            <button
+              type="button"
+              aria-label={`Ver ${a.nombre}`}
+              onClick={() => setAbierto(idx)}
+              className="block w-full"
+            >
+              {a.mime.startsWith('image/') && a.url ? (
+                <img
+                  src={a.url}
+                  alt=""
+                  loading="lazy"
+                  className="h-24 w-full object-cover transition group-hover:scale-105"
+                />
+              ) : a.mime.startsWith('video/') && a.url ? (
+                <span className="relative block">
+                  <video src={a.url} preload="metadata" muted className="h-24 w-full bg-black object-cover" />
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/30">
+                    <Play size={18} className="text-white" />
+                  </span>
+                </span>
+              ) : (
+                <span className="flex h-24 w-full items-center justify-center bg-wash-canvas">
+                  <Paperclip size={18} className="text-wash-text-faint" />
+                </span>
+              )}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {actual && (
+        <div
+          role="presentation"
+          onClick={() => setAbierto(null)}
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-6"
+        >
+          {/* stopPropagation: el click en la barra no debe cerrar el visor (lo cierra el overlay). */}
+          <div
+            role="presentation"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-4 top-4 flex items-center gap-2"
+          >
+            {actual.url && (
+              <a
+                href={actual.url}
+                download={actual.nombre}
+                className="flex h-9 items-center gap-1.5 rounded-lg bg-white/10 px-3 text-sm font-medium text-white transition hover:bg-white/20"
+              >
+                <Download size={16} />
+                Descargar
+              </a>
+            )}
+            <button
+              type="button"
+              aria-label="Cerrar"
+              onClick={() => setAbierto(null)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white transition hover:bg-white/20"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          {actual.mime.startsWith('video/') ? (
+            <video
+              src={actual.url}
+              controls
+              autoPlay
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[90dvh] max-w-[90vw]"
+            />
+          ) : (
+            <img
+              src={actual.url}
+              alt={actual.nombre}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[90dvh] max-w-[90vw] object-contain"
+            />
+          )}
         </div>
       )}
-      <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-        <span className="min-w-0 truncate text-[11.5px] text-wash-text" title={a.nombre}>
-          {a.nombre}
-        </span>
-        {a.url && (
-          <a
-            href={a.url}
-            target="_blank"
-            rel="noreferrer"
-            className="shrink-0 text-[11.5px] font-semibold text-wash-brand hover:underline"
-          >
-            Abrir
-          </a>
-        )}
-      </div>
-    </div>
+    </>
   );
 }
 
