@@ -118,6 +118,15 @@ export function Novedades() {
 
   const columns: Column<Novedad>[] = [
     {
+      key: 'estado',
+      header: 'Estado',
+      // Ancho fijo + truncate:false, igual que las columnas de estado de Ventilaciones y Compras.
+      // Con el truncate por defecto la celda recorta la pill a media palabra.
+      width: '160px',
+      truncate: false,
+      render: (n) => <StatusBadge status={n.Estado} />,
+    },
+    {
       key: 'edificio',
       header: 'Edificio',
       render: (n) => (
@@ -164,15 +173,6 @@ export function Novedades() {
         ) : (
           <span className="text-wash-text-faint">—</span>
         ),
-    },
-    {
-      key: 'estado',
-      header: 'Estado',
-      // Ancho fijo + truncate:false, igual que las columnas de estado de Ventilaciones y Compras.
-      // Con el truncate por defecto la celda recorta la pill a media palabra.
-      width: '160px',
-      truncate: false,
-      render: (n) => <StatusBadge status={n.Estado} />,
     },
     {
       key: 'acciones',
