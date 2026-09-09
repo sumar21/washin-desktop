@@ -14,33 +14,53 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState } from '@/components/EmptyState';
 import { ErrorState } from '@/components/ErrorState';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
-import { cn } from '@/lib/utils';
+import { PopoverClose } from '@/components/ui/popover';
+import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
+import { edificioOptions, estadoOptions, mesAnoOptions } from '@/lib/filters';
+import { useAppStore } from '@/store/useAppStore';
 import * as api from '@/services/api';
 import type { Novedad, ArchivoEvidencia } from '@/types/domain';
 
-const ESTADOS = ['Pendiente', 'Resuelto', 'Anulado'];
+/** Orden canónico de los estados (para el filtro). */
+const ESTADO_ORDEN_NV = ['Pendiente', 'Resuelto', 'Anulado'];
+
+const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((v) => b.includes(v));
+
+function Chip({ children }: { children: React.ReactNode }) {
+  return <span className="rounded-full bg-wash-brand/10 px-2.5 py-0.5 font-semibold text-wash-brand">{children}</span>;
+}
 
 export function Novedades() {
   const [novedades, setNovedades] = useState<Novedad[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  // La bandeja abre en PENDIENTES, que es para lo que se usa. Las resueltas se llegan sacando
-  // el filtro: el endpoint las trae todas, así el filtro por estado siempre encuentra algo.
-  const [estado, setEstado] = useState<string>('Pendiente');
+  // Filtros multi-select: array vacío = "todos". La bandeja abre en PENDIENTES, que es para lo
+  // que se usa; el endpoint trae todos los estados para que el filtro siempre encuentre algo.
+  const [filterEstado, setFilterEstado] = useState<string[]>(['Pendiente']);
+  const [filterEdificio, setFilterEdificio] = useState<string[]>([]);
+  const [filterMesAno, setFilterMesAno] = useState<string[]>([]);
   const [viendo, setViendo] = useState<Novedad | null>(null);
+
+  // El catálogo de edificios sale de ABM.Edificios y NO de las novedades cargadas: así un
+  // edificio activo sin novedades igual se puede elegir, y la lista no cambia según los otros
+  // filtros (ver el comentario de edificioOptions en src/lib/filters.ts).
+  const edificiosAbm = useAppStore((s) => s.CollectAbmEdificios);
+  const fetchAbm = useAppStore((s) => s.fetchAbm);
 
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    return api
-      .getNovedades()
-      .then(setNovedades)
+    return Promise.all([
+      api.getNovedades().then(setNovedades),
+      // Alimenta el combo de Edificio del filtro. Si falla, el resto de la pantalla sirve igual.
+      fetchAbm().catch(() => {}),
+    ])
       .catch((err) =>
         setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar las novedades.')
       )
       .finally(() => setLoading(false));
-  }, []);
+  }, [fetchAbm]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- carga inicial; "Reintentar" también dispara load().
@@ -48,10 +68,27 @@ export function Novedades() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar.
   }, []);
 
+  // Estados canónicos siempre presentes + los que traigan los datos (nunca "Sin opciones").
+  const estadoOpts = useMemo<MultiOption[]>(
+    () => estadoOptions([...ESTADO_ORDEN_NV, ...novedades.map((n) => n.Estado)], ESTADO_ORDEN_NV),
+    [novedades]
+  );
+  const edificioOpts = useMemo<MultiOption[]>(() => edificioOptions(edificiosAbm), [edificiosAbm]);
+  const mesAnoOpts = useMemo<MultiOption[]>(
+    () => mesAnoOptions(novedades.map((n) => n.FechaMesAno)),
+    [novedades]
+  );
+  const mesAnoLabel = useMemo(
+    () => new Map(mesAnoOpts.map((o) => [o.value, o.label])),
+    [mesAnoOpts]
+  );
+
   const filtradas = useMemo(() => {
     const q = query.trim().toLowerCase();
     return novedades
-      .filter((n) => !estado || n.Estado === estado)
+      .filter((n) => filterEstado.length === 0 || filterEstado.includes(n.Estado))
+      .filter((n) => filterEdificio.length === 0 || filterEdificio.includes(n.Edificio))
+      .filter((n) => filterMesAno.length === 0 || filterMesAno.includes(n.FechaMesAno))
       .filter(
         (n) =>
           !q ||
@@ -60,7 +97,22 @@ export function Novedades() {
           n.Descripcion.toLowerCase().includes(q) ||
           n.Usuario.toLowerCase().includes(q)
       );
-  }, [novedades, query, estado]);
+  }, [novedades, query, filterEstado, filterEdificio, filterMesAno]);
+
+  const activeChips = useMemo<{ cat: string; label: string }[]>(() => {
+    const chips: { cat: string; label: string }[] = [];
+    filterMesAno.forEach((v) => chips.push({ cat: 'Mes', label: mesAnoLabel.get(v) ?? v }));
+    filterEstado.forEach((v) => chips.push({ cat: 'Estado', label: v }));
+    filterEdificio.forEach((v) => chips.push({ cat: 'Edificio', label: v }));
+    return chips;
+  }, [filterMesAno, filterEstado, filterEdificio, mesAnoLabel]);
+
+  const hasFilters = activeChips.length > 0;
+  const clearFilters = () => {
+    setFilterMesAno([]);
+    setFilterEstado([]);
+    setFilterEdificio([]);
+  };
 
   // El contador mide la COLA DE TRABAJO (lo pendiente), no lo que se está mirando.
   const pendientes = novedades.filter((n) => n.Estado === 'Pendiente').length;
@@ -148,25 +200,20 @@ export function Novedades() {
         title="Novedades"
         subtitle={`${pendientes} pendiente${pendientes === 1 ? '' : 's'} · ${novedades.length} en total`}
         search={{ value: query, onChange: setQuery, placeholder: 'Buscar edificio, novedad o técnico…' }}
-        onRefresh={load}
-        toolbarExtra={
-          <div className="flex shrink-0 items-center gap-1">
-            {ESTADOS.map((e) => (
-              <button
-                key={e}
-                type="button"
-                onClick={() => setEstado(estado === e ? '' : e)}
-                className={cn(
-                  'rounded-lg px-2.5 py-2 text-sm font-medium ring-1 transition',
-                  estado === e
-                    ? 'bg-wash-brand/10 text-wash-brand ring-wash-brand/30'
-                    : 'bg-wash-canvas text-wash-text ring-wash-border hover:bg-wash-border/40'
-                )}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
+        filterPopover={
+          <FilterContent
+            mesAno={filterMesAno}
+            estado={filterEstado}
+            edificio={filterEdificio}
+            mesAnoOpts={mesAnoOpts}
+            estadoOpts={estadoOpts}
+            edificioOpts={edificioOpts}
+            onApply={(f) => {
+              setFilterMesAno(f.mesAno);
+              setFilterEstado(f.estado);
+              setFilterEdificio(f.edificio);
+            }}
+          />
         }
       />
       <LoadingOverlay visible={loading} label="Cargando novedades…" />
@@ -174,7 +221,21 @@ export function Novedades() {
       {loadError ? (
         <ErrorState message={loadError} onRetry={load} />
       ) : (
-        <div className="flex-1 overflow-hidden p-3 md:p-6">
+        <>
+          {hasFilters && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-wash-border bg-wash-surface-2/40 px-4 py-2 text-xs text-wash-text-muted md:px-6">
+              <span className="font-semibold uppercase tracking-wider">Filtros:</span>
+              {activeChips.map((c, idx) => (
+                <Chip key={`${c.cat}-${c.label}-${idx}`}>
+                  <span className="text-wash-brand/70">{c.cat}:</span> {c.label}
+                </Chip>
+              ))}
+              <button type="button" onClick={clearFilters} className="ml-auto hover:text-wash-text-strong">
+                Limpiar
+              </button>
+            </div>
+          )}
+          <div className="flex-1 overflow-hidden p-3 md:p-6">
           <DataTable
             rows={filtradas}
             columns={columns}
@@ -183,7 +244,7 @@ export function Novedades() {
             empty={
               <EmptyState
                 icon={Megaphone}
-                title={estado ? `Sin novedades ${estado.toLowerCase()}s` : 'Sin novedades'}
+                title={hasFilters ? 'Sin novedades con esos filtros' : 'Sin novedades'}
                 description="Las cargan los técnicos desde la app del celular."
               />
             }
@@ -215,8 +276,9 @@ export function Novedades() {
                 </div>
               </button>
             )}
-          />
-        </div>
+            />
+          </div>
+        </>
       )}
 
       <DetalleNovedad
@@ -421,6 +483,106 @@ function VistaArchivo({ a }: { a: ArchivoEvidencia }) {
             Abrir
           </a>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Popover de filtros. Mismo patrón que Incidentes/Aprobaciones: se edita en estado local
+ * (`p*`) y recién se propaga al aplicar, así el listado no se re-filtra en cada click.
+ */
+function FilterContent({
+  mesAno,
+  estado,
+  edificio,
+  mesAnoOpts,
+  estadoOpts,
+  edificioOpts,
+  onApply,
+}: {
+  mesAno: string[];
+  estado: string[];
+  edificio: string[];
+  mesAnoOpts: MultiOption[];
+  estadoOpts: MultiOption[];
+  edificioOpts: MultiOption[];
+  onApply: (f: { mesAno: string[]; estado: string[]; edificio: string[] }) => void;
+}) {
+  const [pMesAno, setPMesAno] = useState<string[]>(mesAno);
+  const [pEstado, setPEstado] = useState<string[]>(estado);
+  const [pEdificio, setPEdificio] = useState<string[]>(edificio);
+
+  const toggle = (set: React.Dispatch<React.SetStateAction<string[]>>) => (v: string) =>
+    set((arr) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]));
+
+  const total = pMesAno.length + pEstado.length + pEdificio.length;
+  const dirty =
+    !sameSet(pMesAno, mesAno) || !sameSet(pEstado, estado) || !sameSet(pEdificio, edificio);
+
+  const limpiar = () => {
+    setPMesAno([]);
+    setPEstado([]);
+    setPEdificio([]);
+  };
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between border-b border-wash-border pb-2.5">
+        <h3 className="text-sm font-bold text-wash-text-strong">Filtrar</h3>
+        {total > 0 && (
+          <button
+            type="button"
+            onClick={limpiar}
+            className="text-[11px] font-semibold text-wash-text-muted hover:text-wash-text-strong"
+          >
+            Limpiar todo
+          </button>
+        )}
+      </div>
+      <div className="space-y-3">
+        <MultiSelect
+          label="Mes / Año"
+          options={mesAnoOpts}
+          selected={pMesAno}
+          onToggle={toggle(setPMesAno)}
+          onClear={() => setPMesAno([])}
+        />
+        <MultiSelect
+          label="Estado"
+          options={estadoOpts}
+          selected={pEstado}
+          onToggle={toggle(setPEstado)}
+          onClear={() => setPEstado([])}
+        />
+        <MultiSelect
+          label="Edificio"
+          options={edificioOpts}
+          selected={pEdificio}
+          onToggle={toggle(setPEdificio)}
+          onClear={() => setPEdificio([])}
+          searchable
+        />
+      </div>
+      <div className="mt-4 flex justify-end gap-2 border-t border-wash-border pt-3">
+        <PopoverClose asChild>
+          <button
+            type="button"
+            className="rounded-lg border border-wash-border px-4 py-2 text-[12.5px] font-medium text-wash-text-strong hover:bg-wash-surface-2"
+          >
+            Cancelar
+          </button>
+        </PopoverClose>
+        <PopoverClose asChild>
+          <button
+            type="button"
+            disabled={!dirty}
+            onClick={() => onApply({ mesAno: pMesAno, estado: pEstado, edificio: pEdificio })}
+            className="rounded-lg bg-wash-action px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-wash-action-dark disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Aplicar
+          </button>
+        </PopoverClose>
       </div>
     </div>
   );
