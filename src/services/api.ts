@@ -25,6 +25,8 @@ import type {
   Usuario,
   UserRole,
   Ventilacion,
+  Novedad,
+  ArchivoEvidencia,
 } from '@/types/domain';
 import type { AbmTab } from '@/lib/abmAccess';
 
@@ -738,4 +740,34 @@ export function updateUsuario(id: number, payload: UsuarioAbmInput): Promise<Usu
 
 export function bajaUsuario(id: number): Promise<{ ID: number; Status: string }> {
   return request('/abm/usuarios', { method: 'POST', body: JSON.stringify({ action: 'baja', id }) });
+}
+
+// ── Novedades (20.Novedades) ─────────────────────────────────────────────
+// Las carga el técnico desde la mobile; acá el back-office las revisa y da el OK.
+export function getNovedades(): Promise<Novedad[]> {
+  return request('/novedades');
+}
+
+export function getEvidenciaNovedad(id: number): Promise<ArchivoEvidencia[]> {
+  return request(`/novedades?id=${id}`);
+}
+
+export function resolverNovedad(
+  id: number,
+  comentario: string
+): Promise<{ ID: number; Estado: string }> {
+  return request(`/novedades/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'resolver', comentario }),
+  });
+}
+
+export function anularNovedad(
+  id: number,
+  comentario: string
+): Promise<{ ID: number; Estado: string }> {
+  return request(`/novedades/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'anular', comentario }),
+  });
 }

@@ -61,6 +61,7 @@ export type ModuloNombre =
   | 'Stock Tecnico'
   | 'Planificaciones'
   | 'Ventilacion'
+  | 'Novedades'
   | 'Dashboard'
   | 'Configuracion';
 
@@ -617,4 +618,33 @@ export interface EmailContacto {
   Email_AE: string;
   Rol_AE: string;
   Status_AE: 'Activo' | 'Inactivo';
+}
+
+// 20.Novedades — las carga el técnico desde la mobile (tacho roto, sticker despegado); acá el
+// back-office compra el recurso y da el OK. No genera pedido de compra ni aprobación.
+export interface Novedad {
+  ID: number;
+  Edificio: string;
+  CodigoEdificio: string;
+  Descripcion: string;
+  Estado: string;
+  Fecha: string;
+  FechaMesAno: string;
+  Hora: string;
+  Usuario: string;
+  /** Sale del drive, no de una columna de la lista. */
+  CantidadEvidencia: number;
+  FechaResuelto?: string;
+  HoraResuelto?: string;
+  UsuarioResuelto?: string;
+  DescripcionResuelto?: string;
+}
+
+/** Un archivo de evidencia de una novedad (vive en la biblioteca "Documentos"). */
+export interface ArchivoEvidencia {
+  id: string;
+  nombre: string;
+  tamano: number;
+  mime: string;
+  url?: string;
 }
