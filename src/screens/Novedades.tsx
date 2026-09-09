@@ -16,7 +16,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { PopoverClose } from '@/components/ui/popover';
 import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
-import { edificioOptions, estadoOptions, mesAnoOptions } from '@/lib/filters';
+import { edificioOptions, estadoOptions, last12MesesOptions } from '@/lib/filters';
 import { useAppStore } from '@/store/useAppStore';
 import * as api from '@/services/api';
 import type { Novedad, ArchivoEvidencia } from '@/types/domain';
@@ -74,10 +74,12 @@ export function Novedades() {
     [novedades]
   );
   const edificioOpts = useMemo<MultiOption[]>(() => edificioOptions(edificiosAbm), [edificiosAbm]);
-  const mesAnoOpts = useMemo<MultiOption[]>(
-    () => mesAnoOptions(novedades.map((n) => n.FechaMesAno)),
-    [novedades]
-  );
+  // last12MesesOptions() y NO mesAnoOptions(): es lo que usan Incidentes, Aprobaciones, Compras y
+  // Ventilaciones. Da los últimos 12 meses fijos en formato MM/YYYY —el mismo de las columnas
+  // FechaMesAno_* de SharePoint—, así el filtro ofrece siempre los mismos meses aunque todavía no
+  // haya novedades de alguno. mesAnoOptions() los deriva de los datos y los rotula "sep 2026",
+  // que no coincide con el resto de la app.
+  const mesAnoOpts = useMemo<MultiOption[]>(() => last12MesesOptions(), []);
   const mesAnoLabel = useMemo(
     () => new Map(mesAnoOpts.map((o) => [o.value, o.label])),
     [mesAnoOpts]
@@ -113,9 +115,6 @@ export function Novedades() {
     setFilterEstado([]);
     setFilterEdificio([]);
   };
-
-  // El contador mide la COLA DE TRABAJO (lo pendiente), no lo que se está mirando.
-  const pendientes = novedades.filter((n) => n.Estado === 'Pendiente').length;
 
   const columns: Column<Novedad>[] = [
     {
@@ -201,7 +200,7 @@ export function Novedades() {
     <div className="relative flex h-full w-full flex-col">
       <PageHeader
         title="Novedades"
-        subtitle={`${pendientes} pendiente${pendientes === 1 ? '' : 's'} · ${novedades.length} en total`}
+        subtitle="Reportes de los técnicos sobre el edificio"
         search={{ value: query, onChange: setQuery, placeholder: 'Buscar edificio, novedad o técnico…' }}
         filterPopover={
           <FilterContent
