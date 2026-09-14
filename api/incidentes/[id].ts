@@ -174,12 +174,36 @@ function rechazarSiTerminal(
   });
 }
 
+/**
+ * assign descuenta stock, así que además de los terminales rechaza los estados en los que la
+ * grilla nunca ofrece "Asignar técnico" (primaryAction en src/screens/Incidentes.tsx):
+ *  · 'A Revisar'     → el triaje es de la mobile; la grilla usa cambiar-tecnico (CLAUDE.md raíz §5.A).
+ *  · 'En Aprobacion' → la aprobación del cambio de máquina está abierta; se asigna recién 'Aprobada'.
+ *  · 'Asignado' con técnico → es "Cambiar técnico"; assign volvería a descontar los repuestos.
+ */
+function rechazarSiNoAsignable(
+  inc: { Status_IN: string; TecnicoAsignado_IN?: string },
+  res: VercelResponse
+): VercelResponse | null {
+  const terminal = rechazarSiTerminal(inc, res, 'asignar');
+  if (terminal) return terminal;
+  let message = '';
+  if (inc.Status_IN === 'A Revisar')
+    message = 'El incidente está "A Revisar": la revisión la hace el técnico desde la mobile. Usá "Cambiar técnico".';
+  else if (inc.Status_IN === 'En Aprobacion')
+    message = 'El cambio de máquina todavía está en aprobación: se asigna cuando quede aprobado.';
+  else if (inc.Status_IN === 'Asignado' && inc.TecnicoAsignado_IN?.trim())
+    message = 'El incidente ya está asignado. Usá "Cambiar técnico".';
+  if (!message) return null;
+  return res.status(409).json({ error: 'invalid_state', message });
+}
+
 async function assign(id: number, body: Body, res: VercelResponse) {
   const tecnico = body.tecnico?.trim();
   if (!tecnico) return res.status(400).json({ error: 'invalid', message: 'Falta el técnico' });
   const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
   if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
-  const bloqueo = rechazarSiTerminal(mapIncidente(incRaw), res, 'asignar');
+  const bloqueo = rechazarSiNoAsignable(mapIncidente(incRaw), res);
   if (bloqueo) return bloqueo;
   const f = fechasHoy();
   await updateItem(LIST_IDS.incidentes, id, {
@@ -247,8 +271,19 @@ async function cambioMaquina(id: number, body: Body, res: VercelResponse) {
 
   const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
   if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
-  const bloqueo = rechazarSiTerminal(mapIncidente(incRaw), res, 'gestionar un cambio de máquina');
+  const inc = mapIncidente(incRaw);
+  const bloqueo = rechazarSiTerminal(inc, res, 'gestionar un cambio de máquina');
   if (bloqueo) return bloqueo;
+  // Sólo desde 'Pendiente', el único estado en que la grilla ofrece el botón. 'En Aprobacion' y
+  // 'Aprobada' ya tienen su fila en 07.Aprobaciones (otra la duplicaría y el approve descontaría dos
+  // máquinas); 'A Revisar' todavía no pasó por el triaje de la mobile. Un rechazo devuelve el
+  // incidente a 'Pendiente' (api/aprobaciones/[id].ts), así que se puede volver a pedir.
+  if (inc.Status_IN !== 'Pendiente') {
+    return res.status(409).json({
+      error: 'invalid_state',
+      message: `El incidente está "${inc.Status_IN}": el cambio de máquina se gestiona sólo desde "Pendiente".`,
+    });
+  }
 
   const f = fechasHoy();
   await createItem(LIST_IDS.aprobaciones, {
@@ -261,7 +296,7 @@ async function cambioMaquina(id: number, body: Body, res: VercelResponse) {
     // Destino y origen del movimiento: en un cambio de máquina el reemplazo sale del depósito y va
     // al edificio DEL INCIDENTE. La transferencia ya los escribía (maquinaMoves.ts) pero acá no, así
     // que el detalle de la aprobación no decía adónde iba la máquina.
-    EdificioDestino_AP: mapIncidente(incRaw).NombreEdificio_IN,
+    EdificioDestino_AP: inc.NombreEdificio_IN,
     EdificioSelect_AP: 'Wash Inn',
     Rechazada_AP: 'NO',
     Aprobada_AP: 'NO',
