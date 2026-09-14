@@ -358,7 +358,14 @@ export function Incidentes() {
     [filterEstado]
   );
   const displayList = useMemo(() => {
-    const base = wantResueltos ? dedupeById([...abiertos, ...resueltosExtra]) : abiertos;
+    // Al mezclar hay que reordenar: cada carga viene ordenada por ID descendente desde la API
+    // (api/incidentes/index.ts), pero concatenadas no. Con Estado=Anulado —único estado que vive
+    // en las dos fuentes— los anulados del escritorio de todos los meses salían primero y los de
+    // la mobile al final: el incidente 9047 quedaba en la fila 45 de 48, detrás de filas de abril,
+    // y quien lo buscaba podía creer que no estaba. Mismo criterio que la API: el más nuevo arriba.
+    const base = wantResueltos
+      ? dedupeById([...abiertos, ...resueltosExtra]).sort((a, b) => b.ID - a.ID)
+      : abiertos;
     // Fuera las bitácoras de transfer/baja de máquina (no son OTs; ver esBitacoraMaquina).
     return base.filter((i) => !esBitacoraMaquina(i));
   }, [wantResueltos, abiertos, resueltosExtra]);
