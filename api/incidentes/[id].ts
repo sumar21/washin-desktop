@@ -145,9 +145,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 // ── Asignar técnico (+ descuento de stock de los repuestos) ───────────────
+/**
+ * Estados TERMINALES: un incidente así no se reabre desde ninguna acción del escritorio.
+ *
+ * Antes cuatro acciones no miraban el estado y podían "revivir" un incidente cerrado:
+ *  · assign        → lo pasaba a Asignado Y descontaba stock (ni siquiera leía el incidente);
+ *  · cambiarTecnico → lo devolvía a A Revisar / Asignado;
+ *  · cambioMaquina  → lo pasaba a En Aprobacion y creaba una aprobación;
+ *  · generarCompra  → creaba un pedido de compra Aprobado.
+ * El front mostraba esos botones en los anulados desde el escritorio (Resuelto_IN='NO'): QA contó
+ * 34 de 48 filas anuladas con "Asignar técnico" o "Generar compra".
+ *
+ * Se gatea por Status_IN y NO por Resuelto_IN a propósito: 'Aprobada' (cambio de máquina aprobado)
+ * se asigna legítimamente para que el técnico ejecute el swap (msapp Screen_Incidentes 501/2640), y
+ * no hay datos que confirmen qué Resuelto_IN tiene. 'Anulado' y 'Resuelto' son terminales sin
+ * ambigüedad. desasignar, edit, anular y cerrarComplejo ya validaban su estado por su cuenta.
+ */
+const ESTADOS_TERMINALES = ['Anulado', 'Resuelto'];
+function rechazarSiTerminal(
+  inc: { Status_IN: string },
+  res: VercelResponse,
+  accion: string
+): VercelResponse | null {
+  if (!ESTADOS_TERMINALES.includes(inc.Status_IN)) return null;
+  return res.status(409).json({
+    error: 'estado_terminal',
+    message: `El incidente está ${inc.Status_IN.toLowerCase()}: no se puede ${accion}.`,
+  });
+}
+
 async function assign(id: number, body: Body, res: VercelResponse) {
   const tecnico = body.tecnico?.trim();
   if (!tecnico) return res.status(400).json({ error: 'invalid', message: 'Falta el técnico' });
+  const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
+  if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
+  const bloqueo = rechazarSiTerminal(mapIncidente(incRaw), res, 'asignar');
+  if (bloqueo) return bloqueo;
   const f = fechasHoy();
   await updateItem(LIST_IDS.incidentes, id, {
     FechaAsignada_IN: body.fechaAsignada?.trim() || f.fecha,
@@ -171,6 +204,8 @@ async function cambiarTecnico(id: number, body: Body, res: VercelResponse) {
   const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
   if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
   const inc = mapIncidente(incRaw);
+  const bloqueo = rechazarSiTerminal(inc, res, 'cambiar el técnico');
+  if (bloqueo) return bloqueo;
   const esAtencionCliente =
     inc.NoResuelto_IN === 'Atencion al Cliente' || inc.NoResuelto_IN === 'Reportado Por Tecnico';
   const status = esAtencionCliente ? 'A Revisar' : 'Asignado';
@@ -212,6 +247,8 @@ async function cambioMaquina(id: number, body: Body, res: VercelResponse) {
 
   const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
   if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
+  const bloqueo = rechazarSiTerminal(mapIncidente(incRaw), res, 'gestionar un cambio de máquina');
+  if (bloqueo) return bloqueo;
 
   const f = fechasHoy();
   await createItem(LIST_IDS.aprobaciones, {
@@ -248,6 +285,8 @@ async function generarCompra(id: number, body: Body, res: VercelResponse, sessio
   const incRaw = await getItem(LIST_IDS.incidentes, id, incidenteSelectFields());
   if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
   const inc = mapIncidente(incRaw);
+  const bloqueo = rechazarSiTerminal(inc, res, 'generar una compra');
+  if (bloqueo) return bloqueo;
 
   const f = fechasHoy();
   const idUnivoco = `${session.usuario.slice(0, 3)} - ${f.stamp} - ${f.fecha}`;

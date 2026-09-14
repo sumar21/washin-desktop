@@ -545,8 +545,11 @@ export function Incidentes() {
 
   // Acción contextual de una fila/card según tipo + estado + stock (reusada en tabla y cards).
   const primaryAction = (i: Incidente) => {
-    // Los incidentes resueltos son cerrados: sin acciones de mutación (solo ver detalle).
-    if (i.Resuelto_IN === 'SI') return null;
+    // Cerrados = sin acciones de mutación (solo ver detalle). Por Resuelto_IN Y por Status_IN: el
+    // escritorio anula dejando Resuelto_IN='NO' (§6.11 del CLAUDE.md raíz), así que con el chequeo
+    // de Resuelto_IN solo, un anulado desde acá caía hasta "Asignar técnico" o "Generar compra" y se
+    // podía revivir. El backend ahora también lo rechaza (rechazarSiTerminal, api/incidentes/[id].ts).
+    if (i.Resuelto_IN === 'SI' || i.Status_IN === 'Anulado' || i.Status_IN === 'Resuelto') return null;
     const reps = repuestosDe(i.ID);
     const sinStock = requiereRepuesto(i) && reps.length > 0 && !hasStock(i);
     const asignado = !!i.TecnicoAsignado_IN && i.Status_IN === 'Asignado';
