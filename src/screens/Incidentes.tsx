@@ -146,6 +146,17 @@ const esAnulable = (i: Incidente) => i.Resuelto_IN !== 'SI' && ESTADOS_ANULABLES
 // Estados de un incidente YA resuelto. Tildar alguno en el filtro de Estado dispara el fetch
 // de resueltos (por mes) que se mergean con los abiertos.
 const ESTADOS_IN_RESUELTOS = ['Resuelto', 'Aprobada', 'Rechazada'];
+/**
+ * Estados que obligan a traer los incidentes CERRADOS (Resuelto_IN='SI') on-demand.
+ *
+ * `Anulado` va acá además de los resueltos, y no por prolijidad: las dos apps anulan distinto
+ * (§6.11 del CLAUDE.md raíz). El escritorio deja Resuelto_IN='NO', así que esos anulados vienen
+ * en la carga por defecto. La mobile escribe Resuelto_IN='SI', así que NO vienen — y como
+ * 'Anulado' no disparaba la carga de cerrados, filtrar por Anulado nunca los encontraba.
+ * Medido en producción: 434 de 475 anulados (91%) quedaban inalcanzables desde esta grilla.
+ * Caso reportado: el incidente 9047, que Paul recibió por mail y no podía encontrar.
+ */
+const ESTADOS_IN_CERRADOS = [...ESTADOS_IN_RESUELTOS, 'Anulado'];
 
 // Una compra "abierta" para un incidente bloquea generar otra (guard anti-duplicado del
 // msapp: Screen_Incidentes.pa.yaml:192, CollectAUX filtra 05.PedidoCompras por
@@ -343,7 +354,7 @@ export function Incidentes() {
   // resuelto, mergeamos los resueltos traídos on-demand. displayList alimenta filtro + render.
   const abiertos = incidentes;
   const wantResueltos = useMemo(
-    () => filterEstado.some((e) => ESTADOS_IN_RESUELTOS.includes(e)),
+    () => filterEstado.some((e) => ESTADOS_IN_CERRADOS.includes(e)),
     [filterEstado]
   );
   const displayList = useMemo(() => {
@@ -374,10 +385,12 @@ export function Incidentes() {
   );
 
   const mesAnoOpts = useMemo(() => last12MesesOptions(), []);
-  // Opciones de Estado = canónicos abiertos + resueltos ∪ los presentes en la lista mostrada.
+  // Opciones de Estado = canónicos abiertos + cerrados ∪ los presentes en la lista mostrada.
+  // 'Anulado' tiene que ser canónico: antes sólo aparecía si había algún anulado desde el
+  // escritorio en la lista abierta, y si no, ni siquiera se podía elegir.
   const estadoOpts = useMemo(
     () => {
-      const canon = [...ESTADOS_IN, ...ESTADOS_IN_RESUELTOS];
+      const canon = [...ESTADOS_IN, ...ESTADOS_IN_CERRADOS];
       return estadoOptions([...canon, ...displayList.map((i) => i.Status_IN)], canon);
     },
     [displayList]
@@ -597,9 +610,9 @@ export function Incidentes() {
               setFilterEdificio(f.edificio);
               setFilterTipo(f.tipo);
               setFilterAsignacion(f.asignacion);
-              // Si tildó estados resueltos → fetch de los meses elegidos (o el mes actual).
-              // Si no, limpiamos los resueltos locales y mostramos solo abiertos.
-              if (f.estado.some((e) => ESTADOS_IN_RESUELTOS.includes(e))) {
+              // Si tildó estados cerrados (resueltos o anulados) → fetch de los meses elegidos (o el
+              // mes actual). Si no, limpiamos los cerrados locales y mostramos solo abiertos.
+              if (f.estado.some((e) => ESTADOS_IN_CERRADOS.includes(e))) {
                 const meses = f.mesAno.length > 0 ? f.mesAno : [mesAnoOpts[0].value];
                 void loadResueltos(meses);
               } else {
