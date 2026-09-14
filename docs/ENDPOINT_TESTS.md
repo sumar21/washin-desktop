@@ -32,13 +32,25 @@ Harness y modo de correr: [`scripts/endpoint-tests/`](../scripts/endpoint-tests/
 
 ## Mutaciones (con creación→borrado / cambio→reversión)
 
-### Incidentes — 5/5 ✅
-| Acción | Resultado | Reversión |
+### Incidentes — 5/5 ✅ (corrida del 2026-07-07)
+
+> **2026-09-14: los checks cambiaron y todavía no se volvieron a correr.** `assign` y `cambio-maquina`
+> ahora rechazan con 409 los estados en los que la grilla no los ofrece (`api/incidentes/[id].ts`).
+> La corrida del 2026-07-07 asignaba y pedía cambio de máquina sobre un incidente recién creado
+> ("A Revisar"), justo lo que prohíbe la §5.A del CLAUDE.md raíz. `mut_incidentes.mjs` ahora recorre
+> el ciclo real simulando el triaje de la mobile y la aprobación con PATCH directos al incidente:
+
+| Acción | Esperado | Reversión |
 |---|---|---|
 | `POST /api/incidentes` create | 201, Status `A Revisar` | borrar incidente |
-| `POST /api/incidentes/[id]` assign | 200 `Asignado` | (borra el incidente) |
-| `POST /api/incidentes/[id]` cambiar-tecnico | 200 | (idem) |
-| `POST /api/incidentes/[id]` cambio-maquina | 200 `En Aprobacion`, crea 07.Aprobaciones | borrar aprobación + incidente |
+| assign sobre `A Revisar` | 409 `invalid_state`, sin cambios | (borra el incidente) |
+| cambio-maquina sobre `A Revisar` | 409, sin aprobación | (idem) |
+| cambiar-tecnico | 200, conserva `A Revisar` | (idem) |
+| PATCH → `Pendiente` (triaje de la mobile) | — | (idem) |
+| cambio-maquina sobre `Pendiente` | 200 `En Aprobacion`, crea 07.Aprobaciones | borrar aprobación + incidente |
+| cambio-maquina / assign sobre `En Aprobacion` | 409, sin aprobación duplicada | (idem) |
+| PATCH → `Aprobada` + assign | 200 `Asignado` | (borra el incidente) |
+| assign sobre `Asignado` con técnico | 409, sin cambios | (idem) |
 | `POST /api/incidentes/[id]` generar-compra | 201, crea pedido + detalle | borrar pedido + detalle |
 
 ### Compras + Aprobaciones — 7/7 ✅

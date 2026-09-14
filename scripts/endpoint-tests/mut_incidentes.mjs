@@ -27,23 +27,43 @@ try {
     return `id=${incId}`;
   });
 
-  await R.test('POST /api/incidentes/[id] assign → 200 Asignado', async () => {
+  // Un incidente recién creado nace "A Revisar": el triaje es de la mobile y el escritorio sólo le
+  // avisa a un técnico con cambiar-tecnico (CLAUDE.md raíz §5.A). assign y cambio-maquina lo rechazan.
+  await R.test('POST /api/incidentes/[id] assign sobre "A Revisar" → 409 sin escribir', async () => {
     const r = await api('POST', `/api/incidentes/${incId}`, { action: 'assign', tecnico });
-    assert(r.status === 200 && r.json.Status_IN === 'Asignado', `status ${r.status} ${JSON.stringify(r.json)}`);
+    assert(r.status === 409 && r.json.error === 'invalid_state', `status ${r.status} ${JSON.stringify(r.json)}`);
     const g = await graph.get(LIST_IDS.incidentes, incId);
-    assert(g.Status_IN === 'Asignado' && g.TecnicoAsignado_IN === tecnico, `graph Status=${g.Status_IN} tec=${g.TecnicoAsignado_IN}`);
-    return `tec=${tecnico}`;
+    assert(g.Status_IN === 'A Revisar' && !g.TecnicoAsignado_IN, `graph Status=${g.Status_IN} tec=${g.TecnicoAsignado_IN}`);
+    return 'sigue A Revisar';
   });
 
-  await R.test('POST /api/incidentes/[id] cambiar-tecnico → 200', async () => {
+  await R.test('POST /api/incidentes/[id] cambio-maquina sobre "A Revisar" → 409 sin aprobación', async () => {
+    const r = await api('POST', `/api/incidentes/${incId}`, { action: 'cambio-maquina', maquinaConcat: `${TAG}-MAQ`, idMaquinaReemplazo: 'X' });
+    assert(r.status === 409 && r.json.error === 'invalid_state', `status ${r.status} ${JSON.stringify(r.json)}`);
+    const aprobs = await graph.list(LIST_IDS.aprobaciones, { filter: `fields/IDMaquina_AP eq '${incId}'` });
+    for (const a of aprobs) R.cleanup(`borrar aprobación ${a.id} (no debería existir)`, () => graph.del(LIST_IDS.aprobaciones, a.id));
+    assert(aprobs.length === 0, `se creó una aprobación igual (n=${aprobs.length})`);
+    return 'sin aprobación';
+  });
+
+  await R.test('POST /api/incidentes/[id] cambiar-tecnico → 200 (conserva "A Revisar")', async () => {
     const r = await api('POST', `/api/incidentes/${incId}`, { action: 'cambiar-tecnico', tecnico: tecnico2 });
     assert(r.status === 200, `status ${r.status} ${JSON.stringify(r.json)}`);
     const g = await graph.get(LIST_IDS.incidentes, incId);
-    assert(g.TecnicoAsignado_IN === tecnico2, `graph tec=${g.TecnicoAsignado_IN}`);
+    assert(g.TecnicoAsignado_IN === tecnico2 && g.Status_IN === 'A Revisar', `graph tec=${g.TecnicoAsignado_IN} Status=${g.Status_IN}`);
     return `tec=${tecnico2}`;
   });
 
-  await R.test('POST /api/incidentes/[id] cambio-maquina → 200 (crea aprobación)', async () => {
+  // El técnico lo diagnostica desde la mobile sin resolverlo → queda "Pendiente" (mobile
+  // api/_lib/incidentes.ts). Se simula con un PATCH directo; el incidente se borra en el cleanup.
+  await R.test('simular triaje de la mobile → "Pendiente"', async () => {
+    await graph.patch(LIST_IDS.incidentes, incId, { Status_IN: 'Pendiente', NoResuelto_IN: 'Cambio de Maquina' });
+    const g = await graph.get(LIST_IDS.incidentes, incId);
+    assert(g.Status_IN === 'Pendiente', `graph Status=${g.Status_IN}`);
+    return 'Pendiente';
+  });
+
+  await R.test('POST /api/incidentes/[id] cambio-maquina sobre "Pendiente" → 200 (crea aprobación)', async () => {
     const r = await api('POST', `/api/incidentes/${incId}`, { action: 'cambio-maquina', maquinaConcat: `${TAG}-MAQ`, idMaquinaReemplazo: 'X' });
     assert(r.status === 200 && r.json.Status_IN === 'En Aprobacion', `status ${r.status} ${JSON.stringify(r.json)}`);
     // encontrar la aprobación creada para limpiarla
@@ -52,6 +72,38 @@ try {
     assert(ap, `no se encontró la aprobación creada (n=${aprobs.length})`);
     R.cleanup(`borrar aprobación ${ap.id} (cambio-maquina)`, () => graph.del(LIST_IDS.aprobaciones, ap.id));
     return `aprob=${ap.id}`;
+  });
+
+  await R.test('POST /api/incidentes/[id] cambio-maquina y assign sobre "En Aprobacion" → 409, sin duplicar', async () => {
+    const r1 = await api('POST', `/api/incidentes/${incId}`, { action: 'cambio-maquina', maquinaConcat: `${TAG}-MAQ2`, idMaquinaReemplazo: 'X' });
+    const r2 = await api('POST', `/api/incidentes/${incId}`, { action: 'assign', tecnico });
+    const aprobs = await graph.list(LIST_IDS.aprobaciones, { filter: `fields/IDMaquina_AP eq '${incId}'` });
+    for (const a of aprobs.filter(a => a.MaquinaAprobacion_AP === `${TAG}-MAQ2`)) {
+      R.cleanup(`borrar aprobación duplicada ${a.id}`, () => graph.del(LIST_IDS.aprobaciones, a.id));
+    }
+    assert(r1.status === 409, `cambio-maquina status ${r1.status} ${JSON.stringify(r1.json)}`);
+    assert(r2.status === 409, `assign status ${r2.status} ${JSON.stringify(r2.json)}`);
+    assert(aprobs.length === 1, `aprobaciones del incidente: ${aprobs.length} (esperaba 1)`);
+    return 'sin duplicado';
+  });
+
+  // Aprobar el cambio lo deja "Aprobada" (maquinaMoves.ts); ahí la grilla ofrece "Asignar técnico
+  // (finalizar cambio)". Se simula sólo el estado: el approve real también mueve stock y máquinas.
+  await R.test('POST /api/incidentes/[id] assign sobre "Aprobada" → 200 Asignado', async () => {
+    await graph.patch(LIST_IDS.incidentes, incId, { Status_IN: 'Aprobada' });
+    const r = await api('POST', `/api/incidentes/${incId}`, { action: 'assign', tecnico });
+    assert(r.status === 200 && r.json.Status_IN === 'Asignado', `status ${r.status} ${JSON.stringify(r.json)}`);
+    const g = await graph.get(LIST_IDS.incidentes, incId);
+    assert(g.Status_IN === 'Asignado' && g.TecnicoAsignado_IN === tecnico, `graph Status=${g.Status_IN} tec=${g.TecnicoAsignado_IN}`);
+    return `tec=${tecnico}`;
+  });
+
+  await R.test('POST /api/incidentes/[id] assign sobre "Asignado" con técnico → 409 (no descuenta dos veces)', async () => {
+    const r = await api('POST', `/api/incidentes/${incId}`, { action: 'assign', tecnico: tecnico2 });
+    assert(r.status === 409 && r.json.error === 'invalid_state', `status ${r.status} ${JSON.stringify(r.json)}`);
+    const g = await graph.get(LIST_IDS.incidentes, incId);
+    assert(g.TecnicoAsignado_IN === tecnico, `graph tec=${g.TecnicoAsignado_IN}`);
+    return 'sin cambios';
   });
 
   await R.test('POST /api/incidentes/[id] generar-compra → 201 (crea pedido+detalle)', async () => {
