@@ -135,6 +135,29 @@ Al implementar el flujo de compras se verificó `GET /lists/{id}/columns` de `05
 - El combo de segmento sale de `99.ABM_ItemCompras.Item_IC`; los items de `11.Respuestos`
   (`ConcatRepuesto_RP`, repuestos) o `99.ABM_MaquinasCompra` (`Concat_MC`, filtrado por
   `Segmento_MC`, máquinas). `IDCompra_AP` guarda el **ID numérico** del pedido, no `IDUnivoco_PC`.
+- **`06.DetalleCompra` NO tiene fecha de recepción.** `recibir()` sólo escribe `Status_DC` y
+  `CantidadIngresada_DC`, así que la única fecha de la línea es `Fecha_DC` = cuándo se *generó*
+  la compra. Cualquier reporte de movimientos de stock (p. ej. el tab Stock del Dashboard,
+  [`api/dashboard/stock.ts`](../api/dashboard/stock.ts)) fecha la entrada con la fecha de compra,
+  no con la de ingreso al depósito. Para cerrar la brecha hay que crear `FechaRecibida_DC` en
+  SharePoint y escribirla en `recibir()`.
+
+## Fechas de los movimientos de stock (04.Stock no es una bitácora)
+
+`04.Stock` guarda **saldos**, no historial: `Cantidad_ST` se pisa en cada movimiento y
+`FechaUltMod_ST` sólo recuerda el último. El historial hay que reconstruirlo desde las listas
+que *causan* el movimiento, y cada una tiene su propia fecha:
+
+| Movimiento | Lista origen | Cantidad | Fecha del movimiento |
+|---|---|---|---|
+| Entrada por compra | `06.DetalleCompra` (`Status_DC='Recibida'`) | `CantidadIngresada_DC` | `Fecha_DC` — **de la compra, no de la recepción** (ver arriba) |
+| Salida por orden de trabajo | `13.RepuestosIncidentes` | `Cantidad_RI` | `FechaAsignada_IN` del incidente (es cuando `assign` descuenta) |
+| Entrada/salida de máquina | `08.DetalleMaquina` | ±1 | `FechaIngreso_DM` / bitácora en `10.Incidentes` |
+
+`FechaMes_RI` de `13.RepuestosIncidentes` es del **alta** del incidente, no de la asignación:
+un incidente cargado en enero y asignado en febrero descuenta stock en febrero pero tiene
+`FechaMes_RI='01/aaaa'`. Al filtrar por mes hay que **ampliar la ventana hacia atrás** o se
+pierden esas salidas.
 
 ## Nombres de columna internos vs. display name (gotcha de Graph)
 

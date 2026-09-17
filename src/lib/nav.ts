@@ -45,8 +45,8 @@ export function canSeeDashboard(rol: UserRole | null | undefined): boolean {
 }
 
 /** Tabs del Dashboard (deben coincidir con los `TabId` de Dashboard.tsx). */
-export type DashboardTabId = 'general' | 'visitas' | 'incidentes';
-const ALL_DASHBOARD_TABS: DashboardTabId[] = ['general', 'visitas', 'incidentes'];
+export type DashboardTabId = 'general' | 'visitas' | 'incidentes' | 'stock';
+const ALL_DASHBOARD_TABS: DashboardTabId[] = ['general', 'visitas', 'incidentes', 'stock'];
 // Roles con acceso PARCIAL al dashboard: solo ven un subconjunto de tabs.
 const DASHBOARD_TABS_BY_ROLE: Partial<Record<UserRole, DashboardTabId[]>> = {
   'Supervisor Lider': ['visitas'],

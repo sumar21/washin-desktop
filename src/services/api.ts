@@ -414,6 +414,61 @@ export function getDashboardIncidentes(desde?: string, hasta?: string): Promise<
   return request(`/dashboard/incidentes${suffix ? `?${suffix}` : ''}`);
 }
 
+/** Movimiento de stock de un repuesto: entrada (compra) o salida (orden de trabajo). */
+export interface MovimientoStock {
+  tipo: 'entrada' | 'salida';
+  /** dd/mm/yyyy. En entradas es la fecha de la COMPRA (06.DetalleCompra no guarda la de recepción). */
+  fecha: string;
+  /** yyyymmdd, para ordenar sin re-parsear. */
+  orden: number;
+  repuesto: string;
+  /** Nombre normalizado — agrupa la misma pieza entre entradas y salidas. */
+  clave: string;
+  cantidad: number;
+  referencia: string;
+  /** Línea principal del detalle. Salida: edificio · técnico. Entrada: marca. */
+  principal: string;
+  /** Anotación secundaria (chica, debajo). Salida: qué se hizo. Entrada: origen. */
+  nota: string;
+}
+
+/** Saldo de un repuesto: hoy (dato de 04.Stock) y al cierre del período (reconstruido). */
+export interface SaldoRepuesto {
+  /** Nombre según 04.Stock — permite listar el repuesto aunque no haya tenido movimientos. */
+  repuesto: string;
+  hoy: number;
+  cierre: number;
+  /** `cierre` es una estimación: 04.Stock no guarda saldos históricos. */
+  estimado: boolean;
+}
+
+export interface DashboardStockResponse {
+  /** Rango efectivamente aplicado por el backend (dd/mm/yyyy), ya normalizado. */
+  desde: string;
+  hasta: string;
+  /** El período termina hoy ⇒ el saldo al cierre es exacto, no estimado. */
+  cierreEsHoy: boolean;
+  movimientos: MovimientoStock[];
+  /**
+   * Saldos por `clave` de repuesto. Incluye TODOS los repuestos activos de 04.Stock, hayan
+   * tenido movimientos o no — el front lista los quietos como "sin movimientos".
+   * Sin entrada ⇒ el ítem se movió pero no tiene ficha activa en 04.Stock.
+   */
+  saldos: Record<string, SaldoRepuesto>;
+}
+
+/**
+ * Entradas (compras recibidas) y salidas (repuestos de OT asignadas) de repuestos en un
+ * rango de DÍAS (`dd/mm/yyyy`). Sin args → últimos 30 días. El backend ya acota al rango.
+ */
+export function getDashboardStock(desde?: string, hasta?: string): Promise<DashboardStockResponse> {
+  const qs = new URLSearchParams();
+  if (desde) qs.set('desde', desde);
+  if (hasta) qs.set('hasta', hasta);
+  const suffix = qs.toString();
+  return request(`/dashboard/stock${suffix ? `?${suffix}` : ''}`);
+}
+
 export interface NewIncidentePayload {
   edificio: string;
   codigoEdificio?: string;

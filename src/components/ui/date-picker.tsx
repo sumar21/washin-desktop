@@ -15,6 +15,14 @@ interface DatePickerProps {
   startMonth?: Date;
   /** Último mes elegible. Default: 10 años adelante. Ver la nota de RANGO abajo. */
   endMonth?: Date;
+  /**
+   * Último DÍA elegible (los posteriores quedan deshabilitados). `endMonth` sólo acota el
+   * desplegable de meses/años: sin esto, dentro del mes en curso se siguen pudiendo clickear
+   * los días futuros. Úsalo para fechas que no pueden ser futuras (ej. un movimiento ya
+   * ocurrido). Sin pasar nada, no hay tope — las pantallas que sí necesitan futuro
+   * (próxima limpieza de ventilación, planificación) siguen andando igual.
+   */
+  maxDate?: Date;
 }
 
 // RANGO DE AÑOS — no borrar sin leer.
@@ -42,6 +50,7 @@ export function DatePicker({
   disabled,
   startMonth,
   endMonth,
+  maxDate,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false);
   // Se calcula al abrir, no al montar: el escritorio queda abierto días entre recargas.
@@ -81,6 +90,7 @@ export function DatePicker({
           captionLayout="dropdown"
           startMonth={desde}
           endMonth={hasta}
+          disabled={maxDate ? { after: maxDate } : undefined}
           defaultMonth={value}
         />
       </PopoverContent>

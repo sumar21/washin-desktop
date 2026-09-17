@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Search, Download, BarChart3, NotebookText } from 'lucide-react';
 import { DataTable, type Column } from '@/components/DataTable';
+import { descargarExcel } from '@/lib/excel';
 import { cn } from '@/lib/utils';
 
 /**
@@ -66,13 +67,7 @@ export function GridPanel<T>({
     if (downloading || filtered.length === 0) return;
     setDownloading(true);
     try {
-      // SheetJS cargado bajo demanda → fuera del bundle principal.
-      const XLSX = await import('xlsx');
-      const data = filtered.map(toFlat);
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Datos');
-      XLSX.writeFile(wb, `${exportName}.xlsx`);
+      await descargarExcel(filtered.map(toFlat), exportName);
     } finally {
       setDownloading(false);
     }
