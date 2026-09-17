@@ -26,4 +26,4 @@
 // CÓMO SE BUMPEA: se toca ESTA línea y nada más. Poné la fecha de hoy y subí el número que
 // corresponda (lo normal es +1 al patch).
 // ─────────────────────────────────────────────────────────────────────────────
-export const APP_VERSION = 'v20260917_1.2.0';
+export const APP_VERSION = 'v20260917_1.1.3';
