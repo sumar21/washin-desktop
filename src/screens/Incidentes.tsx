@@ -38,7 +38,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
 import { getIncidentes, getFotosIncidente } from '@/services/api';
-import { last12MesesOptions, estadoOptions, edificioOptions } from '@/lib/filters';
+import { last12MesesOptions, estadoOptions, edificioOptions, pasaEdificio } from '@/lib/filters';
 import { cn, proper } from '@/lib/utils';
 import type { Incidente, RepuestoIncidente, FotoIncidente } from '@/types/domain';
 
@@ -268,6 +268,11 @@ export function Incidentes() {
 
   const [query, setQuery] = useState('');
   const [filterMesAno, setFilterMesAno] = useState<string[]>([]);
+  // Mes de los CERRADOS cuando se pidió Resuelto/Anulado sin elegir mes: se traen sólo los del mes
+  // actual (traer todo el año es pesado), pero antes no se decía en ningún lado y la grilla parecía
+  // mostrar "todos los resueltos". Ahora sale como chip. No va en filterMesAno a propósito: ese
+  // filtro también recortaría los ABIERTOS de otros meses.
+  const [mesCerradosPorDefecto, setMesCerradosPorDefecto] = useState<string | null>(null);
   const [filterEstado, setFilterEstado] = useState<string[]>([]);
   const [filterEdificio, setFilterEdificio] = useState<string[]>([]);
   const [filterTipo, setFilterTipo] = useState<string[]>([]);
@@ -416,6 +421,9 @@ export function Incidentes() {
   const activeChips = useMemo<{ cat: string; label: string }[]>(() => {
     const chips: { cat: string; label: string }[] = [];
     filterMesAno.forEach((v) => chips.push({ cat: 'Mes', label: mesAnoLabel.get(v) ?? v }));
+    if (mesCerradosPorDefecto) {
+      chips.push({ cat: 'Cerrados del mes', label: mesAnoLabel.get(mesCerradosPorDefecto) ?? mesCerradosPorDefecto });
+    }
     filterEstado.forEach((v) => chips.push({ cat: 'Estado', label: v }));
     filterEdificio.forEach((v) => chips.push({ cat: 'Edificio', label: v }));
     filterTipo.forEach((v) => chips.push({ cat: 'Tipo', label: v }));
@@ -423,7 +431,7 @@ export function Incidentes() {
       chips.push({ cat: 'Asignación', label: v === 'asignado' ? 'Asignado' : 'Sin asignar' })
     );
     return chips;
-  }, [filterMesAno, filterEstado, filterEdificio, filterTipo, filterAsignacion, mesAnoLabel]);
+  }, [filterMesAno, filterEstado, filterEdificio, filterTipo, filterAsignacion, mesAnoLabel, mesCerradosPorDefecto]);
 
   const hasFilters = activeChips.length > 0;
   const clearFilters = () => {
@@ -432,6 +440,7 @@ export function Incidentes() {
     setFilterEdificio([]);
     setFilterTipo([]);
     setFilterAsignacion([]);
+    setMesCerradosPorDefecto(null);
     // Los resueltos/repuestos on-demand son estado derivado del filtro: si el filtro se limpia,
     // se limpian. Si no, repuestosExtra queda stale y contamina el detalle de los ABIERTOS
     // (repuestosDe no está gateado por wantResueltos, a diferencia de displayList).
@@ -448,7 +457,7 @@ export function Incidentes() {
       // explícitamente desde el filtro de estado (que sigue ofreciendo 'Anulado').
       .filter((i) => filterEstado.length > 0 || i.Status_IN !== 'Anulado')
       .filter((i) => pass(filterEstado, i.Status_IN))
-      .filter((i) => pass(filterEdificio, i.NombreEdificio_IN))
+      .filter((i) => pasaEdificio(filterEdificio, i.NombreEdificio_IN))
       .filter((i) => pass(filterTipo, i.NoResuelto_IN))
       .filter((i) => pass(filterAsignacion, asignacionDe(i)))
       .filter(
@@ -624,8 +633,10 @@ export function Incidentes() {
               // mes actual). Si no, limpiamos los cerrados locales y mostramos solo abiertos.
               if (f.estado.some((e) => ESTADOS_IN_CERRADOS.includes(e))) {
                 const meses = f.mesAno.length > 0 ? f.mesAno : [mesAnoOpts[0].value];
+                setMesCerradosPorDefecto(f.mesAno.length > 0 ? null : mesAnoOpts[0].value);
                 void loadResueltos(meses);
               } else {
+                setMesCerradosPorDefecto(null);
                 setResueltosExtra([]);
                 setRepuestosExtra([]);
               }

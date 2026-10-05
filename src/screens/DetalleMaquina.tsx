@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
+import { pasaEdificio } from '@/lib/filters';
 import { cn, proper } from '@/lib/utils';
 import { getMaquinaHistorial, getRepuestosIncidente, type HistorialItem } from '@/services/api';
 import type { DetalleMaquina as Maquina, RepuestoIncidente } from '@/types/domain';
@@ -141,7 +142,7 @@ export function DetalleMaquina() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return maquinas
-      .filter((m) => (fEdificio ? m.Edificio_DM === fEdificio : true))
+      .filter((m) => (fEdificio ? pasaEdificio([fEdificio], m.Edificio_DM) : true))
       .filter((m) => (fSegmento ? m.Segmento_DM === fSegmento : true))
       .filter((m) => (fMarca ? m.Marca_DM === fMarca : true))
       .filter((m) => (fEncendido ? (m.Encendido_DM ?? '') === fEncendido : true))

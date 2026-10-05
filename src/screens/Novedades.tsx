@@ -16,7 +16,7 @@ import { ErrorState } from '@/components/ErrorState';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { PopoverClose } from '@/components/ui/popover';
 import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
-import { edificioOptions, estadoOptions, last12MesesOptions } from '@/lib/filters';
+import { edificioOptions, estadoOptions, last12MesesOptions, pasaEdificio } from '@/lib/filters';
 import { useAppStore } from '@/store/useAppStore';
 import * as api from '@/services/api';
 import type { Novedad, ArchivoEvidencia } from '@/types/domain';
@@ -89,7 +89,7 @@ export function Novedades() {
     const q = query.trim().toLowerCase();
     return novedades
       .filter((n) => filterEstado.length === 0 || filterEstado.includes(n.Estado))
-      .filter((n) => filterEdificio.length === 0 || filterEdificio.includes(n.Edificio))
+      .filter((n) => pasaEdificio(filterEdificio, n.Edificio))
       .filter((n) => filterMesAno.length === 0 || filterMesAno.includes(n.FechaMesAno))
       .filter(
         (n) =>

@@ -30,7 +30,7 @@ import {
 import { PopoverClose } from '@/components/ui/popover';
 import { Combobox } from '@/components/ui/combobox';
 import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
-import { last12MesesOptions, estadoOptions, edificioOptions } from '@/lib/filters';
+import { last12MesesOptions, estadoOptions, edificioOptions, pasaEdificio } from '@/lib/filters';
 import { DatePicker, formatDateDDMMYYYY, parseDateString } from '@/components/ui/date-picker';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
@@ -192,7 +192,7 @@ export function Ventilaciones() {
     return base
       .filter((v) => pass(filterMesAno, v.FechaMesAnoProxima_VE))
       .filter((v) => pass(filterEstado, v.Estado_VE))
-      .filter((v) => pass(filterEdif, v.Edificio_VE))
+      .filter((v) => pasaEdificio(filterEdif, v.Edificio_VE))
       .filter(
         (v) =>
           v.Edificio_VE.toLowerCase().includes(q) ||

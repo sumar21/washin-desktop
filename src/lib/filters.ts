@@ -35,6 +35,22 @@ export function mesAnoOptions(mesAnos: (string | undefined | null)[]): MultiOpti
 }
 
 /**
+ * Clave para comparar nombres de edificio: sin espacios de más (adelante, atrás o dobles) y sin
+ * distinguir mayúsculas. Las opciones del filtro salen del ABM (recortadas) y los registros copian el
+ * nombre tal cual se cargó: con "Remeros Beach " en el incidente, filtrar por "Remeros Beach" lo
+ * escondía (caso real: #9465; en Ventilaciones, 10 filas en la misma situación).
+ */
+export const claveEdificio = (nombre: string | null | undefined) =>
+  String(nombre ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** ¿El nombre de edificio de un registro pasa el filtro de edificios? (vacío = pasa todo) */
+export function pasaEdificio(filtro: string[], nombre: string | null | undefined): boolean {
+  if (filtro.length === 0) return true;
+  const clave = claveEdificio(nombre);
+  return filtro.some((f) => claveEdificio(f) === clave);
+}
+
+/**
  * Opciones de Edificio para los filtros, desde el CATÁLOGO (`ABM.Edificios` con Status='ALTA',
  * que es lo que devuelve `GET /api/abm` → `CollectAbmEdificios`), NO desde los datos de la
  * pantalla. Es el modelo del msapp: `Items = Distinct(CollectEdificios, Edificio)` con
