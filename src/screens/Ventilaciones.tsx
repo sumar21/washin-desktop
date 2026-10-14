@@ -32,6 +32,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
 import { last12MesesOptions, estadoOptions, edificioOptions, pasaEdificio } from '@/lib/filters';
 import { DatePicker, formatDateDDMMYYYY, parseDateString } from '@/components/ui/date-picker';
+import { estaVencida } from '@/lib/calendario';
 import { useAppStore } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 import type { Ventilacion, EdificioVent } from '@/types/domain';
@@ -158,7 +159,10 @@ export function Ventilaciones() {
 
   const counters = useMemo(() => {
     const pendientes = base.filter((v) => v.Estado_VE === 'Pendiente').length;
-    const vencidas = base.filter((v) => diasHastaProxima(v.ProximaLimpieza_VE) < 0).length;
+    // Misma regla que el Home y el Calendario (src/lib/calendario.ts): una Programada vence por su
+    // fecha programada, no por la próxima limpieza. La ventana de 90 días de arriba sigue mirando
+    // ProximaLimpieza_VE, como la galería de la PowerApp.
+    const vencidas = base.filter((v) => estaVencida(v)).length;
     const adelantadas = base.filter((v) => v.EsIncidente_VE === 'SI').length;
     const asignadas = base.filter((v) => v.Estado_VE === 'Asignada' || v.Estado_VE === 'Programada').length;
     return { pendientes, vencidas, adelantadas, asignadas };

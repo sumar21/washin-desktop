@@ -59,6 +59,24 @@ export function fechaVentilacion(v: Ventilacion): string {
   return v.ProximaLimpieza_VE || v.FechaAsignado_VE || '';
 }
 
+/** Estados de una ventilación que todavía hay que hacer (igual que VENTILACIONES_ABIERTAS_FILTER). */
+export const ESTADOS_VENT_ABIERTOS: readonly string[] = ['Pendiente', 'Asignada', 'Programada'];
+
+/**
+ * Días de atraso de una ventilación ABIERTA según su fecha en el calendario (> 0 = vencida).
+ * Es LA definición de "vencida" de la app: la usan el Calendario, el widget, el Home (tarjeta y
+ * "Requiere atención") y el contador de Ventilaciones. Antes el Home y Ventilaciones miraban sólo
+ * ProximaLimpieza_VE, así que una Programada para una fecha que ya pasó no contaba como vencida.
+ * 0 si no está abierta o no tiene fecha.
+ */
+export function diasDeAtraso(v: Ventilacion, hoy = hoyClave()): number {
+  if (!ESTADOS_VENT_ABIERTOS.includes(v.Estado_VE)) return 0;
+  const dia = claveDia(fechaVentilacion(v));
+  if (!dia || dia >= hoy) return 0;
+  return Math.round((fechaDeClave(hoy).getTime() - fechaDeClave(dia).getTime()) / 86_400_000);
+}
+export const estaVencida = (v: Ventilacion, hoy = hoyClave()) => diasDeAtraso(v, hoy) > 0;
+
 export function etiquetaFechaVentilacion(v: Ventilacion): string {
   if (v.Estado_VE === 'Realizada') return 'Realizada el';
   if (v.Estado_VE === 'Programada') return 'Programada para';

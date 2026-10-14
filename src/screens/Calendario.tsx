@@ -52,6 +52,7 @@ import {
   fechaDeClave,
   fechaLarga,
   fechaVentilacion,
+  estaVencida,
   etiquetaFechaVentilacion,
   horario,
   tonoDe,
@@ -192,7 +193,7 @@ export function Calendario() {
     for (const v of abiertas ?? []) {
       if (realizadasIds.has(v.ID)) continue;
       const dia = claveDia(fechaVentilacion(v));
-      const it: Item = { tipo: 'ventilacion', key: `v-${v.ID}`, dia, ventilacion: v, vencida: !!dia && dia < hoy };
+      const it: Item = { tipo: 'ventilacion', key: `v-${v.ID}`, dia, ventilacion: v, vencida: estaVencida(v, hoy) };
       if (!dia) {
         sinFecha.push(it);
         continue;
@@ -356,12 +357,12 @@ export function Calendario() {
                   const delMes = isSameMonth(d, mes);
                   const esHoy = clave === hoy;
                   return (
+                    // Sólo el "+" del día abre "Nuevo evento": con click en cualquier parte vacía de la
+                    // celda se abría sin querer al navegar la grilla.
                     <div
                       key={clave}
-                      role="presentation"
-                      onClick={() => nuevoEvento(d)}
                       className={cn(
-                        'group relative flex min-h-[104px] cursor-pointer flex-col gap-1 border-wash-border p-1.5 transition-colors hover:bg-wash-brand/[0.03]',
+                        'group relative flex min-h-[104px] flex-col gap-1 border-wash-border p-1.5',
                         (idx + 1) % 7 !== 0 && 'border-r',
                         idx < dias.length - 7 && 'border-b',
                         !delMes && 'bg-wash-surface-2/40'

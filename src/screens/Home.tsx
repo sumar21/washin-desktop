@@ -36,7 +36,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/StatusBadge';
 import { PageHeader } from '@/components/PageHeader';
-import { parseDateString } from '@/components/ui/date-picker';
 import {
   ChartContainer,
   ChartTooltip,
@@ -49,6 +48,7 @@ import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
 import { KpiCard } from '@/components/dashboard/widgets';
 import { AgendaProximosDias } from '@/components/AgendaProximosDias';
+import { diasDeAtraso, useHoy } from '@/lib/calendario';
 import { CHART_GRID, X_TICK, AXIS, intFmt } from '@/components/dashboard/shared';
 import type { Registro, Descanso } from '@/types/domain';
 
@@ -56,16 +56,6 @@ import type { Registro, Descanso } from '@/types/domain';
 // de la VisitaCard y de la PowerApp: <100 es parcial pero ya "trabajada".
 const visitaFinalizada = (r: Registro) =>
   (r.Progreso ?? (r.Estado === 'Finalizado' ? 100 : 0)) > 0;
-
-/** Días desde hoy hasta una fecha dd/mm/yyyy (negativo = vencida). null si no parsea. */
-function diasHasta(ddmmyyyy: string): number | null {
-  const d = parseDateString(ddmmyyyy);
-  if (!d) return null;
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  d.setHours(0, 0, 0, 0);
-  return Math.round((d.getTime() - hoy.getTime()) / 86_400_000);
-}
 
 function saludo(): string {
   const h = new Date().getHours();
@@ -207,13 +197,12 @@ export function Home() {
     () => CollectVentilaciones.filter((v) => v.Estado_VE !== 'Realizada' && v.Estado_VE !== 'Eliminada'),
     [CollectVentilaciones]
   );
+  // Misma regla de "vencida" que el Calendario y Ventilaciones (diasDeAtraso, src/lib/calendario.ts).
+  // `hoy` se actualiza a la medianoche: el Home queda abierto días enteros.
+  const hoy = useHoy();
   const ventVencidas = useMemo(
-    () =>
-      ventPendientes.filter((v) => {
-        const d = diasHasta(v.ProximaLimpieza_VE);
-        return d != null && d < 0;
-      }),
-    [ventPendientes]
+    () => ventPendientes.filter((v) => diasDeAtraso(v, hoy) > 0),
+    [ventPendientes, hoy]
   );
 
   const atencion = useMemo<AttentionItem[]>(() => {
@@ -231,7 +220,7 @@ export function Home() {
       });
     }
     for (const v of ventVencidas) {
-      const d = Math.abs(diasHasta(v.ProximaLimpieza_VE) ?? 0);
+      const d = diasDeAtraso(v, hoy);
       items.push({
         id: `ven-${v.ID}`,
         kind: 'ventilacion',
@@ -242,8 +231,11 @@ export function Home() {
         sort: -d, // cuanto más vencida, más arriba
       });
     }
-    return items.sort((a, b) => a.sort - b.sort).slice(0, 12);
-  }, [incidentesAbiertos, ventVencidas]);
+    // Sin tope: antes cortaba en 12 y el contador del header decía 12, con 163 ventilaciones
+    // vencidas + 25 incidentes abiertos (medido 10/2026) escondidos sin aviso. La lista ya
+    // scrollea (max-h-[380px]); ver .claude/skills/sin-topes.
+    return items.sort((a, b) => a.sort - b.sort);
+  }, [incidentesAbiertos, ventVencidas, hoy]);
 
   // Descansos de hoy: en curso (Activo) primero, luego finalizados.
   const descansos = useMemo(() => {
