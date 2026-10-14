@@ -48,6 +48,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { ErrorState } from '@/components/ErrorState';
 import { KpiCard } from '@/components/dashboard/widgets';
+import { AgendaProximosDias } from '@/components/AgendaProximosDias';
 import { CHART_GRID, X_TICK, AXIS, intFmt } from '@/components/dashboard/shared';
 import type { Registro, Descanso } from '@/types/domain';
 
@@ -98,6 +99,9 @@ export function Home() {
   const fetchCompras = useAppStore((s) => s.fetchCompras);
   const fetchIncidentes = useAppStore((s) => s.fetchIncidentes);
   const fetchVentilaciones = useAppStore((s) => s.fetchVentilaciones);
+  // El widget "Próximos 7 días" sólo para los roles con el módulo Calendario (su endpoint da 403
+  // al resto). Sin él, "Técnicos en curso" sigue ocupando todo el ancho como antes.
+  const verCalendario = useAppStore((s) => s.Collect_LPP.some((p) => p.Modulo_LPP === 'Calendario'));
 
   const [deletingRegistro, setDeletingRegistro] = useState<Registro | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -439,7 +443,7 @@ export function Home() {
             </div>
 
             {/* Técnicos en curso (tiempo real) — visitas fichadas sin finalizar */}
-            <Card className="col-span-12 flex flex-col ring-wash-border">
+            <Card className={cn('col-span-12 flex flex-col ring-wash-border', verCalendario && 'lg:col-span-8')}>
               <CardHeader className="flex flex-row items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5">
                   <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
@@ -468,7 +472,8 @@ export function Home() {
                   </span>
                 )}
               </CardHeader>
-              <CardContent className="flex-1">
+              {/* Centrado: al lado de la agenda la tarjeta se estira a su alto y el vacío quedaba arriba. */}
+              <CardContent className={cn('flex-1', visitasEnCurso.length === 0 && 'flex items-center justify-center')}>
                 {visitasEnCurso.length === 0 ? (
                   <EmptyState
                     compact
@@ -477,7 +482,12 @@ export function Home() {
                     description="No hay técnicos con una visita iniciada sin finalizar en este momento."
                   />
                 ) : (
-                  <div className="grid max-h-[360px] grid-cols-1 gap-2 overflow-y-auto pr-0.5 md:grid-cols-2 xl:grid-cols-3">
+                  <div
+                    className={cn(
+                      'grid max-h-[360px] grid-cols-1 gap-2 overflow-y-auto pr-0.5 md:grid-cols-2',
+                      !verCalendario && 'xl:grid-cols-3'
+                    )}
+                  >
                     {visitasEnCurso.map((r) => (
                       <EnCursoRow
                         key={r.ID}
@@ -490,6 +500,10 @@ export function Home() {
                 )}
               </CardContent>
             </Card>
+
+            {verCalendario && (
+              <AgendaProximosDias ventilaciones={CollectVentilaciones} className="col-span-12 lg:col-span-4" />
+            )}
 
             {/* Actividad por técnico — ranking */}
             <Card className="col-span-12 ring-wash-border lg:col-span-8">
