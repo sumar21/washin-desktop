@@ -369,8 +369,13 @@ export interface IncidentesResponse {
 }
 
 /** Sin arg: incidentes sin resolver. Con `resueltosMes` (mm/yyyy): los resueltos de ese mes. */
-export function getIncidentes(resueltosMes?: string): Promise<IncidentesResponse> {
-  return request(resueltosMes ? `/incidentes?resueltos=${encodeURIComponent(resueltosMes)}` : '/incidentes');
+/** `repuestos: false` no trae 13.RepuestosIncidentes (el Home y el Dashboard no los usan). */
+export function getIncidentes(resueltosMes?: string, opts: { repuestos?: boolean } = {}): Promise<IncidentesResponse> {
+  const qs = new URLSearchParams();
+  if (resueltosMes) qs.set('resueltos', resueltosMes);
+  if (opts.repuestos === false) qs.set('repuestos', '0');
+  const q = qs.toString();
+  return request(q ? `/incidentes?${q}` : '/incidentes');
 }
 
 /**

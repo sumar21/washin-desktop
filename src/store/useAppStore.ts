@@ -205,7 +205,8 @@ interface AppState {
   rejectAprobacion: (id: number, reason: string) => Promise<void>;
 
   // ── Incidentes (10 + 13) — API real ───────────────────────────────────
-  fetchIncidentes: (resueltosMes?: string) => Promise<void>;
+  /** `repuestos: false` → sólo incidentes; no pisa CollectRepuestosIncidente (Home, Dashboard). */
+  fetchIncidentes: (resueltosMes?: string, opts?: { repuestos?: boolean }) => Promise<void>;
   createIncidente: (payload: api.NewIncidentePayload) => Promise<Incidente>;
   editIncidente: (id: number, payload: api.NewIncidentePayload) => Promise<Incidente>;
   assignIncidente: (id: number, tecnico: string, fechaAsignada?: string) => Promise<void>;
@@ -829,10 +830,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchIncidentes: async (resueltosMes) => {
+  fetchIncidentes: async (resueltosMes, opts) => {
     try {
-      const { incidentes, repuestos } = await api.getIncidentes(resueltosMes);
-      set({ CollectIncidentes: incidentes, CollectRepuestosIncidente: repuestos });
+      const { incidentes, repuestos } = await api.getIncidentes(resueltosMes, opts);
+      // Sin repuestos se deja la colección como estaba: vaciarla dejaría a Incidentes (que sí los
+      // usa) sin datos hasta su propia recarga.
+      set(
+        opts?.repuestos === false
+          ? { CollectIncidentes: incidentes }
+          : { CollectIncidentes: incidentes, CollectRepuestosIncidente: repuestos }
+      );
     } catch (err) {
       handleAuthError(err, set);
       throw err;

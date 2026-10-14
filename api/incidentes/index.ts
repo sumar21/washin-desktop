@@ -39,10 +39,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // FechaMesAno_IN). Un solo $filter sobre columna no indexada → cubierto por el header
     // Prefer que listItems ya agrega.
     const repFilter = resueltosMes ? `fields/FechaMes_RI eq '${resueltosMes}'` : undefined;
+    // `?repuestos=0`: el Home y el Dashboard General sólo quieren los incidentes. Sin esto cada
+    // carga del Home bajaba 13.RepuestosIncidentes entera (3.598 filas, ~4,5 s, medido 10/2026)
+    // para no usar ninguna.
+    const conRepuestos = req.query.repuestos !== '0';
     try {
       const [incRows, repRows] = await Promise.all([
         listItems(LIST_IDS.incidentes, { select: incidenteSelectFields(), filter: incFilter, top: 999 }),
-        listItems(LIST_IDS.repuestosIncidentes, { select: repuestoIncidenteSelectFields(), filter: repFilter, top: 999 }),
+        conRepuestos
+          ? listItems(LIST_IDS.repuestosIncidentes, { select: repuestoIncidenteSelectFields(), filter: repFilter, top: 999 })
+          : Promise.resolve([]),
       ]);
       let incidentes = incRows.map(mapIncidente);
       // Filtro compuesto (mes + resuelto) en memoria: SharePoint rechaza `and` sobre columnas no indexadas.

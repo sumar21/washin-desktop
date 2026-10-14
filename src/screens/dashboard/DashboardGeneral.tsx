@@ -87,7 +87,7 @@ export default function DashboardGeneral() {
   const load = useCallback(() => {
     setLoading(true);
     setLoadError(null);
-    return Promise.all([fetchHome(), fetchIncidentes(), fetchVentilaciones()])
+    return Promise.all([fetchHome(), fetchIncidentes(undefined, { repuestos: false }), fetchVentilaciones()])
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar las métricas.'))
       .finally(() => setLoading(false));
   }, [fetchHome, fetchIncidentes, fetchVentilaciones]);

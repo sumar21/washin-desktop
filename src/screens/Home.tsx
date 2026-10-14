@@ -116,7 +116,7 @@ export function Home() {
     setHomeError(null);
     // fetchStock/Compras/Incidentes/Ventilaciones también: los KPIs dependen de esas
     // colecciones y esta pantalla puede ser la primera en cargar.
-    return Promise.all([fetchHome(), fetchStock(), fetchCompras(), fetchIncidentes(), fetchVentilaciones()])
+    return Promise.all([fetchHome(), fetchStock(), fetchCompras(), fetchIncidentes(undefined, { repuestos: false }), fetchVentilaciones()])
       .catch((err) => {
         setHomeError(err instanceof Error ? err.message : 'No se pudo cargar el resumen.');
       })

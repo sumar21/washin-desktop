@@ -353,16 +353,28 @@ async function remove(body: CreateBody, res: VercelResponse) {
   if (!idUnivocoRuta && !mesAno) return res.status(400).json({ error: 'invalid', message: 'Falta la ruta o el mes a eliminar' });
 
   const esc = mesAno ? odataEscape(mesAno) : '';
-  const [resRows, detRows, edifRows] = await Promise.all([
-    listItems(LIST_IDS.resumenPlanif, { select: resumenPlanifSelectFields(), filter: mesAno ? `fields/MesAnoRuta_RP eq '${esc}'` : `fields/IDUnivocoRuta_RP eq '${odataEscape(idUnivocoRuta!)}'`, top: 999 }),
-    listItems(LIST_IDS.detallePlanif, { select: detallePlanifSelectFields(), top: 2000 }),
-    listItems(LIST_IDS.edificiosVisitar, { select: edificioVisitarSelectFields(), filter: `fields/Estado_EV eq 'Pendiente'`, top: 4000 }),
-  ]);
+  const resRows = await listItems(LIST_IDS.resumenPlanif, { select: resumenPlanifSelectFields(), filter: mesAno ? `fields/MesAnoRuta_RP eq '${esc}'` : `fields/IDUnivocoRuta_RP eq '${odataEscape(idUnivocoRuta!)}'`, top: 999 });
   const resumen = resRows.map(mapResumenPlanif).filter((r) => r.Status !== 'Anulado');
   const idsRuta = new Set(resumen.map((r) => r.IDUnivocoRuta));
+
+  // 16 y 18 se piden SÓLO del mes de lo que se anula (el pedido, o el de la ruta), por la misma
+  // columna de mes con la que el GET de un mes ya las lee (MesAno_EV está indexada). Antes se
+  // bajaban 16 entera y 18 filtrada por Estado_EV='Pendiente', que no acota: 8.430 de 9.484 filas
+  // (~15 MB, ~10 s, medido 10/2026). Verificado contra el tenant: todas las filas de 16 y todas las
+  // Pendientes de 18 con circuito tienen el mismo mes que su ruta; las 14 de 18 sin mes tampoco
+  // tienen circuito, así que el filtro por circuito de abajo nunca las tocaba.
+  const meses = mesAno ? [mesAno] : [...new Set(resumen.map((r) => r.MesAno).filter(Boolean))];
+  if (meses.length === 0) return res.status(200).json({ anuladas: 0, circuitos: 0, edificios: 0 });
+  const porMes = (col: string) => meses.map((m) => `fields/${col} eq '${odataEscape(m)}'`).join(' or ');
+  const [detRows, edifRows] = await Promise.all([
+    listItems(LIST_IDS.detallePlanif, { select: detallePlanifSelectFields(), filter: porMes('MesAno_DP'), top: 999 }),
+    listItems(LIST_IDS.edificiosVisitar, { select: edificioVisitarSelectFields(), filter: porMes('MesAno_EV'), top: 999 }),
+  ]);
   const detalle = detRows.map(mapDetallePlanif).filter((d) => idsRuta.has(d.IDUnivocoRuta) && d.Status !== 'Anulado');
   const idsCircuito = new Set(detalle.map((d) => d.IDUnivocoCircuito));
-  const edificios = edifRows.map(mapEdificioVisitar).filter((e) => idsCircuito.has(e.IDUnivocoCircuito));
+  const edificios = edifRows
+    .map(mapEdificioVisitar)
+    .filter((e) => e.Estado === 'Pendiente' && idsCircuito.has(e.IDUnivocoCircuito));
 
   for (const e of edificios) await updateItem(LIST_IDS.edificiosVisitar, e.ID, { Estado_EV: 'Anulado' });
   for (const d of detalle) await updateItem(LIST_IDS.detallePlanif, d.ID, { Status_DP: 'Anulado' });
