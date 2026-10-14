@@ -835,13 +835,18 @@ function EventoForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Mismas reglas que valida el backend (api/_lib/calendario.ts → validarEvento).
+  // Mismas reglas que valida el backend (api/_lib/calendario.ts → validarEvento). Se valida sobre
+  // la hora normalizada: "1530" o "9" mientras se tipea ya cuentan como 15:30 / 09:00.
+  const ini = normalizarHora(horaInicio);
+  const fin = normalizarHora(horaFin);
   const errorHoras =
-    horaFin && !horaInicio
-      ? 'Para cargar la hora de fin falta la de inicio.'
-      : horaFin && horaFin <= horaInicio
-        ? 'La hora de fin tiene que ser posterior a la de inicio.'
-        : null;
+    ini === null || fin === null
+      ? 'Hora inválida: escribila en 24 h, por ejemplo 15:30.'
+      : fin && !ini
+        ? 'Para cargar la hora de fin falta la de inicio.'
+        : fin && fin <= ini
+          ? 'La hora de fin tiene que ser posterior a la de inicio.'
+          : null;
   const ready = !!titulo.trim() && !!fecha && !errorHoras;
 
   async function guardar() {
@@ -852,8 +857,8 @@ function EventoForm({
       titulo: titulo.trim(),
       descripcion: descripcion.trim(),
       fecha: formatDateDDMMYYYY(fecha),
-      horaInicio,
-      horaFin,
+      horaInicio: ini ?? '',
+      horaFin: fin ?? '',
     };
     try {
       if (evento) await api.editarEvento(evento.ID, payload);
@@ -904,11 +909,11 @@ function EventoForm({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <LabelReq>Hora inicio</LabelReq>
-              <input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} className={inputCls} />
+              <HoraInput value={horaInicio} onChange={setHoraInicio} className={inputCls} />
             </div>
             <div>
               <LabelReq>Hora fin</LabelReq>
-              <input type="time" value={horaFin} onChange={(e) => setHoraFin(e.target.value)} className={inputCls} />
+              <HoraInput value={horaFin} onChange={setHoraFin} className={inputCls} />
             </div>
           </div>
           <div className="mt-1.5 flex items-center justify-between gap-2 text-[12px]">
@@ -960,6 +965,61 @@ function EventoForm({
         </button>
       </ModalActions>
     </Modal>
+  );
+}
+
+/**
+ * Hora de 24 h como "15:30", "1530", "930" o "9" → "15:30", "15:30", "09:30", "09:00".
+ * '' si está vacía; null si no es una hora válida.
+ */
+function normalizarHora(texto: string): string | null {
+  const s = texto.trim();
+  if (!s) return '';
+  let h: number;
+  let m: number;
+  const conDosPuntos = /^(\d{1,2}):(\d{1,2})$/.exec(s);
+  if (conDosPuntos) {
+    h = Number(conDosPuntos[1]);
+    m = Number(conDosPuntos[2]);
+  } else if (/^\d{1,4}$/.test(s)) {
+    h = Number(s.length <= 2 ? s : s.slice(0, -2));
+    m = s.length <= 2 ? 0 : Number(s.slice(-2));
+  } else {
+    return null;
+  }
+  if (h > 23 || m > 59) return null;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Campo de hora en 24 h. NO es un <input type="time">: el nativo sigue el idioma del sistema
+ * operativo, así que en una PC en inglés mostraba a.m./p.m. y al tipear "15" lo pasaba a 12.
+ * Se escribe libre (sólo dígitos y ":") y al salir del campo se normaliza a HH:MM.
+ */
+function HoraInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  className?: string;
+}) {
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      placeholder="HH:MM"
+      maxLength={5}
+      value={value}
+      onChange={(e) => onChange(e.target.value.replace(/[^\d:]/g, ''))}
+      onBlur={() => {
+        const n = normalizarHora(value);
+        if (n !== null) onChange(n);
+      }}
+      className={cn(className, 'tabular-nums')}
+    />
   );
 }
 
