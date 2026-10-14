@@ -88,6 +88,13 @@ const palette: Record<string, Tone> = {
     dot: 'bg-emerald-500',
     ring: 'ring-emerald-300/70',
   },
+  // Evento del calendario (masculino; la ventilación usa "Realizada").
+  Realizado: {
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-800',
+    dot: 'bg-emerald-500',
+    ring: 'ring-emerald-300/70',
+  },
   Programada: {
     bg: 'bg-indigo-50',
     text: 'text-indigo-800',

@@ -9,12 +9,10 @@ import {
   mapFrecuencias,
   mapGruposVent,
   desglosarFechaDDMMYYYY,
+  VENTILACIONES_ABIERTAS_FILTER,
 } from '../_lib/lists.js';
 import { readSession } from '../_lib/session.js';
 import { puedeAccederModulo } from '../_lib/permisos.js';
-
-const ESTADOS_ABIERTOS_FILTER =
-  `fields/Estado_VE eq 'Pendiente' or fields/Estado_VE eq 'Asignada' or fields/Estado_VE eq 'Programada'`;
 
 interface AddEdificioBody {
   action?: 'add-edificio';
@@ -49,7 +47,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Vista default: abiertas (Pendiente/Asignada/Programada) + catálogos para modales/filtros.
       const [ventRows, edifRows, frecRows, grupoRows] = await Promise.all([
-        listItems(LIST_IDS.ventilaciones, { select: ventilacionSelectFields(), filter: ESTADOS_ABIERTOS_FILTER, top: 999 }),
+        listItems(LIST_IDS.ventilaciones, { select: ventilacionSelectFields(), filter: VENTILACIONES_ABIERTAS_FILTER, top: 999 }),
         listItems(LIST_IDS.edificios, { select: edificioVentSelectFields(), filter: `fields/Status eq 'ALTA'`, top: 999 }),
         listItems(LIST_IDS.frecuencias, { top: 999 }),
         listItems(LIST_IDS.gruposVent, { top: 999 }),

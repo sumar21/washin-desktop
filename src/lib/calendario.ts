@@ -1,0 +1,82 @@
+// Helpers del Calendario compartidos entre la pantalla (screens/Calendario.tsx) y el widget del
+// Home (components/AgendaProximosDias.tsx): qué día cae cada cosa y de qué color se pinta.
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import type { EventoCalendario, Ventilacion } from '@/types/domain';
+
+export type Item =
+  | { tipo: 'evento'; key: string; dia: string; evento: EventoCalendario }
+  | { tipo: 'ventilacion'; key: string; dia: string; ventilacion: Ventilacion; vencida: boolean };
+
+// ── Fechas ────────────────────────────────────────────────────────────────
+// Los días se manejan como clave `yyyy-mm-dd`: ordena bien como string y no arrastra horas.
+
+/** dd/mm/yyyy → yyyy-mm-dd. Vacío si no es una fecha. */
+export function claveDia(ddmmyyyy: string | undefined): string {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((ddmmyyyy ?? '').trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+}
+export const claveDeDate = (d: Date) => format(d, 'yyyy-MM-dd');
+export const mesAnoDe = (d: Date) => format(d, 'MM/yyyy');
+/** Se calcula al usarse y no al montar: el escritorio queda abierto días entre recargas. */
+export const hoyClave = () => claveDeDate(new Date());
+/** "Miércoles 14 de octubre" (date-fns devuelve el día en minúscula). */
+export const fechaLarga = (d: Date) => {
+  const s = format(d, "EEEE d 'de' MMMM", { locale: es });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+
+/**
+ * Fecha en la que cae una ventilación según su estado:
+ *  - Realizada  → el día que se finalizó.
+ *  - Programada → el día que eligió el técnico.
+ *  - Pendiente / Asignada → la próxima limpieza. Las que el técnico genera desde un incidente
+ *    nacen Asignadas SIN próxima limpieza (`crearVentilacion` de la mobile): para esas, el día
+ *    en que se generaron.
+ * Al reasignar, el desktop borra FechaProgramada_VE, así que una Asignada nunca arrastra una
+ * fecha programada vieja.
+ */
+export function fechaVentilacion(v: Ventilacion): string {
+  if (v.Estado_VE === 'Realizada') return v.FechaFinalizacion_VE ?? '';
+  if (v.Estado_VE === 'Programada') return v.FechaProgramada_VE || v.ProximaLimpieza_VE;
+  return v.ProximaLimpieza_VE || v.FechaAsignado_VE || '';
+}
+
+export function etiquetaFechaVentilacion(v: Ventilacion): string {
+  if (v.Estado_VE === 'Realizada') return 'Realizada el';
+  if (v.Estado_VE === 'Programada') return 'Programada para';
+  if (!v.ProximaLimpieza_VE && v.FechaAsignado_VE) return 'Generada el';
+  return 'Próxima limpieza';
+}
+
+export function horario(e: EventoCalendario): string {
+  if (!e.HoraInicio) return 'Todo el día';
+  return e.HoraFin ? `${e.HoraInicio} – ${e.HoraFin}` : e.HoraInicio;
+}
+
+// ── Colores ───────────────────────────────────────────────────────────────
+// Mismos tonos que StatusBadge para cada estado de ventilación; los eventos van en la marca.
+
+export const TONO = {
+  evento: 'bg-wash-brand/10 text-wash-accent ring-wash-brand/30',
+  eventoRealizado: 'bg-wash-surface-2 text-wash-text-muted ring-wash-border',
+  Pendiente: 'bg-amber-50 text-amber-800 ring-amber-300/70',
+  Asignada: 'bg-sky-50 text-sky-800 ring-sky-300/70',
+  Programada: 'bg-indigo-50 text-indigo-800 ring-indigo-300/70',
+  vencida: 'bg-rose-50 text-rose-700 ring-rose-300/70',
+  Realizada: 'bg-slate-50 text-slate-500 ring-slate-200',
+} as const;
+
+export function tonoDe(it: Item): string {
+  if (it.tipo === 'evento') return it.evento.Estado === 'Realizado' ? TONO.eventoRealizado : TONO.evento;
+  if (it.vencida) return TONO.vencida;
+  const e = it.ventilacion.Estado_VE;
+  return e === 'Asignada' || e === 'Programada' || e === 'Realizada' ? TONO[e] : TONO.Pendiente;
+}
+
+/** Orden dentro del día: eventos (los de todo el día primero, después por hora) y ventilaciones. */
+export function ordenDe(it: Item): string {
+  if (it.tipo === 'evento') return `0|${it.evento.HoraInicio}|${it.evento.Titulo}`;
+  const rango = it.vencida ? 1 : it.ventilacion.Estado_VE === 'Realizada' ? 3 : 2;
+  return `${rango}|${it.ventilacion.Edificio_VE}`;
+}

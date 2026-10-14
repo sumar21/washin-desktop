@@ -11,6 +11,7 @@ import {
   BarChart3,
   Settings,
   Megaphone,
+  CalendarDays,
 } from 'lucide-react';
 import type { ModuloNombre, UserRole } from '@/types/domain';
 
@@ -26,6 +27,7 @@ export const moduleMeta: Record<ModuloNombre, { icon: typeof Home; path: string 
   Planificaciones: { icon: Map, path: '/rutas' },
   Ventilacion: { icon: Wind, path: '/ventilaciones' },
   Novedades: { icon: Megaphone, path: '/novedades' },
+  Calendario: { icon: CalendarDays, path: '/calendario' },
   Dashboard: { icon: BarChart3, path: '/dashboard' },
   Configuracion: { icon: Settings, path: '/configuracion' },
 };

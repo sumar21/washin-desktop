@@ -1173,6 +1173,14 @@ export function ventilacionSelectFields(): string[] {
   return VENTILACION_SELECT;
 }
 
+/**
+ * Ventilaciones abiertas (las que todavía hay que hacer). `or` sobre UNA sola columna, que
+ * SharePoint acepta aunque no esté indexada (el 400 es con `and` entre dos no indexadas).
+ * Lo usan la grilla de Ventilaciones y el Calendario: si se agrega un estado, va acá.
+ */
+export const VENTILACIONES_ABIERTAS_FILTER =
+  `fields/Estado_VE eq 'Pendiente' or fields/Estado_VE eq 'Asignada' or fields/Estado_VE eq 'Programada'`;
+
 export function mapVentilacion(item: SharePointItem): VentilacionRow {
   const idAsig = item.IDAsignado_VE;
   return {

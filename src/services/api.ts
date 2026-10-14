@@ -27,6 +27,7 @@ import type {
   Ventilacion,
   Novedad,
   ArchivoEvidencia,
+  EventoCalendario,
 } from '@/types/domain';
 import type { AbmTab } from '@/lib/abmAccess';
 
@@ -825,4 +826,46 @@ export function anularNovedad(
     method: 'POST',
     body: JSON.stringify({ action: 'anular', comentario }),
   });
+}
+
+// ── Calendario (21.EventosCalendario + 19.Ventilaciones) ─────────────────
+export interface CalendarioResponse {
+  eventos: EventoCalendario[];
+  /** Realizadas de los meses pedidos. */
+  realizadas: Ventilacion[];
+  /** Pendientes / Asignadas / Programadas. Sólo viene si se pidió (`abiertas`). */
+  abiertas?: Ventilacion[];
+}
+
+/** `meses` en formato mm/yyyy (máx. 3: los que muestra la grilla). */
+export function getCalendario(meses: string[], abiertas: boolean): Promise<CalendarioResponse> {
+  const qs = `meses=${encodeURIComponent(meses.join(','))}${abiertas ? '&abiertas=1' : ''}`;
+  return request(`/calendario?${qs}`);
+}
+
+export interface EventoPayload {
+  titulo: string;
+  descripcion: string;
+  /** dd/mm/yyyy */
+  fecha: string;
+  horaInicio: string;
+  horaFin: string;
+}
+
+export function crearEvento(payload: EventoPayload): Promise<EventoCalendario> {
+  return request('/calendario', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function editarEvento(id: number, payload: EventoPayload): Promise<{ ID: number }> {
+  return request(`/calendario/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ action: 'editar', ...payload }),
+  });
+}
+
+export function cambiarEstadoEvento(
+  id: number,
+  action: 'realizar' | 'anular'
+): Promise<{ ID: number; Estado: string }> {
+  return request(`/calendario/${id}`, { method: 'POST', body: JSON.stringify({ action }) });
 }

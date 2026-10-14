@@ -62,6 +62,7 @@ export type ModuloNombre =
   | 'Planificaciones'
   | 'Ventilacion'
   | 'Novedades'
+  | 'Calendario'
   | 'Dashboard'
   | 'Configuracion';
 
@@ -638,6 +639,26 @@ export interface Novedad {
   HoraResuelto?: string;
   UsuarioResuelto?: string;
   DescripcionResuelto?: string;
+}
+
+/** Evento propio del calendario (21.EventosCalendario). */
+export interface EventoCalendario {
+  ID: number;
+  Titulo: string;
+  Descripcion: string;
+  /** dd/mm/yyyy */
+  Fecha: string;
+  FechaMesAno: string;
+  /** HH:mm. Vacía = evento de todo el día. */
+  HoraInicio: string;
+  HoraFin: string;
+  Estado: 'Pendiente' | 'Realizado' | 'Anulado' | string;
+  Usuario: string;
+  FechaCarga: string;
+  HoraCarga: string;
+  UsuarioMod?: string;
+  FechaMod?: string;
+  HoraMod?: string;
 }
 
 /** Un archivo de evidencia de una novedad (vive en la biblioteca "Documentos"). */
