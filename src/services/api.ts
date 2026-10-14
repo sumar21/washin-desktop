@@ -837,10 +837,18 @@ export interface CalendarioResponse {
   abiertas?: Ventilacion[];
 }
 
-/** `meses` en formato mm/yyyy (máx. 3: los que muestra la grilla). */
-export function getCalendario(meses: string[], abiertas: boolean): Promise<CalendarioResponse> {
-  const qs = `meses=${encodeURIComponent(meses.join(','))}${abiertas ? '&abiertas=1' : ''}`;
-  return request(`/calendario?${qs}`);
+/**
+ * `meses` en formato mm/yyyy (máx. 3: los que muestra la grilla). `abiertas` las suma (no dependen
+ * del mes); `realizadas: false` las saltea — el widget del Home no las usa y era una consulta de más.
+ */
+export function getCalendario(
+  meses: string[],
+  opts: { abiertas?: boolean; realizadas?: boolean } = {}
+): Promise<CalendarioResponse> {
+  const qs = new URLSearchParams({ meses: meses.join(',') });
+  if (opts.abiertas) qs.set('abiertas', '1');
+  if (opts.realizadas === false) qs.set('realizadas', '0');
+  return request(`/calendario?${qs.toString()}`);
 }
 
 export interface EventoPayload {

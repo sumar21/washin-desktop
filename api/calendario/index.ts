@@ -1,7 +1,9 @@
-// GET  /api/calendario?meses=09/2026,10/2026,11/2026[&abiertas=1]
+// GET  /api/calendario?meses=09/2026,10/2026,11/2026[&abiertas=1][&realizadas=0]
 //        -> { eventos, realizadas, abiertas? }
 //        `meses` son los que la grilla tiene a la vista (el mes + los días de borde de los
 //        vecinos). `abiertas` se pide una sola vez: no depende del mes (ver _lib/calendario.ts).
+//        `realizadas=0` la usa el widget del Home, que sólo quiere eventos: sin eso cada Home
+//        consultaba 19.Ventilaciones de más, y si esa consulta fallaba el widget mostraba error.
 // POST /api/calendario  { titulo, descripcion?, fecha, horaInicio?, horaFin? }  -> evento creado
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GraphError } from '../_lib/graph.js';
@@ -49,10 +51,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: 'invalid', message: 'Meses inválidos' });
       }
       const conAbiertas = req.query.abiertas === '1';
+      const conRealizadas = req.query.realizadas !== '0';
 
       const [eventos, realizadas, abiertas] = await Promise.all([
         listarEventos(meses),
-        listarRealizadas(meses),
+        conRealizadas ? listarRealizadas(meses) : Promise.resolve([]),
         conAbiertas ? listarAbiertas() : Promise.resolve(undefined),
       ]);
       return res.status(200).json({ eventos, realizadas, ...(abiertas ? { abiertas } : {}) });

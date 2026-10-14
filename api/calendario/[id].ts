@@ -23,7 +23,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const rawId = req.query.id;
   const id = Number(Array.isArray(rawId) ? rawId[0] : rawId);
-  if (!id) return res.status(400).json({ error: 'invalid_id' });
+  // -1 o 1.5 pasaban el `!id` y Graph los rechazaba con un 400 que salía como 502.
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid_id' });
 
   const body = (req.body ?? {}) as Record<string, unknown>;
   const action = body.action as Accion;

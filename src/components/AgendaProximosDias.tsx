@@ -5,20 +5,27 @@
 // los eventos: el mes de hoy y, si la semana cruza de mes, también el siguiente.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { addDays, startOfToday } from 'date-fns';
+import { addDays } from 'date-fns';
 import { CalendarDays } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/EmptyState';
 import { ItemPill } from '@/components/CalendarioItem';
-import { claveDia, claveDeDate, mesAnoDe, fechaLarga, fechaVentilacion, ordenDe, type Item } from '@/lib/calendario';
+import {
+  claveDia,
+  claveDeDate,
+  mesAnoDe,
+  fechaLarga,
+  fechaDeClave,
+  fechaVentilacion,
+  ordenDe,
+  useHoy,
+  type Item,
+} from '@/lib/calendario';
 import { cn } from '@/lib/utils';
 import * as api from '@/services/api';
 import type { EventoCalendario, Ventilacion } from '@/types/domain';
 
 const ABIERTAS = ['Pendiente', 'Asignada', 'Programada'];
-
-/** Hoy + los 6 días siguientes. Se calcula al montar el Home (se recarga con "Refrescar"). */
-const proximosDias = () => Array.from({ length: 7 }, (_, i) => addDays(startOfToday(), i));
 
 function etiquetaDia(d: Date, i: number): string {
   if (i === 0) return 'Hoy';
@@ -28,15 +35,23 @@ function etiquetaDia(d: Date, i: number): string {
 
 export function AgendaProximosDias({ ventilaciones, className }: { ventilaciones: Ventilacion[]; className?: string }) {
   const navigate = useNavigate();
-  const [dias] = useState(proximosDias);
+  // Hoy + los 6 días siguientes. Sigue a `useHoy`: el Home queda abierto días enteros, y al pasar
+  // la medianoche el rango se corre y los eventos se vuelven a pedir.
+  const hoy = useHoy();
+  const dias = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(fechaDeClave(hoy), i)), [hoy]);
   const [eventos, setEventos] = useState<EventoCalendario[] | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let vivo = true;
+    // Sin realizadas: el widget no las usa, y si esa consulta fallaba se perdían los eventos.
     api
-      .getCalendario([...new Set(dias.map(mesAnoDe))], false)
-      .then((r) => vivo && setEventos(r.eventos))
+      .getCalendario([...new Set(dias.map(mesAnoDe))], { realizadas: false })
+      .then((r) => {
+        if (!vivo) return;
+        setEventos(r.eventos);
+        setError(false);
+      })
       .catch(() => vivo && setError(true));
     return () => {
       vivo = false;

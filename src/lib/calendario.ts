@@ -1,5 +1,6 @@
 // Helpers del Calendario compartidos entre la pantalla (screens/Calendario.tsx) y el widget del
 // Home (components/AgendaProximosDias.tsx): qué día cae cada cosa y de qué color se pinta.
+import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import type { EventoCalendario, Ventilacion } from '@/types/domain';
@@ -20,6 +21,22 @@ export const claveDeDate = (d: Date) => format(d, 'yyyy-MM-dd');
 export const mesAnoDe = (d: Date) => format(d, 'MM/yyyy');
 /** Se calcula al usarse y no al montar: el escritorio queda abierto días entre recargas. */
 export const hoyClave = () => claveDeDate(new Date());
+/** yyyy-mm-dd → Date local a las 00:00. */
+export const fechaDeClave = (clave: string) => new Date(`${clave}T00:00:00`);
+
+/**
+ * Hoy, actualizado solo al pasar la medianoche. El Home y el calendario quedan abiertos días
+ * enteros: con un valor fijo, al día siguiente "Hoy" seguía siendo ayer y las vencidas no cambiaban.
+ * El chequeo es cada minuto; si el día no cambió, React no vuelve a renderizar (mismo string).
+ */
+export function useHoy(): string {
+  const [hoy, setHoy] = useState(hoyClave);
+  useEffect(() => {
+    const id = window.setInterval(() => setHoy(hoyClave()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return hoy;
+}
 /** "Miércoles 14 de octubre" (date-fns devuelve el día en minúscula). */
 export const fechaLarga = (d: Date) => {
   const s = format(d, "EEEE d 'de' MMMM", { locale: es });

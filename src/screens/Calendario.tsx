@@ -48,7 +48,8 @@ import {
   claveDia,
   claveDeDate,
   mesAnoDe,
-  hoyClave,
+  useHoy,
+  fechaDeClave,
   fechaLarga,
   fechaVentilacion,
   etiquetaFechaVentilacion,
@@ -84,16 +85,20 @@ const LEYENDA: { label: string; dot: string }[] = [
   { label: 'Realizada', dot: 'bg-slate-300' },
 ];
 
+/** El backend responde 409 cuando el evento ya no está Pendiente. */
+const esConflicto = (err: unknown) => err instanceof api.ApiError && err.status === 409;
+
 export function Calendario() {
   const navigate = useNavigate();
   const location = useLocation();
   const permisos = useAppStore((s) => s.Collect_LPP);
   const puedeVerVentilaciones = permisos.some((p) => p.Modulo_LPP === 'Ventilacion');
 
+  const hoy = useHoy();
   // El widget del Home navega con `{ fecha: 'yyyy-mm-dd' }` para abrir en el mes de ese día.
   const [mes, setMes] = useState(() => {
     const fecha = (location.state as { fecha?: string } | null)?.fecha;
-    const d = fecha ? new Date(`${fecha}T00:00:00`) : new Date();
+    const d = fecha ? fechaDeClave(fecha) : new Date();
     return startOfMonth(Number.isNaN(d.getTime()) ? new Date() : d);
   });
   const [abiertas, setAbiertas] = useState<Ventilacion[] | null>(null);
@@ -133,7 +138,7 @@ export function Calendario() {
     pedir.forEach((m) => enVuelo.current.add(m));
     setLoadError(null);
     try {
-      const r = await api.getCalendario(pedir, conAbiertas);
+      const r = await api.getCalendario(pedir, { abiertas: conAbiertas });
       setPorMes((prev) => {
         const next = { ...prev };
         for (const m of pedir) {
@@ -170,7 +175,6 @@ export function Calendario() {
   };
 
   const { porDia, vencidas, sinFecha } = useMemo(() => {
-    const hoy = hoyClave();
     const porDia = new Map<string, Item[]>();
     const vencidas: Item[] = [];
     const sinFecha: Item[] = [];
@@ -211,9 +215,8 @@ export function Calendario() {
     vencidas.sort((a, b) => a.dia.localeCompare(b.dia));
     sinFecha.sort((a, b) => ordenDe(a).localeCompare(ordenDe(b), 'es'));
     return { porDia, vencidas, sinFecha };
-  }, [abiertas, porMes, mesesVisibles]);
+  }, [abiertas, porMes, mesesVisibles, hoy]);
 
-  const hoy = hoyClave();
   const semanas = dias.length / 7;
   const diasDelMes = dias.filter((d) => isSameMonth(d, mes));
   const hayAlgoEnElMes = diasDelMes.some((d) => porDia.has(claveDeDate(d)));
@@ -221,8 +224,21 @@ export function Calendario() {
   const nuevoEvento = (fecha?: Date) => setForm({ fecha: fecha ?? new Date() });
   const abrirDia = (d: Date) => setLista({ titulo: fechaLarga(d), items: porDia.get(claveDeDate(d)) ?? [], fecha: d });
 
+  /**
+   * 409 = otro usuario lo cerró mientras estaba abierto acá. Sin esto el error salía pero la grilla
+   * y el detalle seguían mostrándolo Pendiente hasta recargar.
+   */
+  const refrescarSiConflicto = (err: unknown, meses: string[]) => {
+    if (esConflicto(err)) refrescarMeses(meses);
+  };
+
   async function realizar(e: EventoCalendario) {
-    await api.cambiarEstadoEvento(e.ID, 'realizar');
+    try {
+      await api.cambiarEstadoEvento(e.ID, 'realizar');
+    } catch (err) {
+      refrescarSiConflicto(err, [e.FechaMesAno]);
+      throw err;
+    }
     setDetalle(null);
     refrescarMeses([e.FechaMesAno]);
   }
@@ -236,6 +252,7 @@ export function Calendario() {
       refrescarMeses([anulando.FechaMesAno]);
       setAnulando(null);
     } catch (err) {
+      refrescarSiConflicto(err, [anulando.FechaMesAno]);
       setAnularError(err instanceof Error ? err.message : 'No se pudo anular el evento.');
     } finally {
       setAnularBusy(false);
@@ -279,9 +296,15 @@ export function Calendario() {
         <ErrorState message={loadError} onRetry={() => void cargar(faltantes.length ? faltantes : mesesVisibles)} />
       ) : (
         <>
-          {/* Referencias + avisos de lo que no se ve en el mes */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-wash-border bg-wash-surface px-4 py-2.5 md:px-6">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-wash-text-muted">
+          {/* Referencias + avisos de lo que no se ve en el mes. En mobile no va la leyenda: la agenda
+              ya dice el estado en texto, y la barra sólo aparece si hay avisos. */}
+          <div
+            className={cn(
+              'flex-wrap items-center gap-x-4 gap-y-2 border-b border-wash-border bg-wash-surface px-4 py-2.5 md:flex md:px-6',
+              vencidas.length + sinFecha.length > 0 ? 'flex' : 'hidden'
+            )}
+          >
+            <div className="hidden flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-wash-text-muted md:flex">
               {LEYENDA.map((l) => (
                 <span key={l.label} className="inline-flex items-center gap-1.5">
                   <span className={cn('h-2 w-2 rounded-full', l.dot)} aria-hidden />
@@ -314,8 +337,9 @@ export function Calendario() {
           </div>
 
           <div className="flex-1 overflow-auto p-3 md:p-6">
-            {/* Grilla mensual (md+) */}
-            <div className="hidden h-full min-h-[600px] flex-col overflow-hidden rounded-xl border border-wash-border bg-wash-surface shadow-sm md:flex">
+            {/* Grilla mensual (md+). min-h-full y filas `1fr` (mínimo = contenido): con alto fijo y
+                overflow-hidden, en pantallas de ~730px la sexta semana quedaba recortada sin aviso. */}
+            <div className="hidden min-h-full flex-col overflow-hidden rounded-xl border border-wash-border bg-wash-surface shadow-sm md:flex">
               <div className="grid grid-cols-7 border-b border-wash-border bg-wash-surface-2/60">
                 {DIAS_SEMANA.map((d) => (
                   <div key={d} className="px-2 py-2 text-[10.5px] font-semibold uppercase tracking-wider text-wash-text-muted">
@@ -323,7 +347,7 @@ export function Calendario() {
                   </div>
                 ))}
               </div>
-              <div className="grid flex-1 grid-cols-7" style={{ gridTemplateRows: `repeat(${semanas}, minmax(0, 1fr))` }}>
+              <div className="grid flex-1 grid-cols-7" style={{ gridTemplateRows: `repeat(${semanas}, 1fr)` }}>
                 {dias.map((d, idx) => {
                   const clave = claveDeDate(d);
                   const items = porDia.get(clave) ?? [];
@@ -488,6 +512,7 @@ export function Calendario() {
             setForm(null);
             refrescarMeses(meses);
           }}
+          onConflicto={refrescarMeses}
         />
       )}
 
@@ -582,7 +607,9 @@ function DetalleEvento({
 }) {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pendiente = evento.Estado === 'Pendiente';
+  // Si otro usuario lo cerró mientras estaba abierto (409), no se ofrecen más acciones.
+  const [cerradoAfuera, setCerradoAfuera] = useState(false);
+  const pendiente = evento.Estado === 'Pendiente' && !cerradoAfuera;
   const fecha = parseDateString(evento.Fecha);
 
   async function realizar() {
@@ -591,13 +618,14 @@ function DetalleEvento({
     try {
       await onRealizar();
     } catch (err) {
+      if (esConflicto(err)) setCerradoAfuera(true);
       setError(err instanceof Error ? err.message : 'No se pudo guardar');
       setGuardando(false);
     }
   }
 
   return (
-    <Modal open onClose={onClose} title={evento.Titulo} width={560}>
+    <Modal open onClose={() => !guardando && onClose()} title={evento.Titulo} width={560}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-wash-text-muted">
           <StatusBadge status={evento.Estado} />
@@ -621,7 +649,7 @@ function DetalleEvento({
           </p>
           {evento.UsuarioMod && (
             <p className="mt-0.5">
-              {pendiente ? 'Editado' : evento.Estado} por {evento.UsuarioMod} · {evento.FechaMod} {evento.HoraMod}
+              {evento.Estado === 'Pendiente' ? 'Editado' : evento.Estado} por {evento.UsuarioMod} · {evento.FechaMod} {evento.HoraMod}
             </p>
           )}
         </div>
@@ -787,6 +815,7 @@ function EventoForm({
   fechaInicial,
   onClose,
   onGuardado,
+  onConflicto,
 }: {
   /** Si viene, es edición. */
   evento?: EventoCalendario;
@@ -794,6 +823,8 @@ function EventoForm({
   onClose: () => void;
   /** Recibe los meses (mm/yyyy) a refrescar. */
   onGuardado: (meses: string[]) => void;
+  /** El evento ya estaba cerrado (409): refrescar su mes para mostrar el estado real. */
+  onConflicto: (meses: string[]) => void;
 }) {
   const [titulo, setTitulo] = useState(evento?.Titulo ?? '');
   const [fecha, setFecha] = useState<Date | undefined>(evento ? parseDateString(evento.Fecha) : fechaInicial);
@@ -828,6 +859,7 @@ function EventoForm({
       else await api.crearEvento(payload);
       onGuardado([...new Set([mesAnoDe(fecha), ...(evento ? [evento.FechaMesAno] : [])])]);
     } catch (err) {
+      if (evento && esConflicto(err)) onConflicto([evento.FechaMesAno]);
       setError(err instanceof Error ? err.message : 'No se pudo guardar el evento.');
       setSaving(false);
     }
@@ -837,7 +869,9 @@ function EventoForm({
     'mt-1.5 h-10 w-full rounded-lg border border-wash-border bg-wash-surface px-3 text-sm outline-none focus:border-wash-action focus:ring-2 focus:ring-wash-action/15';
 
   return (
-    <Modal open onClose={onClose} title={evento ? 'Editar evento' : 'Nuevo evento'} width={560}>
+    // Mientras guarda no se cierra (Escape / fondo): si el POST fallaba, el error se perdía, y si
+    // salía bien se podía reabrir y duplicar el evento.
+    <Modal open onClose={() => !saving && onClose()} title={evento ? 'Editar evento' : 'Nuevo evento'} width={560}>
       {error && (
         <div
           role="alert"

@@ -443,7 +443,7 @@ export function Home() {
             </div>
 
             {/* Técnicos en curso (tiempo real) — visitas fichadas sin finalizar */}
-            <Card className={cn('col-span-12 flex flex-col ring-wash-border', verCalendario && 'lg:col-span-8')}>
+            <Card className={cn('col-span-12 flex flex-col ring-wash-border', verCalendario && 'xl:col-span-8')}>
               <CardHeader className="flex flex-row items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5">
                   <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
@@ -502,7 +502,9 @@ export function Home() {
             </Card>
 
             {verCalendario && (
-              <AgendaProximosDias ventilaciones={CollectVentilaciones} className="col-span-12 lg:col-span-4" />
+              // Al lado de "Técnicos en curso" desde xl; entre 1024 y 1279 px van apiladas: a 4 columnas
+              // de 1024 el título se partía en dos líneas.
+              <AgendaProximosDias ventilaciones={CollectVentilaciones} className="col-span-12 xl:col-span-4" />
             )}
 
             {/* Actividad por técnico — ranking */}

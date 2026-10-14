@@ -55,13 +55,15 @@ export function Modal({ open, onClose, title, children, width = 580, className }
         aria-modal="true"
       >
         {title && (
-          <div className="flex shrink-0 items-center justify-between border-b border-wash-border px-6 py-4">
-            <h2 className="font-display text-lg font-bold text-wash-accent">{title}</h2>
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-wash-border px-6 py-4">
+            {/* min-w-0 + break-words: un título libre sin espacios (ej. un evento del calendario)
+                desbordaba el modal y empujaba la X fuera de la vista. */}
+            <h2 className="min-w-0 break-words font-display text-lg font-bold text-wash-accent">{title}</h2>
             <button
               type="button"
               onClick={onClose}
               aria-label="Cerrar"
-              className="rounded-full p-1 text-wash-text-muted hover:bg-wash-canvas"
+              className="shrink-0 rounded-full p-1 text-wash-text-muted hover:bg-wash-canvas"
             >
               <X size={20} />
             </button>

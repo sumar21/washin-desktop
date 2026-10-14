@@ -105,12 +105,14 @@ export interface EventoInput {
 
 /** Normaliza y valida el body de alta/edición. Devuelve el mensaje de error para el usuario. */
 export function validarEvento(body: Record<string, unknown>): { data: EventoInput } | { error: string } {
+  // Sólo strings: con `String(v)` un objeto pasaba como "[object Object]".
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
   const data: EventoInput = {
-    titulo: txt(body.titulo),
-    descripcion: txt(body.descripcion),
-    fecha: txt(body.fecha),
-    horaInicio: txt(body.horaInicio),
-    horaFin: txt(body.horaFin),
+    titulo: str(body.titulo),
+    descripcion: str(body.descripcion),
+    fecha: str(body.fecha),
+    horaInicio: str(body.horaInicio),
+    horaFin: str(body.horaFin),
   };
   if (!data.titulo) return { error: 'Falta el título' };
   if (data.titulo.length > MAX_TITULO) return { error: `El título no puede superar los ${MAX_TITULO} caracteres` };
