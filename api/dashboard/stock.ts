@@ -62,10 +62,15 @@ import { readSession } from '../_lib/session.js';
  * `Repuesto_RI` contra `Item_ST`. Si dos ítems caen en el mismo grupo acá, es porque también
  * comparten fila de stock.
  *
- * Estrategia de fetch: SharePoint sólo indexa columnas de MES (`FechaMesAno_DC`,
- * `FechaMesAno_IN`, `FechaMes_RI`), no de día. Se filtra server-side con un OR por los meses
- * que toca el rango y después se recorta al día exacto en memoria — mismo patrón (y mismos
- * fallbacks) que `api/dashboard/incidentes.ts`.
+ * Estrategia de fetch (índices verificados contra el tenant el 14/10/2026):
+ *  · Salidas → `10.Incidentes` por `FechaAsignada_IN` (INDEXADA), con un OR de los días de la
+ *    ventana en tandas. Antes se pedían ~14 meses por `FechaMesAno_IN` (5.227 incidentes para
+ *    usar ~60) porque la fecha de asignación puede caer meses después del alta.
+ *  · Sus repuestos → `13.RepuestosIncidentes` por `IDIncidente_RI` (interno `IDIncidente_IN`,
+ *    INDEXADA), que es el join real. Sin el respaldo de antes que, si no matcheaba nada por
+ *    mes, bajaba la lista entera.
+ *  · Entradas → `06.DetalleCompra` / `05.PedidoCompras` por OR de meses (no indexadas, listas
+ *    chicas: 1.340 / 768 filas) y recorte al día en memoria.
  */
 
 const DEFAULT_DIAS = 30;
@@ -159,6 +164,54 @@ function mesesDelRango(desdeKey: number, hastaKey: number, atras = 0): string[] 
   return out;
 }
 
+/** 'dd/mm/yyyy' de cada día de [desdeKey..hastaKey], acotado a los últimos MAX_MESES meses. */
+function diasDelRango(desdeKey: number, hastaKey: number): string[] {
+  const aUtc = (k: number) => Date.UTC(Math.floor(k / 10000), (Math.floor(k / 100) % 100) - 1, k % 100);
+  const fin = aUtc(hastaKey);
+  // Mismo tope que las compras (mesesDelRango): más de MAX_MESES no se pide.
+  const ini = Math.max(aUtc(desdeKey), fin - MAX_MESES * 31 * 86_400_000);
+  const out: string[] = [];
+  for (let t = fin; t >= ini; t -= 86_400_000) {
+    const d = new Date(t);
+    out.push(`${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`);
+  }
+  return out;
+}
+
+/** Igualdades por tanda: un $filter con más de ~24 OR lo rechaza Graph por largo (ver MAX_MESES). */
+const TANDA = 20;
+/** Tandas en paralelo: alcanza para 24 meses de días sin saturar el throttling de Graph. */
+const PARALELO = 6;
+
+/**
+ * Trae las filas cuya `campo` es igual a alguno de `valores`, con un OR sobre UNA sola columna
+ * partido en tandas. Pensado para columnas INDEXADAS (FechaAsignada_IN, IDIncidente_IN). Si
+ * Graph falla, el error sube: nada de caer a traer la lista entera.
+ */
+async function listPorValores(
+  listId: string,
+  select: string[],
+  campo: string,
+  valores: string[]
+): Promise<SharePointItem[]> {
+  const tandas: string[][] = [];
+  for (let i = 0; i < valores.length; i += TANDA) tandas.push(valores.slice(i, i + TANDA));
+  const out: SharePointItem[] = [];
+  for (let i = 0; i < tandas.length; i += PARALELO) {
+    const lote = await Promise.all(
+      tandas.slice(i, i + PARALELO).map((t) =>
+        listItems(listId, {
+          select,
+          filter: t.map((v) => `fields/${campo} eq '${v.replace(/'/g, "''")}'`).join(' or '),
+          top: 999,
+        })
+      )
+    );
+    for (const filas of lote) out.push(...filas);
+  }
+  return out;
+}
+
 /** Trae una lista filtrando por un OR de meses; si Graph rechaza el filtro, cae a traer todo. */
 async function listWithMonthFilter(
   listId: string,
@@ -235,14 +288,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const mesesCompra = mesesDelRango(desdeKey, hoyKey);
-    // 12 meses de margen: cubre incidentes viejos asignados dentro de la ventana sin traer
-    // la lista entera.
-    const mesesIncidente = mesesDelRango(desdeKey, hoyKey, 12);
 
     const [compraRows, pedidoRows, incRows, stockRows] = await Promise.all([
       listWithMonthFilter(LIST_IDS.detalleCompra, detalleCompraSelectFields(), 'FechaMesAno_DC', mesesCompra),
       listWithMonthFilter(LIST_IDS.pedidoCompras, pedidoCompraSelectFields(), 'FechaMesAno_PC', mesesCompra),
-      listWithMonthFilter(LIST_IDS.incidentes, incidenteSelectFields(), 'FechaMesAno_IN', mesesIncidente),
+      // Por el día de asignación, que es el del movimiento (ver "Salidas" arriba).
+      listPorValores(LIST_IDS.incidentes, incidenteSelectFields(), 'FechaAsignada_IN', diasDelRango(desdeKey, hoyKey)),
       listItems(LIST_IDS.stock, { select: stockSelectFields(), filter: `fields/Status_ST eq 'Activo'` }),
     ]);
 
@@ -296,24 +347,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (incAsignados.size > 0) {
-      let repRows = await listWithMonthFilter(
+      // Directo por el join (IDIncidente), sólo de los incidentes asignados en la ventana.
+      const repRows = await listPorValores(
         LIST_IDS.repuestosIncidentes,
         repuestoIncidenteSelectFields(),
-        'FechaMes_RI',
-        mesesIncidente
+        'IDIncidente_IN',
+        [...incAsignados.keys()]
       );
-      let repuestos = repRows.map(mapRepuestoIncidente).filter((r) => incAsignados.has(r.IDIncidente_RI));
-
-      // Misma red de seguridad que api/dashboard/incidentes.ts: si el filtro por FechaMes_RI
-      // no matcheó nada (formato de fecha distinto en la columna) recargamos sin filtro y
-      // acotamos por IDIncidente_RI, que es el join de verdad.
-      if (repuestos.length === 0) {
-        repRows = await listItems(LIST_IDS.repuestosIncidentes, {
-          select: repuestoIncidenteSelectFields(),
-          top: 999,
-        });
-        repuestos = repRows.map(mapRepuestoIncidente).filter((r) => incAsignados.has(r.IDIncidente_RI));
-      }
+      const repuestos = repRows.map(mapRepuestoIncidente).filter((r) => incAsignados.has(r.IDIncidente_RI));
 
       for (const r of repuestos) {
         if (r.Cantidad_RI <= 0) continue;
