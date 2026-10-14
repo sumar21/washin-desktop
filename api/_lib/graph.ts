@@ -122,6 +122,40 @@ export async function listItems(
   return out;
 }
 
+/** Igualdades por request: un $filter con más de ~24 OR lo rechaza Graph por largo. */
+const TANDA_VALORES = 20;
+/** Requests en paralelo: alcanza para cientos de valores sin saturar el throttling de Graph. */
+const PARALELO_VALORES = 6;
+
+/**
+ * Filas cuya columna `campo` (nombre INTERNO) es igual a alguno de `valores`: un OR sobre UNA
+ * sola columna, partido en tandas. Pensado para columnas INDEXADAS (FechaAsignada_IN, el
+ * IDIncidente de 13.RepuestosIncidentes…). Si Graph falla, el error sube: nunca cae a traer la
+ * lista entera, que es justamente lo que esto evita.
+ */
+export async function listItemsPorValores(
+  listId: string,
+  opts: { select?: string[]; campo: string; valores: string[] }
+): Promise<SharePointItem[]> {
+  const valores = [...new Set(opts.valores)];
+  const tandas: string[][] = [];
+  for (let i = 0; i < valores.length; i += TANDA_VALORES) tandas.push(valores.slice(i, i + TANDA_VALORES));
+  const out: SharePointItem[] = [];
+  for (let i = 0; i < tandas.length; i += PARALELO_VALORES) {
+    const lote = await Promise.all(
+      tandas.slice(i, i + PARALELO_VALORES).map((t) =>
+        listItems(listId, {
+          select: opts.select,
+          filter: t.map((v) => `fields/${opts.campo} eq '${v.replace(/'/g, "''")}'`).join(' or '),
+          top: 999,
+        })
+      )
+    );
+    for (const filas of lote) out.push(...filas);
+  }
+  return out;
+}
+
 export async function getItem(
   listId: string,
   itemId: string | number,

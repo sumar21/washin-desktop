@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, GraphError, type SharePointItem } from '../_lib/graph.js';
+import { listItems, listItemsPorValores, GraphError, type SharePointItem } from '../_lib/graph.js';
 import {
   LIST_IDS,
   mapDetalleCompra,
@@ -178,40 +178,6 @@ function diasDelRango(desdeKey: number, hastaKey: number): string[] {
   return out;
 }
 
-/** Igualdades por tanda: un $filter con más de ~24 OR lo rechaza Graph por largo (ver MAX_MESES). */
-const TANDA = 20;
-/** Tandas en paralelo: alcanza para 24 meses de días sin saturar el throttling de Graph. */
-const PARALELO = 6;
-
-/**
- * Trae las filas cuya `campo` es igual a alguno de `valores`, con un OR sobre UNA sola columna
- * partido en tandas. Pensado para columnas INDEXADAS (FechaAsignada_IN, IDIncidente_IN). Si
- * Graph falla, el error sube: nada de caer a traer la lista entera.
- */
-async function listPorValores(
-  listId: string,
-  select: string[],
-  campo: string,
-  valores: string[]
-): Promise<SharePointItem[]> {
-  const tandas: string[][] = [];
-  for (let i = 0; i < valores.length; i += TANDA) tandas.push(valores.slice(i, i + TANDA));
-  const out: SharePointItem[] = [];
-  for (let i = 0; i < tandas.length; i += PARALELO) {
-    const lote = await Promise.all(
-      tandas.slice(i, i + PARALELO).map((t) =>
-        listItems(listId, {
-          select,
-          filter: t.map((v) => `fields/${campo} eq '${v.replace(/'/g, "''")}'`).join(' or '),
-          top: 999,
-        })
-      )
-    );
-    for (const filas of lote) out.push(...filas);
-  }
-  return out;
-}
-
 /** Trae una lista filtrando por un OR de meses; si Graph rechaza el filtro, cae a traer todo. */
 async function listWithMonthFilter(
   listId: string,
@@ -293,7 +259,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       listWithMonthFilter(LIST_IDS.detalleCompra, detalleCompraSelectFields(), 'FechaMesAno_DC', mesesCompra),
       listWithMonthFilter(LIST_IDS.pedidoCompras, pedidoCompraSelectFields(), 'FechaMesAno_PC', mesesCompra),
       // Por el día de asignación, que es el del movimiento (ver "Salidas" arriba).
-      listPorValores(LIST_IDS.incidentes, incidenteSelectFields(), 'FechaAsignada_IN', diasDelRango(desdeKey, hoyKey)),
+      listItemsPorValores(LIST_IDS.incidentes, { select: incidenteSelectFields(), campo: 'FechaAsignada_IN', valores: diasDelRango(desdeKey, hoyKey) }),
       listItems(LIST_IDS.stock, { select: stockSelectFields(), filter: `fields/Status_ST eq 'Activo'` }),
     ]);
 
@@ -348,12 +314,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (incAsignados.size > 0) {
       // Directo por el join (IDIncidente), sólo de los incidentes asignados en la ventana.
-      const repRows = await listPorValores(
-        LIST_IDS.repuestosIncidentes,
-        repuestoIncidenteSelectFields(),
-        'IDIncidente_IN',
-        [...incAsignados.keys()]
-      );
+      const repRows = await listItemsPorValores(LIST_IDS.repuestosIncidentes, {
+        select: repuestoIncidenteSelectFields(),
+        campo: 'IDIncidente_IN',
+        valores: [...incAsignados.keys()],
+      });
       const repuestos = repRows.map(mapRepuestoIncidente).filter((r) => incAsignados.has(r.IDIncidente_RI));
 
       for (const r of repuestos) {

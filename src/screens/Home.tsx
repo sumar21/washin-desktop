@@ -71,7 +71,10 @@ interface AttentionItem {
   edificio: string;
   tag: string;
   urgent: boolean;
-  sort: number;
+  /** Primero lo más accionable: 0 incidente sin asignar · 1 ventilación vencida · 2 incidente asignado. */
+  grupo: 0 | 1 | 2;
+  /** Dentro del grupo, ascendente: lo más viejo / más atrasado arriba. */
+  orden: number;
 }
 
 export function Home() {
@@ -216,7 +219,9 @@ export function Home() {
         edificio: i.NombreEdificio_IN,
         tag: asignado ? proper(i.TecnicoAsignado_IN!) : 'Sin asignar',
         urgent: !asignado,
-        sort: asignado ? 40 : 10, // sin asignar pesa más
+        // Sin asignar primero (nadie lo está viendo); asignados al final (ya tienen técnico).
+        grupo: asignado ? 2 : 0,
+        orden: i.ID, // el ID crece con el alta: el más viejo arriba
       });
     }
     for (const v of ventVencidas) {
@@ -228,13 +233,16 @@ export function Home() {
         edificio: v.Edificio_VE,
         tag: `${d} d`,
         urgent: true,
-        sort: -d, // cuanto más vencida, más arriba
+        grupo: 1,
+        orden: -d, // cuanto más vencida, más arriba
       });
     }
     // Sin tope: antes cortaba en 12 y el contador del header decía 12, con 163 ventilaciones
     // vencidas + 25 incidentes abiertos (medido 10/2026) escondidos sin aviso. La lista ya
     // scrollea (max-h-[380px]); ver .claude/skills/sin-topes.
-    return items.sort((a, b) => a.sort - b.sort);
+    // Antes las vencidas más viejas ordenaban por encima de todo y, con el tope, ningún
+    // incidente llegaba a verse; ahora los sin asignar van primero.
+    return items.sort((a, b) => a.grupo - b.grupo || a.orden - b.orden);
   }, [incidentesAbiertos, ventVencidas, hoy]);
 
   // Descansos de hoy: en curso (Activo) primero, luego finalizados.

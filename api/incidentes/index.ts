@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { listItems, createItem, GraphError } from '../_lib/graph.js';
+import { listItems, listItemsPorValores, createItem, GraphError } from '../_lib/graph.js';
 import {
   LIST_IDS,
   mapIncidente,
@@ -33,28 +33,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const resParam = typeof req.query.resueltos === 'string' ? req.query.resueltos : undefined;
     const resueltosMes = resParam && /^\d{2}\/\d{4}$/.test(resParam) ? resParam : null;
     const incFilter = resueltosMes ? `fields/FechaMesAno_IN eq '${resueltosMes}'` : `fields/Resuelto_IN eq 'NO'`;
-    // Sin filtro, `listItems` pagina por @odata.nextLink hasta agotar 13.RepuestosIncidentes
-    // ENTERA en cada request (`top` es tamaño de página, no tope). En el camino
-    // `?resueltos=MM/YYYY` se acota por mes con FechaMes_RI (mismo formato mm/yyyy que
-    // FechaMesAno_IN). Un solo $filter sobre columna no indexada → cubierto por el header
-    // Prefer que listItems ya agrega.
-    const repFilter = resueltosMes ? `fields/FechaMes_RI eq '${resueltosMes}'` : undefined;
-    // `?repuestos=0`: el Home y el Dashboard General sólo quieren los incidentes. Sin esto cada
-    // carga del Home bajaba 13.RepuestosIncidentes entera (3.598 filas, ~4,5 s, medido 10/2026)
-    // para no usar ninguna.
-    const conRepuestos = req.query.repuestos !== '0';
+    // Repuestos (13.RepuestosIncidentes): SÓLO los de los incidentes abiertos no anulados, por el
+    // join real (IDIncidente, indexada). La grilla los necesita por fila para elegir entre
+    // "Asignar técnico" y "Sin stock → Generar compra". Antes se bajaba la lista ENTERA
+    // (3.598 filas, ~4 s, medido 10/2026) en cada request para usar ~17.
+    // Los de un RESUELTO o anulado no van acá: el detalle los pide al abrirse
+    // (GET /api/incidentes/:id?repuestos=1), igual que las fotos.
+    // `?repuestos=0`: el Home y el Dashboard General no los usan.
+    const conRepuestos = !resueltosMes && req.query.repuestos !== '0';
     try {
-      const [incRows, repRows] = await Promise.all([
-        listItems(LIST_IDS.incidentes, { select: incidenteSelectFields(), filter: incFilter, top: 999 }),
-        conRepuestos
-          ? listItems(LIST_IDS.repuestosIncidentes, { select: repuestoIncidenteSelectFields(), filter: repFilter, top: 999 })
-          : Promise.resolve([]),
-      ]);
+      const incRows = await listItems(LIST_IDS.incidentes, { select: incidenteSelectFields(), filter: incFilter, top: 999 });
       let incidentes = incRows.map(mapIncidente);
       // Filtro compuesto (mes + resuelto) en memoria: SharePoint rechaza `and` sobre columnas no indexadas.
       if (resueltosMes) incidentes = incidentes.filter((i) => i.Resuelto_IN === 'SI');
       incidentes.sort((a, b) => b.ID - a.ID);
-      const repuestos = repRows.map(mapRepuestoIncidente);
+      const repuestos = conRepuestos
+        ? (
+            await listItemsPorValores(LIST_IDS.repuestosIncidentes, {
+              select: repuestoIncidenteSelectFields(),
+              // display IDIncidente_RI → interno IDIncidente_IN.
+              campo: 'IDIncidente_IN',
+              valores: incidentes.filter((i) => i.Status_IN !== 'Anulado').map((i) => i.IDIncidente),
+            })
+          ).map(mapRepuestoIncidente)
+        : [];
       return res.status(200).json({ incidentes, repuestos });
     } catch (err) {
       console.error('incidentes GET error', err);

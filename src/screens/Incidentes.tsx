@@ -37,7 +37,7 @@ import { MultiSelect, type MultiOption } from '@/components/ui/multi-select';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { PopoverClose } from '@/components/ui/popover';
 import { useAppStore } from '@/store/useAppStore';
-import { getIncidentes, getFotosIncidente } from '@/services/api';
+import { getIncidentes, getFotosIncidente, getRepuestosIncidente } from '@/services/api';
 import { last12MesesOptions, estadoOptions, edificioOptions, pasaEdificio } from '@/lib/filters';
 import { cn, proper } from '@/lib/utils';
 import type { Incidente, RepuestoIncidente, FotoIncidente } from '@/types/domain';
@@ -170,10 +170,9 @@ const ASIGNACION_OPTS: MultiOption[] = [
 ];
 const asignacionDe = (i: Incidente) => (i.TecnicoAsignado_IN ? 'asignado' : 'sin_asignar');
 
-// Dedupe por identidad de item de lista (ID), NO agrupar y sumar por nombre de repuesto:
-// la duplicación es de IDENTIDAD (la misma fila de 13.RepuestosIncidentes repetida M+1 veces,
-// una por mes tildado + la del store), no de granularidad. Sumar Cantidad_RI falsearía el dato
-// (12×1 unidad de un repuesto del que se usó 1) y el modal de compra pediría 12 unidades.
+// Dedupe por identidad de item de lista (ID): el mismo incidente puede venir en el store (abiertos)
+// y en los resueltos traídos por mes. Antes también deduplicaba repuestos, cuando cada GET de
+// resueltos devolvía 13.RepuestosIncidentes entera; ahora esos se piden en el detalle.
 const dedupeById = <T extends { ID: number }>(arr: T[]): T[] => {
   const seen = new Set<number>();
   return arr.filter((i) => (seen.has(i.ID) ? false : (seen.add(i.ID), true)));
@@ -281,7 +280,6 @@ export function Incidentes() {
   // Resueltos traídos on-demand (por mes) cuando se tildan estados resueltos en el filtro.
   // NO van al store (otras pantallas usan CollectIncidentes como "abiertos"): viven acá.
   const [resueltosExtra, setResueltosExtra] = useState<Incidente[]>([]);
-  const [repuestosExtra, setRepuestosExtra] = useState<RepuestoIncidente[]>([]);
 
   const [detail, setDetail] = useState<Incidente | null>(null);
   const [assigning, setAssigning] = useState<Incidente | null>(null);
@@ -310,7 +308,6 @@ export function Incidentes() {
     setLoadError(null);
     // Estado derivado del filtro: una recarga completa (montaje o "Reintentar") lo invalida.
     setResueltosExtra([]);
-    setRepuestosExtra([]);
     // fetchAbm alimenta el catálogo de edificios (ABM.Edificios) del combo "Nuevo incidente".
     // Best-effort: si el bundle de ABM falla, el combo cae a los edificios con máquina (comportamiento
     // previo) en vez de tumbar toda la pantalla de incidentes.
@@ -320,20 +317,13 @@ export function Incidentes() {
   }, [fetchIncidentes, fetchStock, fetchMaquinas, fetchTecnicos, fetchCompras, fetchAbm]);
 
   // Trae los resueltos de los meses dados (GET /incidentes?resueltos=MM/YYYY) y los guarda en
-  // el estado local (mergea incidentes + repuestos de todos los meses, dedupe por ID).
+  // el estado local (dedupe por ID). Sus repuestos NO vienen: el detalle los pide al abrirse.
   const loadResueltos = useCallback(async (meses: string[]) => {
     setLoading(true);
     setLoadError(null);
     try {
       const results = await Promise.all(meses.map((m) => getIncidentes(m)));
-      const inc: Incidente[] = [];
-      const reps: RepuestoIncidente[] = [];
-      for (const r of results) {
-        inc.push(...r.incidentes);
-        reps.push(...r.repuestos);
-      }
-      setResueltosExtra(dedupeById(inc));
-      setRepuestosExtra(dedupeById(reps));
+      setResueltosExtra(dedupeById(results.flatMap((r) => r.incidentes)));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'No se pudieron cargar los incidentes resueltos.');
     } finally {
@@ -347,12 +337,17 @@ export function Incidentes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar.
   }, []);
 
-  // Defensa en profundidad: `repuestos` (store) y `repuestosExtra` (on-demand) SIEMPRE se solapan,
-  // porque cada GET de resueltos devuelve 13.RepuestosIncidentes entera.
+  // Repuestos de los ABIERTOS no anulados: vienen con el listado porque la grilla los usa por fila
+  // (hasStock decide entre "Asignar técnico" y "Sin stock → Generar compra"). Los de un resuelto o
+  // anulado no están acá: el detalle los pide al abrirse (ver DetailBody).
   const repuestosDe = useCallback(
-    (id: number) =>
-      dedupeById([...repuestos, ...repuestosExtra]).filter((r) => r.IDIncidente_RI === String(id)),
-    [repuestos, repuestosExtra]
+    (id: number) => repuestos.filter((r) => r.IDIncidente_RI === String(id)),
+    [repuestos]
+  );
+  // Incidentes cuyos repuestos trajo el listado (mismo criterio que api/incidentes/index.ts).
+  const conRepuestosCargados = useMemo(
+    () => new Set(incidentes.filter((i) => i.Status_IN !== 'Anulado').map((i) => i.ID)),
+    [incidentes]
   );
 
   // Abiertos = store (fuente de verdad de otras pantallas). Si el usuario tildó algún estado
@@ -441,11 +436,8 @@ export function Incidentes() {
     setFilterTipo([]);
     setFilterAsignacion([]);
     setMesCerradosPorDefecto(null);
-    // Los resueltos/repuestos on-demand son estado derivado del filtro: si el filtro se limpia,
-    // se limpian. Si no, repuestosExtra queda stale y contamina el detalle de los ABIERTOS
-    // (repuestosDe no está gateado por wantResueltos, a diferencia de displayList).
+    // Los resueltos on-demand son estado derivado del filtro: si el filtro se limpia, se limpian.
     setResueltosExtra([]);
-    setRepuestosExtra([]);
   };
 
   const filtered = useMemo(() => {
@@ -638,7 +630,6 @@ export function Incidentes() {
               } else {
                 setMesCerradosPorDefecto(null);
                 setResueltosExtra([]);
-                setRepuestosExtra([]);
               }
             }}
           />
@@ -846,7 +837,8 @@ export function Incidentes() {
       {/* Detalle */}
       <DetailModal
         incidente={detail}
-        repuestos={detail ? repuestosDe(detail.ID) : []}
+        // undefined → el detalle los pide al abrirse (resuelto o anulado).
+        repuestos={detail && conRepuestosCargados.has(detail.ID) ? repuestosDe(detail.ID) : undefined}
         stock={stock}
         onClose={() => setDetail(null)}
       />
@@ -1334,7 +1326,8 @@ function DetailModal({
   onClose,
 }: {
   incidente: Incidente | null;
-  repuestos: { ID: number; Repuesto_RI: string; Cantidad_RI: number }[];
+  /** undefined → los pide el detalle al abrirse. */
+  repuestos?: RepuestoIncidente[];
   stock: { Item_ST: string; Cantidad_ST: number; Status_ST: string }[];
   onClose: () => void;
 }) {
@@ -1373,13 +1366,32 @@ const OBSERVACIONES = [
 
 function DetailBody({
   incidente,
-  repuestos,
+  repuestos: repuestosListado,
   stock,
 }: {
   incidente: Incidente;
-  repuestos: { ID: number; Repuesto_RI: string; Cantidad_RI: number }[];
+  /** Los de un abierto vienen del listado; undefined → se piden acá (resuelto o anulado). */
+  repuestos?: RepuestoIncidente[];
   stock: { Item_ST: string; Cantidad_ST: number; Status_ST: string }[];
 }) {
+  // Repuestos LAZY para resueltos y anulados, mismo patrón que las fotos: DetailBody se remonta
+  // por incidente, así que `null` (cargando) es el estado inicial correcto sin setear en el efecto.
+  const pedirRepuestos = repuestosListado === undefined;
+  const [repuestosLazy, setRepuestosLazy] = useState<RepuestoIncidente[] | null>(null);
+  const [errorRepuestos, setErrorRepuestos] = useState(false);
+  useEffect(() => {
+    if (!pedirRepuestos) return;
+    let vivo = true;
+    getRepuestosIncidente(incidente.ID)
+      .then((r) => { if (vivo) setRepuestosLazy(r.repuestos); })
+      .catch(() => {
+        if (!vivo) return;
+        setRepuestosLazy([]);
+        setErrorRepuestos(true);
+      });
+    return () => { vivo = false; };
+  }, [incidente.ID, pedirRepuestos]);
+  const repuestos = repuestosListado ?? repuestosLazy;
   const observaciones = useMemo(
     () =>
       OBSERVACIONES.map((o) => ({ ...o, value: String(incidente[o.field] ?? '') })).filter((o) =>
@@ -1523,9 +1535,13 @@ function DetailBody({
       </dl>
       <div className="mt-5 border-t border-wash-border/70 pt-4">
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-wash-text-muted">
-          Repuestos ({repuestos.length})
+          Repuestos{repuestos ? ` (${repuestos.length})` : ''}
         </p>
-        {repuestos.length === 0 ? (
+        {repuestos === null ? (
+          <p className="py-2 text-[12.5px] text-wash-text-faint">Cargando repuestos…</p>
+        ) : errorRepuestos ? (
+          <p className="py-2 text-[12.5px] text-red-700">No se pudieron cargar los repuestos.</p>
+        ) : repuestos.length === 0 ? (
           <EmptyState
             compact
             icon={Wrench}
