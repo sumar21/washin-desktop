@@ -873,7 +873,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   assignIncidente: async (id, tecnico, fechaAsignada) => {
     try {
       await api.assignIncidente(id, tecnico, fechaAsignada);
-      await get().fetchIncidentes(); // el descuento de stock + estado se resincroniza
+      // El assign DESCUENTA de 04.Stock: hay que recargar también el stock. Antes sólo se recargaban
+      // los incidentes, la grilla seguía con el stock viejo y hasStock() dejaba asignar el siguiente
+      // incidente contra unidades que ya no estaban. Pasó el 07/10/2026 con 4 correas verdes y 2 en
+      // depósito: las 4 mostraron "Asignar técnico", las 2 últimas quedaron clavadas en 0 sin descontar
+      // y al recibir la compra de 8 el depósito marcó 2 de más.
+      await Promise.all([get().fetchIncidentes(), get().fetchStock()]);
     } catch (err) {
       handleAuthError(err, set);
       throw err;
