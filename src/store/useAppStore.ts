@@ -881,6 +881,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       await Promise.all([get().fetchIncidentes(), get().fetchStock()]);
     } catch (err) {
       handleAuthError(err, set);
+      // 409 sin_stock: el backend no asigna si el depósito no alcanza. Se recarga el stock para que la
+      // grilla pase ese incidente a "Sin stock → Generar compra" en vez de seguir ofreciendo asignar.
+      if (err instanceof api.ApiError && err.status === 409) void get().fetchStock().catch(() => {});
       throw err;
     }
   },

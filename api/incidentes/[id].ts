@@ -14,6 +14,7 @@ import {
   APP_VERSION,
 } from '../_lib/lists.js';
 import { readSession, type SessionPayload } from '../_lib/session.js';
+import { faltantesDeStock, mensajeFaltantes } from '../_lib/stockSuficiente.js';
 import { puedeAccederModulo } from '../_lib/permisos.js';
 
 // Estados desde los que un Admin puede anular (baja lógica) un incidente: los
@@ -40,16 +41,27 @@ interface Body {
   motivo?: string;
 }
 
-/** Descuenta de 04.Stock los repuestos del incidente (match Item_ST = Repuesto_RI, clamp ≥0). */
-async function descontarRepuestos(incidenteId: number): Promise<void> {
-  const reps = (
-    await listItems(LIST_IDS.repuestosIncidentes, {
+/** Repuestos del incidente + filas activas de 04.Stock (lo que necesitan el chequeo y el descuento). */
+async function repuestosYStock(incidenteId: number) {
+  const [repRows, stockRows] = await Promise.all([
+    listItems(LIST_IDS.repuestosIncidentes, {
       select: repuestoIncidenteSelectFields(),
       filter: `fields/IDIncidente_IN eq '${incidenteId}'`,
-    })
-  ).map(mapRepuestoIncidente);
-  if (reps.length === 0) return;
-  const stock = (await listItems(LIST_IDS.stock, { select: stockSelectFields(), filter: `fields/Status_ST eq 'Activo'` })).map(mapStock);
+    }),
+    listItems(LIST_IDS.stock, { select: stockSelectFields(), filter: `fields/Status_ST eq 'Activo'` }),
+  ]);
+  return { reps: repRows.map(mapRepuestoIncidente), stock: stockRows.map(mapStock) };
+}
+
+/**
+ * Descuenta de 04.Stock los repuestos del incidente (match Item_ST = Repuesto_RI). El assign ya
+ * verificó que alcanza (faltantesDeStock); el clamp ≥0 queda sólo como red ante dos asignaciones
+ * simultáneas del mismo repuesto.
+ */
+async function descontarRepuestos(
+  reps: ReturnType<typeof mapRepuestoIncidente>[],
+  stock: ReturnType<typeof mapStock>[]
+): Promise<void> {
   for (const r of reps) {
     const key = r.Repuesto_RI.trim().toLowerCase();
     const row = stock.find((s) => s.Item_ST.trim().toLowerCase() === key);
@@ -205,13 +217,18 @@ async function assign(id: number, body: Body, res: VercelResponse) {
   if (!incRaw) return res.status(404).json({ error: 'not_found', message: 'El incidente no existe' });
   const bloqueo = rechazarSiNoAsignable(mapIncidente(incRaw), res);
   if (bloqueo) return bloqueo;
+  // Sin stock suficiente no se asigna (ver api/_lib/stockSuficiente.ts). Se chequea ANTES de tocar
+  // nada: si falta, el incidente queda como estaba y el depósito no se mueve.
+  const { reps, stock } = await repuestosYStock(id);
+  const faltan = faltantesDeStock(reps, stock);
+  if (faltan.length > 0) return res.status(409).json({ error: 'sin_stock', message: mensajeFaltantes(faltan) });
   const f = fechasHoy();
   await updateItem(LIST_IDS.incidentes, id, {
     FechaAsignada_IN: body.fechaAsignada?.trim() || f.fecha,
     Status_IN: 'Asignado',
     TecnicoAsignado_IN: tecnico,
   });
-  await descontarRepuestos(id);
+  await descontarRepuestos(reps, stock);
   return res.status(200).json({ ID: id, Status_IN: 'Asignado', TecnicoAsignado_IN: tecnico });
 }
 
