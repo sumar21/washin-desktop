@@ -836,23 +836,17 @@ export function anularNovedad(
 // ── Calendario (21.EventosCalendario + 19.Ventilaciones) ─────────────────
 export interface CalendarioResponse {
   eventos: EventoCalendario[];
-  /** Realizadas de los meses pedidos. */
-  realizadas: Ventilacion[];
-  /** Pendientes / Asignadas / Programadas. Sólo viene si se pidió (`abiertas`). */
-  abiertas?: Ventilacion[];
+  /** Asignadas y Programadas. Sólo viene si se pidió (`ventilaciones`). */
+  ventilaciones?: Ventilacion[];
 }
 
 /**
- * `meses` en formato mm/yyyy (máx. 3: los que muestra la grilla). `abiertas` las suma (no dependen
- * del mes); `realizadas: false` las saltea — el widget del Home no las usa y era una consulta de más.
+ * `meses` en formato mm/yyyy (máx. 3: los que muestra la grilla). `ventilaciones` suma las
+ * Asignadas y Programadas, que no dependen del mes: la grilla las pide una sola vez.
  */
-export function getCalendario(
-  meses: string[],
-  opts: { abiertas?: boolean; realizadas?: boolean } = {}
-): Promise<CalendarioResponse> {
+export function getCalendario(meses: string[], opts: { ventilaciones?: boolean } = {}): Promise<CalendarioResponse> {
   const qs = new URLSearchParams({ meses: meses.join(',') });
-  if (opts.abiertas) qs.set('abiertas', '1');
-  if (opts.realizadas === false) qs.set('realizadas', '0');
+  if (opts.ventilaciones) qs.set('ventilaciones', '1');
   return request(`/calendario?${qs.toString()}`);
 }
 

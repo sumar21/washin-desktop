@@ -5,11 +5,11 @@
 // respetar. La mobile no lee esta lista.
 //
 // Ninguna consulta crece con el historial:
-//   - Ventilaciones ABIERTAS: se piden por estado, sin filtrar por mes, y el front las ubica en
-//     memoria según el estado. Son ~una por edificio del circuito (finalizar una crea exactamente
-//     una Pendiente nueva), así que el set sólo crece si se suman edificios.
-//   - Ventilaciones REALIZADAS y eventos: sólo los meses visibles, filtrados en SharePoint por la
-//     columna mm/yyyy (`FechaMesAnoFinalizacion_VE` / `FechaMesAno_EC`, esta última indexada).
+//   - Ventilaciones: SÓLO las Asignadas y Programadas (lo que ya tiene técnico y falta hacer;
+//     decisión de gerencia 15/10/2026 — ni Pendientes sin técnico ni Realizadas). Se piden por
+//     estado (Estado_VE indexada), sin filtrar por mes, y el front las ubica en memoria según el
+//     estado. Son pocas (24 medidas el 14/10/2026).
+//   - Eventos: sólo los meses visibles, por `FechaMesAno_EC` (indexada).
 import { listItems, createItem, updateItem, getItem, resolveListIdByName } from './graph.js';
 import {
   LIST_IDS,
@@ -18,7 +18,6 @@ import {
   ventilacionSelectFields,
   desglosarFechaDDMMYYYY,
   fechasHoy,
-  VENTILACIONES_ABIERTAS_FILTER,
   type VentilacionRow,
 } from './lists.js';
 
@@ -143,21 +142,14 @@ export async function listarEventos(meses: string[]): Promise<EventoRow[]> {
   return rows.map(mapEvento);
 }
 
-/** Ventilaciones realizadas en los meses pedidos. */
-export async function listarRealizadas(meses: string[]): Promise<VentilacionRow[]> {
-  const rows = await listItems(LIST_IDS.ventilaciones, {
-    select: ventilacionSelectFields(),
-    filter: filtroMeses('FechaMesAnoFinalizacion_VE', meses),
-    top: 999,
-  });
-  return rows.map(mapVentilacion).filter((v) => v.Estado_VE === 'Realizada');
-}
+/** Estados de ventilación que muestra el calendario (igual que ESTADOS_VENT_CALENDARIO del front). */
+const ESTADOS_VENT_CALENDARIO = ['Asignada', 'Programada'];
 
-/** Ventilaciones abiertas (Pendiente / Asignada / Programada), sin filtrar por fecha. */
-export async function listarAbiertas(): Promise<VentilacionRow[]> {
+/** Ventilaciones Asignadas y Programadas, sin filtrar por fecha (el front las ubica por estado). */
+export async function listarVentilacionesAgendadas(): Promise<VentilacionRow[]> {
   const rows = await listItems(LIST_IDS.ventilaciones, {
     select: ventilacionSelectFields(),
-    filter: VENTILACIONES_ABIERTAS_FILTER,
+    filter: ESTADOS_VENT_CALENDARIO.map((e) => `fields/Estado_VE eq '${e}'`).join(' or '),
     top: 999,
   });
   return rows.map(mapVentilacion);

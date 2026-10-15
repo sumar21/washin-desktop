@@ -3,9 +3,9 @@
 // Vista mensual tipo Google Calendar pedida por gerencia. Las ventilaciones son de SÓLO LECTURA
 // (se gestionan en su módulo); los eventos se cargan, editan, realizan y anulan acá.
 //
-// La fecha en la que cae cada ventilación depende de su estado (ver `fechaVentilacion`). Las
-// abiertas se traen una sola vez y las realizadas y los eventos por mes visible: el detalle de
-// por qué ninguna consulta crece con el historial está en api/_lib/calendario.ts.
+// Ventilaciones: SÓLO Asignadas y Programadas (ESTADOS_VENT_CALENDARIO): lo que ya tiene técnico y
+// falta hacer. La fecha en la que cae cada una depende de su estado (ver `fechaVentilacion`). Se
+// traen una sola vez; los eventos, por mes visible. Detalle en api/_lib/calendario.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -67,23 +67,20 @@ const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 /**
  * Ítems que entran en una celda de la grilla (min-h 104px: el número del día + 3 pills de ~21px).
  * No esconde nada: el resto va a "+N más", que abre la lista completa del día. Medido sobre el
- * tenant (10/2026): ~25 ventilaciones abiertas por mes, así que el "+N más" aparece pocos días.
+ * tenant (10/2026): 24 ventilaciones Asignadas + Programadas en total, así que aparece pocos días.
  */
 const MAX_POR_DIA = 3;
 
 interface MesCargado {
   eventos: EventoCalendario[];
-  realizadas: Ventilacion[];
 }
 
 /** Punto sólido de cada tono: el fondo de las pills es demasiado claro para una referencia. */
 const LEYENDA: { label: string; dot: string }[] = [
   { label: 'Evento', dot: 'bg-wash-brand' },
-  { label: 'Pendiente', dot: 'bg-amber-400' },
   { label: 'Asignada', dot: 'bg-sky-400' },
   { label: 'Programada', dot: 'bg-indigo-400' },
   { label: 'Vencida', dot: 'bg-rose-500' },
-  { label: 'Realizada', dot: 'bg-slate-300' },
 ];
 
 /** El backend responde 409 cuando el evento ya no está Pendiente. */
@@ -102,12 +99,13 @@ export function Calendario() {
     const d = fecha ? fechaDeClave(fecha) : new Date();
     return startOfMonth(Number.isNaN(d.getTime()) ? new Date() : d);
   });
-  const [abiertas, setAbiertas] = useState<Ventilacion[] | null>(null);
+  // Asignadas y Programadas: no dependen del mes, se piden una sola vez.
+  const [ventilaciones, setVentilaciones] = useState<Ventilacion[] | null>(null);
   const [porMes, setPorMes] = useState<Record<string, MesCargado>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   // Meses con un pedido en curso: navegar rápido no dispara el mismo fetch dos veces.
   const enVuelo = useRef(new Set<string>());
-  const abiertasPedidas = useRef(false);
+  const ventilacionesPedidas = useRef(false);
 
   const [form, setForm] = useState<{ evento?: EventoCalendario; fecha?: Date } | null>(null);
   const [detalle, setDetalle] = useState<Item | null>(null);
@@ -129,30 +127,25 @@ export function Calendario() {
   const mesesVisibles = useMemo(() => [...new Set(dias.map(mesAnoDe))], [dias]);
   const faltantes = mesesVisibles.filter((m) => !porMes[m]);
   const faltantesKey = faltantes.join(',');
-  const cargando = !loadError && (abiertas === null || faltantes.length > 0);
+  const cargando = !loadError && (ventilaciones === null || faltantes.length > 0);
 
   const cargar = useCallback(async (meses: string[]) => {
     const pedir = meses.filter((m) => !enVuelo.current.has(m));
     if (pedir.length === 0) return;
-    const conAbiertas = !abiertasPedidas.current;
-    abiertasPedidas.current = true;
+    const conVentilaciones = !ventilacionesPedidas.current;
+    ventilacionesPedidas.current = true;
     pedir.forEach((m) => enVuelo.current.add(m));
     setLoadError(null);
     try {
-      const r = await api.getCalendario(pedir, { abiertas: conAbiertas });
+      const r = await api.getCalendario(pedir, { ventilaciones: conVentilaciones });
       setPorMes((prev) => {
         const next = { ...prev };
-        for (const m of pedir) {
-          next[m] = {
-            eventos: r.eventos.filter((e) => e.FechaMesAno === m),
-            realizadas: r.realizadas.filter((v) => v.FechaMesAnoFinalizacion_VE === m),
-          };
-        }
+        for (const m of pedir) next[m] = { eventos: r.eventos.filter((e) => e.FechaMesAno === m) };
         return next;
       });
-      if (r.abiertas) setAbiertas(r.abiertas);
+      if (r.ventilaciones) setVentilaciones(r.ventilaciones);
     } catch (err) {
-      if (conAbiertas) abiertasPedidas.current = false;
+      if (conVentilaciones) ventilacionesPedidas.current = false;
       setLoadError(err instanceof Error ? err.message : 'No se pudo cargar el calendario.');
     } finally {
       pedir.forEach((m) => enVuelo.current.delete(m));
@@ -185,13 +178,7 @@ export function Calendario() {
       else porDia.set(it.dia, [it]);
     };
 
-    const cargados = mesesVisibles.map((m) => porMes[m]).filter((x): x is MesCargado => !!x);
-    // Las abiertas se traen una vez al entrar: si una se finalizó después y su mes se cargó más
-    // tarde, aparecería dos veces (abierta vieja + realizada nueva). Gana la realizada.
-    const realizadasIds = new Set(cargados.flatMap((c) => c.realizadas.map((v) => v.ID)));
-
-    for (const v of abiertas ?? []) {
-      if (realizadasIds.has(v.ID)) continue;
+    for (const v of ventilaciones ?? []) {
       const dia = claveDia(fechaVentilacion(v));
       const it: Item = { tipo: 'ventilacion', key: `v-${v.ID}`, dia, ventilacion: v, vencida: estaVencida(v, hoy) };
       if (!dia) {
@@ -201,11 +188,7 @@ export function Calendario() {
       if (it.vencida) vencidas.push(it);
       push(it);
     }
-    for (const c of cargados) {
-      for (const v of c.realizadas) {
-        const dia = claveDia(v.FechaFinalizacion_VE);
-        if (dia) push({ tipo: 'ventilacion', key: `v-${v.ID}`, dia, ventilacion: v, vencida: false });
-      }
+    for (const c of mesesVisibles.map((m) => porMes[m]).filter((x): x is MesCargado => !!x)) {
       for (const e of c.eventos) {
         if (e.Estado === 'Anulado') continue;
         const dia = claveDia(e.Fecha);
@@ -216,7 +199,7 @@ export function Calendario() {
     vencidas.sort((a, b) => a.dia.localeCompare(b.dia));
     sinFecha.sort((a, b) => ordenDe(a).localeCompare(ordenDe(b), 'es'));
     return { porDia, vencidas, sinFecha };
-  }, [abiertas, porMes, mesesVisibles, hoy]);
+  }, [ventilaciones, porMes, mesesVisibles, hoy]);
 
   const semanas = dias.length / 7;
   const diasDelMes = dias.filter((d) => isSameMonth(d, mes));

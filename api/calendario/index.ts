@@ -1,16 +1,14 @@
-// GET  /api/calendario?meses=09/2026,10/2026,11/2026[&abiertas=1][&realizadas=0]
-//        -> { eventos, realizadas, abiertas? }
+// GET  /api/calendario?meses=09/2026,10/2026,11/2026[&ventilaciones=1]
+//        -> { eventos, ventilaciones? }
 //        `meses` son los que la grilla tiene a la vista (el mes + los días de borde de los
-//        vecinos). `abiertas` se pide una sola vez: no depende del mes (ver _lib/calendario.ts).
-//        `realizadas=0` la usa el widget del Home, que sólo quiere eventos: sin eso cada Home
-//        consultaba 19.Ventilaciones de más, y si esa consulta fallaba el widget mostraba error.
+//        vecinos). `ventilaciones` (Asignadas y Programadas) se pide una sola vez: no depende del
+//        mes (ver _lib/calendario.ts). El widget del Home no las pide: ya las tiene el store.
 // POST /api/calendario  { titulo, descripcion?, fecha, horaInicio?, horaFin? }  -> evento creado
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GraphError } from '../_lib/graph.js';
 import {
   listarEventos,
-  listarRealizadas,
-  listarAbiertas,
+  listarVentilacionesAgendadas,
   crearEvento,
   validarEvento,
   esMesValido,
@@ -50,15 +48,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (meses.length === 0 || meses.length > MAX_MESES || !meses.every(esMesValido)) {
         return res.status(400).json({ error: 'invalid', message: 'Meses inválidos' });
       }
-      const conAbiertas = req.query.abiertas === '1';
-      const conRealizadas = req.query.realizadas !== '0';
+      const conVentilaciones = req.query.ventilaciones === '1';
 
-      const [eventos, realizadas, abiertas] = await Promise.all([
+      const [eventos, ventilaciones] = await Promise.all([
         listarEventos(meses),
-        conRealizadas ? listarRealizadas(meses) : Promise.resolve([]),
-        conAbiertas ? listarAbiertas() : Promise.resolve(undefined),
+        conVentilaciones ? listarVentilacionesAgendadas() : Promise.resolve(undefined),
       ]);
-      return res.status(200).json({ eventos, realizadas, ...(abiertas ? { abiertas } : {}) });
+      return res.status(200).json({ eventos, ...(ventilaciones ? { ventilaciones } : {}) });
     }
 
     const v = validarEvento((req.body ?? {}) as Record<string, unknown>);

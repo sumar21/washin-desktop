@@ -59,6 +59,12 @@ export function fechaVentilacion(v: Ventilacion): string {
   return v.ProximaLimpieza_VE || v.FechaAsignado_VE || '';
 }
 
+/**
+ * Estados de ventilación que muestran el Calendario y el widget del Home: lo que ya tiene técnico
+ * y falta hacer (decisión de gerencia, 15/10/2026). Ni Pendientes sin técnico ni Realizadas.
+ */
+export const ESTADOS_VENT_CALENDARIO: readonly string[] = ['Asignada', 'Programada'];
+
 /** Estados de una ventilación que todavía hay que hacer (igual que VENTILACIONES_ABIERTAS_FILTER). */
 export const ESTADOS_VENT_ABIERTOS: readonly string[] = ['Pendiente', 'Asignada', 'Programada'];
 

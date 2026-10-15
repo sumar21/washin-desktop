@@ -1,5 +1,6 @@
-// Widget "Próximos 7 días" del Home: eventos del calendario + ventilaciones abiertas que caen
-// entre hoy y dentro de 6 días. Las vencidas no van acá: ya las cuenta el KPI de ventilaciones.
+// Widget "Próximos 7 días" del Home: eventos del calendario + ventilaciones Asignadas y Programadas
+// (las mismas que el Calendario) que caen entre hoy y dentro de 6 días. Las vencidas no van acá:
+// ya las cuenta el KPI de ventilaciones.
 //
 // Las ventilaciones llegan por props (el Home ya las carga con fetchVentilaciones) y sólo se piden
 // los eventos: el mes de hoy y, si la semana cruza de mes, también el siguiente.
@@ -19,13 +20,12 @@ import {
   fechaVentilacion,
   ordenDe,
   useHoy,
+  ESTADOS_VENT_CALENDARIO,
   type Item,
 } from '@/lib/calendario';
 import { cn } from '@/lib/utils';
 import * as api from '@/services/api';
 import type { EventoCalendario, Ventilacion } from '@/types/domain';
-
-const ABIERTAS = ['Pendiente', 'Asignada', 'Programada'];
 
 function etiquetaDia(d: Date, i: number): string {
   if (i === 0) return 'Hoy';
@@ -44,9 +44,9 @@ export function AgendaProximosDias({ ventilaciones, className }: { ventilaciones
 
   useEffect(() => {
     let vivo = true;
-    // Sin realizadas: el widget no las usa, y si esa consulta fallaba se perdían los eventos.
+    // Sólo eventos: las ventilaciones ya vienen por props.
     api
-      .getCalendario([...new Set(dias.map(mesAnoDe))], { realizadas: false })
+      .getCalendario([...new Set(dias.map(mesAnoDe))])
       .then((r) => {
         if (!vivo) return;
         setEventos(r.eventos);
@@ -67,9 +67,10 @@ export function AgendaProximosDias({ ventilaciones, className }: { ventilaciones
       if (l) l.push(it);
       else map.set(it.dia, [it]);
     };
-    // El store puede tener otra vista de Ventilaciones (un mes puntual, con realizadas): sólo abiertas.
+    // El store trae todas las abiertas (y puede tener otra vista de Ventilaciones, con realizadas):
+    // sólo las que muestra el Calendario.
     for (const v of ventilaciones) {
-      if (!ABIERTAS.includes(v.Estado_VE)) continue;
+      if (!ESTADOS_VENT_CALENDARIO.includes(v.Estado_VE)) continue;
       push({ tipo: 'ventilacion', key: `v-${v.ID}`, dia: claveDia(fechaVentilacion(v)), ventilacion: v, vencida: false });
     }
     for (const e of eventos ?? []) {
