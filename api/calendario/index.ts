@@ -48,13 +48,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (meses.length === 0 || meses.length > MAX_MESES || !meses.every(esMesValido)) {
         return res.status(400).json({ error: 'invalid', message: 'Meses inválidos' });
       }
-      const conVentilaciones = req.query.ventilaciones === '1';
+      // `abiertas=1` es el nombre que usaba la 1.2.0: una pestaña abierta con ese bundle sigue
+      // pidiendo así y hace `r.realizadas.filter(...)`. Se le contesta con las mismas
+      // Asignadas/Programadas y `realizadas: []` para que no se rompa hasta que recargue.
+      const compat120 = req.query.abiertas === '1';
+      const conVentilaciones = req.query.ventilaciones === '1' || compat120;
 
       const [eventos, ventilaciones] = await Promise.all([
         listarEventos(meses),
         conVentilaciones ? listarVentilacionesAgendadas() : Promise.resolve(undefined),
       ]);
-      return res.status(200).json({ eventos, ...(ventilaciones ? { ventilaciones } : {}) });
+      return res.status(200).json({
+        eventos,
+        ...(ventilaciones ? { ventilaciones } : {}),
+        ...(compat120 ? { abiertas: ventilaciones, realizadas: [] } : { realizadas: [] }),
+      });
     }
 
     const v = validarEvento((req.body ?? {}) as Record<string, unknown>);
